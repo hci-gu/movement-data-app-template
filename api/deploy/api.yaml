@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: research-steps-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: research-steps-api
+  template:
+    metadata:
+      labels:
+        app: research-steps-api
+    spec:
+      volumes:
+      - name: research-steps-api-persistent-storage
+        persistentVolumeClaim:
+          claimName: research-steps-api-pv-claim
+      containers:
+        - name: research-steps-api
+          image: 'registry.example.org/research/research-steps-api:latest'
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: web
+              protocol: TCP
+          volumeMounts:
+          - mountPath: /pb/pb_data
+            name: research-steps-api-persistent-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: research-steps-api-service
+spec:
+  selector:
+    app: research-steps-api
+  ports:
+    - protocol: TCP
+      port: 8080
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: research-steps-api
+  annotations:
+    kubernetes.io/tls-acme: "true"
+spec:
+  host: research-steps-api.example.org
+  to:
+    kind: Service
+    name: research-steps-api-service
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

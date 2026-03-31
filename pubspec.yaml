@@ -1,0 +1,29 @@
+name: research_steps_template
+description: "Generic Flutter template for extracting Apple Health step data and uploading it to a research API."
+publish_to: 'none'
+version: 1.1.0+5
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  hooks_riverpod: ^2.6.1
+  flutter_hooks: ^0.21.2
+  go_router: ^16.0.0
+  pocketbase: ^0.23.0
+  permission_handler: ^12.0.1
+  shared_preferences: ^2.5.3
+  health:
+    path: ./health
+  dio: ^5.8.0+1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
