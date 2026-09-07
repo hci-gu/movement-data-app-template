@@ -1,9 +1,12 @@
 package main
 
 import (
+	"app/internal/study"
 	"compress/gzip"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,16 +24,15 @@ import (
 
 	_ "app/migrations"
 
-	"github.com/labstack/echo/v5"
-	"github.com/labstack/echo/v5/middleware"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/models"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
+	"github.com/pocketbase/pocketbase/tools/router"
 )
 
-const storagePath = "/pb/pb_data/raw"
+var storagePath = "/pb/pb_data/raw"
+
 const uploadStateTimeout = 30 * time.Minute
 const uploadsDirectoryName = "_uploads"
 const uploadStateFileName = ".upload_state.json"
@@ -69,253 +71,30 @@ func main() {
 		Automigrate: isGoRun,
 	})
 
-	app.OnBeforeServe().Add(func(e *core.ServeEvent) error {
-		e.Router.Use(middleware.Decompress())
-		e.Router.Use(middleware.BodyLimit(200 * 1024 * 1024))
+	study.RegisterCommands(app)
+	study.ProtectRecords(app)
+	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
+		storagePath = filepath.Join(app.DataDir(), "raw")
+		cfg, err := study.LoadConfig()
+		if err != nil {
+			return err
+		}
+		svc, err := study.Open(app, cfg)
+		if err != nil {
+			return err
+		}
+		if err := svc.Recover(); err != nil {
+			return err
+		}
+		svc.RegisterRoutes(e.Router)
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { defer close(done); svc.Run(ctx) }()
+		app.OnTerminate().BindFunc(func(event *core.TerminateEvent) error { cancel(); <-done; return event.Next() })
 
-		e.Router.GET("/test", func(c echo.Context) error {
-			return c.String(http.StatusOK, "Research steps template API is running")
-		})
+		registerDataRoutes(app, e.Router, svc.RequireSession, svc.RequireConsent)
 
-		e.Router.POST("/users", func(c echo.Context) error {
-			reqBody := struct {
-				ParticipantID   string `json:"participantId"`
-				Password        string `json:"password"`
-				ConsentAccepted bool   `json:"consentAccepted"`
-			}{}
-			if err := c.Bind(&reqBody); err != nil {
-				return apis.NewBadRequestError("Failed to read request data", err)
-			}
-
-			if reqBody.Password == "" {
-				return echo.NewHTTPError(http.StatusBadRequest, "Password is required")
-			}
-
-			participantID, err := sanitizeParticipantID(reqBody.ParticipantID)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest, "Invalid participantId")
-			}
-
-			user, err := findOrCreateUser(app, participantID, reqBody.Password)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to handle participant")
-			}
-
-			user.Set("consent", reqBody.ConsentAccepted)
-			if err := app.Dao().SaveRecord(user); err != nil {
-				log.Println("Error saving participant consent:", err)
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to persist consent")
-			}
-
-			return c.JSON(http.StatusOK, map[string]any{
-				"id": user.Id,
-			})
-		})
-
-		e.Router.POST("/info", func(c echo.Context) error {
-			reqBody := struct {
-				ParticipantID string                 `json:"participantId"`
-				Data          map[string]interface{} `json:"data"`
-			}{}
-			if err := c.Bind(&reqBody); err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest, "Invalid request body")
-			}
-
-			participantID, err := sanitizeParticipantID(reqBody.ParticipantID)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest, "Invalid participantId")
-			}
-
-			user, err := getUserForParticipantID(app, participantID)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusNotFound, "Participant not found")
-			}
-
-			collection, err := app.Dao().FindCollectionByNameOrId("info")
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to find info collection")
-			}
-
-			record := models.NewRecord(collection)
-			record.Set("user", user.Id)
-			record.Set("data", reqBody.Data)
-			if err := app.Dao().SaveRecord(record); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to save participant info")
-			}
-
-			return c.NoContent(http.StatusCreated)
-		})
-
-		e.Router.POST("/data", func(c echo.Context) error {
-			reqBody := struct {
-				ParticipantID string     `json:"participantId"`
-				ChunkIndex    int        `json:"chunkIndex"`
-				Data          []DataItem `json:"data"`
-			}{}
-			if err := c.Bind(&reqBody); err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest, "Invalid request body")
-			}
-
-			participantID, err := sanitizeParticipantID(reqBody.ParticipantID)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest, "Invalid participantId")
-			}
-
-			if reqBody.ChunkIndex < 0 {
-				return echo.NewHTTPError(http.StatusBadRequest, "Invalid chunkIndex")
-			}
-			if len(reqBody.Data) == 0 {
-				return echo.NewHTTPError(http.StatusBadRequest, "No data points provided")
-			}
-
-			dataHash, err := hashDataItems(reqBody.Data)
-			if err != nil {
-				log.Println("Error hashing upload:", err)
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to process upload")
-			}
-
-			now := time.Now().UTC()
-			lock := getUploadLock(participantID)
-			lock.Lock()
-			defer lock.Unlock()
-
-			state, err := loadUploadState(participantID)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to read upload state")
-			}
-
-			switch {
-			case reqBody.ChunkIndex == 0:
-				if state == nil || isUploadStateExpired(state, now) {
-					state, err = createNewUploadState(participantID, now)
-					if err != nil {
-						return echo.NewHTTPError(http.StatusInternalServerError, "Failed to start upload")
-					}
-				} else if state.ExpectedChunk > 0 {
-					duplicateFirstChunk, err := isDuplicateChunk(participantID, state, 0, dataHash)
-					if err != nil {
-						return echo.NewHTTPError(http.StatusInternalServerError, "Failed to process upload")
-					}
-					if !duplicateFirstChunk {
-						state, err = createNewUploadState(participantID, now)
-						if err != nil {
-							return echo.NewHTTPError(http.StatusInternalServerError, "Failed to restart upload")
-						}
-					}
-				}
-			case state == nil || isUploadStateExpired(state, now):
-				return echo.NewHTTPError(http.StatusConflict, "No active upload session. Restart from chunk 0.")
-			}
-
-			if reqBody.ChunkIndex > state.ExpectedChunk {
-				return echo.NewHTTPError(
-					http.StatusConflict,
-					fmt.Sprintf("Out-of-order chunk. Expected chunk %d.", state.ExpectedChunk),
-				)
-			}
-
-			if reqBody.ChunkIndex < state.ExpectedChunk {
-				isDuplicate, err := isDuplicateChunk(participantID, state, reqBody.ChunkIndex, dataHash)
-				if err != nil {
-					return echo.NewHTTPError(http.StatusInternalServerError, "Failed to process upload")
-				}
-				if !isDuplicate {
-					return echo.NewHTTPError(http.StatusConflict, "Chunk already received with different content.")
-				}
-
-				filePath := chunkFilePath(participantID, state.SessionID, reqBody.ChunkIndex)
-				return c.JSON(http.StatusOK, map[string]any{
-					"message":    "Chunk already received",
-					"filePath":   filePath,
-					"sessionId":  state.SessionID,
-					"chunkIndex": reqBody.ChunkIndex,
-				})
-			}
-
-			filePath := chunkFilePath(participantID, state.SessionID, reqBody.ChunkIndex)
-			if err := os.MkdirAll(filepath.Dir(filePath), os.ModePerm); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to prepare storage directory")
-			}
-
-			if err := writeCompressedFile(filePath, reqBody.Data); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to persist upload chunk")
-			}
-			if err := saveChunkHash(participantID, state, reqBody.ChunkIndex, dataHash); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to persist chunk metadata")
-			}
-
-			state.ExpectedChunk++
-			state.UpdatedAt = now
-			if err := saveUploadState(participantID, state); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to persist upload state")
-			}
-
-			dataFrom, dataTo, err := getEarliestAndLatestDates(reqBody.Data)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to read upload date coverage")
-			}
-
-			collection, err := app.Dao().FindCollectionByNameOrId("dataUploads")
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to find uploads collection")
-			}
-
-			user, err := getUserForParticipantID(app, participantID)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusNotFound, "Participant not found")
-			}
-
-			record := models.NewRecord(collection)
-			record.Set("user", user.Id)
-			record.Set("filePath", filePath)
-			record.Set("timestamp", now)
-			record.Set("dataFrom", dataFrom)
-			record.Set("dataTo", dataTo)
-			if err := app.Dao().SaveRecord(record); err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to save upload metadata")
-			}
-
-			return c.JSON(http.StatusOK, map[string]any{
-				"message":    "Data saved successfully",
-				"filePath":   filePath,
-				"sessionId":  state.SessionID,
-				"chunkIndex": reqBody.ChunkIndex,
-			})
-		})
-
-		e.Router.GET("/data/:participantId", requireAPIKey(func(c echo.Context) error {
-			participantID, err := sanitizeParticipantID(c.PathParam("participantId"))
-			if err != nil {
-				return echo.NewHTTPError(http.StatusBadRequest, "Invalid participantId")
-			}
-
-			lock := getUploadLock(participantID)
-			lock.Lock()
-			defer lock.Unlock()
-
-			sessionDirs, err := listSessionDirectories(participantID)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to list upload sessions")
-			}
-
-			for index := len(sessionDirs) - 1; index >= 0; index-- {
-				allData, err := readDataFromSession(participantID, sessionDirs[index])
-				if err != nil {
-					return echo.NewHTTPError(http.StatusInternalServerError, "Failed to read upload session")
-				}
-				if len(allData) > 0 {
-					return c.JSON(http.StatusOK, allData)
-				}
-			}
-
-			allData, err := readLegacyData(participantFolderPath(participantID))
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "Failed to read upload data")
-			}
-			return c.JSON(http.StatusOK, allData)
-		}))
-
-		return nil
+		return e.Next()
 	})
 
 	if err := app.Start(); err != nil {
@@ -323,17 +102,227 @@ func main() {
 	}
 }
 
-func requireAPIKey(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
+func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requireSession, requireConsent func(*core.RequestEvent) error) {
+	r.GET("/test", func(c *core.RequestEvent) error {
+		return c.String(http.StatusOK, "Research steps template API is running")
+	})
+
+	r.POST("/info", func(c *core.RequestEvent) error {
+		reqBody := struct {
+			ParticipantID string                 `json:"participantId"`
+			Data          map[string]interface{} `json:"data"`
+		}{}
+		if err := c.BindBody(&reqBody); err != nil {
+			return httpError(http.StatusBadRequest, "Invalid request body")
+		}
+
+		participantID, err := authorizedParticipant(c, reqBody.ParticipantID)
+		if err != nil {
+			return err
+		}
+
+		user, err := getUserForParticipantID(app, participantID)
+		if err != nil {
+			return httpError(http.StatusNotFound, "Participant not found")
+		}
+
+		collection, err := app.FindCollectionByNameOrId("info")
+		if err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to find info collection")
+		}
+
+		record := core.NewRecord(collection)
+		record.Set("user", user.Id)
+		record.Set("data", reqBody.Data)
+		if err := app.Save(record); err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to save participant info")
+		}
+
+		return c.NoContent(http.StatusCreated)
+	}).BindFunc(requireSession, requireConsent)
+
+	r.POST("/data", func(c *core.RequestEvent) error {
+		reqBody := struct {
+			ParticipantID string     `json:"participantId"`
+			ChunkIndex    int        `json:"chunkIndex"`
+			Data          []DataItem `json:"data"`
+		}{}
+		if err := c.BindBody(&reqBody); err != nil {
+			return httpError(http.StatusBadRequest, "Invalid request body")
+		}
+
+		participantID, err := authorizedParticipant(c, reqBody.ParticipantID)
+		if err != nil {
+			return err
+		}
+
+		if reqBody.ChunkIndex < 0 {
+			return httpError(http.StatusBadRequest, "Invalid chunkIndex")
+		}
+		if len(reqBody.Data) == 0 {
+			return httpError(http.StatusBadRequest, "No data points provided")
+		}
+
+		dataHash, err := hashDataItems(reqBody.Data)
+		if err != nil {
+			log.Println("Error hashing upload:", err)
+			return httpError(http.StatusInternalServerError, "Failed to process upload")
+		}
+
+		now := time.Now().UTC()
+		lock := getUploadLock(participantID)
+		lock.Lock()
+		defer lock.Unlock()
+
+		state, err := loadUploadState(participantID)
+		if err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to read upload state")
+		}
+
+		switch {
+		case reqBody.ChunkIndex == 0:
+			if state == nil || isUploadStateExpired(state, now) {
+				state, err = createNewUploadState(participantID, now)
+				if err != nil {
+					return httpError(http.StatusInternalServerError, "Failed to start upload")
+				}
+			} else if state.ExpectedChunk > 0 {
+				duplicateFirstChunk, err := isDuplicateChunk(participantID, state, 0, dataHash)
+				if err != nil {
+					return httpError(http.StatusInternalServerError, "Failed to process upload")
+				}
+				if !duplicateFirstChunk {
+					state, err = createNewUploadState(participantID, now)
+					if err != nil {
+						return httpError(http.StatusInternalServerError, "Failed to restart upload")
+					}
+				}
+			}
+		case state == nil || isUploadStateExpired(state, now):
+			return httpError(http.StatusConflict, "No active upload session. Restart from chunk 0.")
+		}
+
+		if reqBody.ChunkIndex > state.ExpectedChunk {
+			return httpError(
+				http.StatusConflict,
+				fmt.Sprintf("Out-of-order chunk. Expected chunk %d.", state.ExpectedChunk),
+			)
+		}
+
+		if reqBody.ChunkIndex < state.ExpectedChunk {
+			isDuplicate, err := isDuplicateChunk(participantID, state, reqBody.ChunkIndex, dataHash)
+			if err != nil {
+				return httpError(http.StatusInternalServerError, "Failed to process upload")
+			}
+			if !isDuplicate {
+				return httpError(http.StatusConflict, "Chunk already received with different content.")
+			}
+
+			filePath := chunkFilePath(participantID, state.SessionID, reqBody.ChunkIndex)
+			return c.JSON(http.StatusOK, map[string]any{
+				"message":    "Chunk already received",
+				"filePath":   filePath,
+				"sessionId":  state.SessionID,
+				"chunkIndex": reqBody.ChunkIndex,
+			})
+		}
+
+		filePath := chunkFilePath(participantID, state.SessionID, reqBody.ChunkIndex)
+		if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to prepare storage directory")
+		}
+
+		if err := writeCompressedFile(filePath, reqBody.Data); err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to persist upload chunk")
+		}
+		if err := saveChunkHash(participantID, state, reqBody.ChunkIndex, dataHash); err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to persist chunk metadata")
+		}
+
+		state.ExpectedChunk++
+		state.UpdatedAt = now
+		if err := saveUploadState(participantID, state); err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to persist upload state")
+		}
+
+		dataFrom, dataTo, err := getEarliestAndLatestDates(reqBody.Data)
+		if err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to read upload date coverage")
+		}
+
+		collection, err := app.FindCollectionByNameOrId("dataUploads")
+		if err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to find uploads collection")
+		}
+
+		user, err := getUserForParticipantID(app, participantID)
+		if err != nil {
+			return httpError(http.StatusNotFound, "Participant not found")
+		}
+
+		record := core.NewRecord(collection)
+		record.Set("user", user.Id)
+		record.Set("filePath", filePath)
+		record.Set("timestamp", now)
+		record.Set("dataFrom", dataFrom)
+		record.Set("dataTo", dataTo)
+		if err := app.Save(record); err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to save upload metadata")
+		}
+
+		return c.JSON(http.StatusOK, map[string]any{
+			"message":    "Data saved successfully",
+			"filePath":   filePath,
+			"sessionId":  state.SessionID,
+			"chunkIndex": reqBody.ChunkIndex,
+		})
+	}).Bind(apis.BodyLimit(200*1024*1024)).BindFunc(requireSession, requireConsent, decompressUpload)
+
+	r.GET("/data/{participantId}", requireAPIKey(func(c *core.RequestEvent) error {
+		participantID, err := sanitizeParticipantID(c.Request.PathValue("participantId"))
+		if err != nil {
+			return httpError(http.StatusBadRequest, "Invalid participantId")
+		}
+
+		lock := getUploadLock(participantID)
+		lock.Lock()
+		defer lock.Unlock()
+
+		sessionDirs, err := listSessionDirectories(participantID)
+		if err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to list upload sessions")
+		}
+
+		for index := len(sessionDirs) - 1; index >= 0; index-- {
+			allData, err := readDataFromSession(participantID, sessionDirs[index])
+			if err != nil {
+				return httpError(http.StatusInternalServerError, "Failed to read upload session")
+			}
+			if len(allData) > 0 {
+				return c.JSON(http.StatusOK, allData)
+			}
+		}
+
+		allData, err := readLegacyData(participantFolderPath(participantID))
+		if err != nil {
+			return httpError(http.StatusInternalServerError, "Failed to read upload data")
+		}
+		return c.JSON(http.StatusOK, allData)
+	}))
+
+}
+
+func requireAPIKey(next func(*core.RequestEvent) error) func(*core.RequestEvent) error {
+	return func(c *core.RequestEvent) error {
 		apiKey := os.Getenv("API_KEY")
 		if apiKey == "" {
 			log.Println("WARNING: API_KEY environment variable is not set")
-			return echo.NewHTTPError(http.StatusInternalServerError, "Server misconfigured")
+			return httpError(http.StatusInternalServerError, "Server misconfigured")
 		}
 
-		providedKey := c.Request().Header.Get("X-API-Key")
-		if providedKey == "" || providedKey != apiKey {
-			return echo.NewHTTPError(http.StatusUnauthorized, "Invalid or missing API key")
+		providedKey := c.Request.Header.Get("X-API-Key")
+		if providedKey == "" || subtle.ConstantTimeCompare([]byte(providedKey), []byte(apiKey)) != 1 {
+			return httpError(http.StatusUnauthorized, "Invalid or missing API key")
 		}
 
 		return next(c)
@@ -425,7 +414,7 @@ func loadUploadState(participantID string) (*UploadState, error) {
 
 func saveUploadState(participantID string, state *UploadState) error {
 	stateDir := participantFolderPath(participantID)
-	if err := os.MkdirAll(stateDir, os.ModePerm); err != nil {
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return err
 	}
 
@@ -451,7 +440,7 @@ func createNewUploadState(participantID string, now time.Time) (*UploadState, er
 	}
 
 	sessionDir := uploadSessionPath(participantID, sessionID)
-	if err := os.MkdirAll(sessionDir, os.ModePerm); err != nil {
+	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
 		return nil, err
 	}
 
@@ -594,17 +583,21 @@ func writeCompressedFile(filePath string, data []DataItem) error {
 		return err
 	}
 
-	file, err := os.Create(filePath)
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
 	gzipWriter := gzip.NewWriter(file)
-	defer gzipWriter.Close()
-
-	_, err = gzipWriter.Write(jsonData)
-	return err
+	if _, err = gzipWriter.Write(jsonData); err != nil {
+		_ = gzipWriter.Close()
+		return err
+	}
+	if err := gzipWriter.Close(); err != nil {
+		return err
+	}
+	return file.Sync()
 }
 
 func readCompressedFile(filePath string) ([]DataItem, error) {
@@ -633,28 +626,40 @@ func readCompressedFile(filePath string) ([]DataItem, error) {
 	return dataItems, nil
 }
 
-func getUserForParticipantID(app *pocketbase.PocketBase, participantID string) (*models.Record, error) {
-	return app.Dao().FindFirstRecordByData("users", "username", participantID)
+func getUserForParticipantID(app core.App, participantID string) (*core.Record, error) {
+	return app.FindFirstRecordByData("users", "username", participantID)
 }
 
-func findOrCreateUser(app *pocketbase.PocketBase, participantID, password string) (*models.Record, error) {
-	user, _ := getUserForParticipantID(app, participantID)
-	if user != nil {
-		return user, nil
+func httpError(status int, message string) error { return apis.NewApiError(status, message, nil) }
+
+// The body identifier is optional for older clients, but can never override identity.
+func authorizedParticipant(e *core.RequestEvent, supplied string) (string, error) {
+	if e.Auth == nil {
+		return "", httpError(401, "Participant authentication required")
 	}
-
-	collection, err := app.Dao().FindCollectionByNameOrId("users")
-	if err != nil {
-		return nil, err
+	id, err := sanitizeParticipantID(e.Auth.GetString("username"))
+	if err != nil || (supplied != "" && supplied != id) {
+		return "", httpError(403, "Participant does not match authenticated session")
 	}
+	return id, nil
+}
 
-	record := models.NewRecord(collection)
-	record.Set("username", participantID)
-	record.SetPassword(password)
-
-	if err := app.Dao().SaveRecord(record); err != nil {
-		return nil, err
+func decompressUpload(e *core.RequestEvent) error {
+	const maxSize = 200 * 1024 * 1024
+	e.Request.Body = http.MaxBytesReader(e.Response, e.Request.Body, maxSize)
+	encoding := e.Request.Header.Get("Content-Encoding")
+	if encoding != "" && encoding != "gzip" {
+		return httpError(415, "Unsupported content encoding")
 	}
-
-	return record, nil
+	if encoding == "gzip" {
+		reader, err := gzip.NewReader(e.Request.Body)
+		if err != nil {
+			return httpError(400, "Invalid gzip body")
+		}
+		defer reader.Close()
+		e.Request.Body = http.MaxBytesReader(e.Response, reader, maxSize)
+		e.Request.Header.Del("Content-Encoding")
+		e.Request.ContentLength = -1
+	}
+	return e.Next()
 }

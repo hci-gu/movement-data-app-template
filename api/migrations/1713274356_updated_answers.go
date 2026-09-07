@@ -3,52 +3,45 @@ package migrations
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/daos"
+	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/models/schema"
 )
 
 func init() {
-	m.Register(func(db dbx.Builder) error {
-		dao := daos.New(db);
+	m.Register(func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("1fy9xtsufxz9e4f")
+		collection, err := app.FindCollectionByNameOrId("1fy9xtsufxz9e4f")
 		if err != nil {
 			return err
 		}
 
 		// add
-		new_startDate := &schema.SchemaField{}
+		new_startDate := &core.DateField{}
 		if err := json.Unmarshal([]byte(`{
-			"system": false,
-			"id": "3w7eidkr",
-			"name": "startDate",
-			"type": "date",
-			"required": false,
-			"presentable": false,
-			"unique": false,
-			"options": {
-				"min": "",
-				"max": ""
-			}
-		}`), new_startDate); err != nil {
+  "system": false,
+  "id": "3w7eidkr",
+  "name": "startDate",
+  "type": "date",
+  "required": false,
+  "presentable": false,
+  "min": "",
+  "max": ""
+}`), new_startDate); err != nil {
 			return err
 		}
-		collection.Schema.AddField(new_startDate)
+		collection.Fields.Add(new_startDate)
 
-		return dao.SaveCollection(collection)
-	}, func(db dbx.Builder) error {
-		dao := daos.New(db);
+		return app.Save(collection)
+	}, func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("1fy9xtsufxz9e4f")
+		collection, err := app.FindCollectionByNameOrId("1fy9xtsufxz9e4f")
 		if err != nil {
 			return err
 		}
 
 		// remove
-		collection.Schema.RemoveField("3w7eidkr")
+		collection.Fields.RemoveById("3w7eidkr")
 
-		return dao.SaveCollection(collection)
+		return app.Save(collection)
 	})
 }

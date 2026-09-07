@@ -3,18 +3,15 @@ package migrations
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/daos"
+	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/models/schema"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 func init() {
-	m.Register(func(db dbx.Builder) error {
-		dao := daos.New(db);
+	m.Register(func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("r8x60e97o694ihv")
+		collection, err := app.FindCollectionByNameOrId("r8x60e97o694ihv")
 		if err != nil {
 			return err
 		}
@@ -34,13 +31,12 @@ func init() {
 		}
 
 		// remove
-		collection.Schema.RemoveField("tmen8iab")
+		collection.Fields.RemoveById("tmen8iab")
 
-		return dao.SaveCollection(collection)
-	}, func(db dbx.Builder) error {
-		dao := daos.New(db);
+		return app.Save(collection)
+	}, func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("r8x60e97o694ihv")
+		collection, err := app.FindCollectionByNameOrId("r8x60e97o694ihv")
 		if err != nil {
 			return err
 		}
@@ -56,33 +52,28 @@ func init() {
 		collection.DeleteRule = types.Pointer("user = @request.auth.id")
 
 		if err := json.Unmarshal([]byte(`[
-			"CREATE INDEX ` + "`" + `idx_KRbmwPl` + "`" + ` ON ` + "`" + `questionnaires` + "`" + ` (` + "`" + `user` + "`" + `)"
-		]`), &collection.Indexes); err != nil {
+  "CREATE INDEX \u0060idx_KRbmwPl\u0060 ON \u0060questionnaires\u0060 (\u0060user\u0060)"
+]`), &collection.Indexes); err != nil {
 			return err
 		}
 
 		// add
-		del_user := &schema.SchemaField{}
+		del_user := &core.RelationField{}
 		if err := json.Unmarshal([]byte(`{
-			"system": false,
-			"id": "tmen8iab",
-			"name": "user",
-			"type": "relation",
-			"required": false,
-			"presentable": false,
-			"unique": false,
-			"options": {
-				"collectionId": "_pb_users_auth_",
-				"cascadeDelete": true,
-				"minSelect": null,
-				"maxSelect": 1,
-				"displayFields": null
-			}
-		}`), del_user); err != nil {
+  "system": false,
+  "id": "tmen8iab",
+  "name": "user",
+  "type": "relation",
+  "required": false,
+  "presentable": false,
+  "collectionId": "_pb_users_auth_",
+  "cascadeDelete": true,
+  "maxSelect": 1
+}`), del_user); err != nil {
 			return err
 		}
-		collection.Schema.AddField(del_user)
+		collection.Fields.Add(del_user)
 
-		return dao.SaveCollection(collection)
+		return app.Save(collection)
 	})
 }

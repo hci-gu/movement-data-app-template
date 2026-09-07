@@ -27,6 +27,14 @@ class UploadStepsScreen extends HookConsumerWidget {
       title: 'Connect Apple Health',
       noBackButton: true,
       withHorizontalPadding: false,
+      trailing: CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: () => context.pushNamed('consentReceipt'),
+        child: const Icon(
+          CupertinoIcons.doc_text,
+          semanticLabel: 'Signed consent and withdrawal',
+        ),
+      ),
       child: FutureBuilder<void>(
         future: HealthManager().ongoingUpload ?? initializeFuture,
         builder: (context, snapshot) {

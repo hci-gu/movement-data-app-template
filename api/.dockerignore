@@ -1,0 +1,10 @@
+pb_data
+storage
+secrets
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.key
+app
