@@ -27,7 +27,7 @@ class AppConfig {
   static const summaryLookbackDays = 14;
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://research-steps-api.example.org',
+    defaultValue: 'http://192.168.10.101:8090',
   );
 
   static final participantIdPattern = RegExp(r'^[A-Z0-9][A-Z0-9_-]{3,31}$');
