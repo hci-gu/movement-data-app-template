@@ -83,9 +83,6 @@ func main() {
 		if err != nil {
 			return err
 		}
-		if err := svc.Recover(); err != nil {
-			return err
-		}
 		svc.RegisterAdmin()
 		svc.RegisterRoutes(e.Router)
 		ctx, cancel := context.WithCancel(context.Background())
@@ -108,7 +105,7 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		return c.String(http.StatusOK, "Research steps template API is running")
 	})
 
-	r.POST("/info", func(c *core.RequestEvent) error {
+	r.POST("/api/study/metadata", func(c *core.RequestEvent) error {
 		reqBody := struct {
 			ParticipantID string                 `json:"participantId"`
 			Data          map[string]interface{} `json:"data"`
@@ -127,16 +124,14 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 			return httpError(http.StatusNotFound, "Participant not found")
 		}
 
-		collection, err := app.FindCollectionByNameOrId("info")
-		if err != nil {
-			return httpError(http.StatusInternalServerError, "Failed to find info collection")
+		var metadata []map[string]any
+		if err := user.UnmarshalJSONField("metadata", &metadata); err != nil {
+			return httpError(500, "Failed to read participant metadata")
 		}
-
-		record := core.NewRecord(collection)
-		record.Set("user", user.Id)
-		record.Set("data", reqBody.Data)
-		if err := app.Save(record); err != nil {
-			return httpError(http.StatusInternalServerError, "Failed to save participant info")
+		metadata = append(metadata, map[string]any{"data": reqBody.Data, "created": time.Now().UTC().Format(time.RFC3339Nano)})
+		user.Set("metadata", metadata)
+		if err := app.Save(user); err != nil {
+			return httpError(500, "Failed to save participant metadata")
 		}
 
 		return c.NoContent(http.StatusCreated)
@@ -304,11 +299,7 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 			}
 		}
 
-		allData, err := readLegacyData(participantFolderPath(participantID))
-		if err != nil {
-			return httpError(http.StatusInternalServerError, "Failed to read upload data")
-		}
-		return c.JSON(http.StatusOK, allData)
+		return c.JSON(http.StatusOK, []DataItem{})
 	}))
 
 }
@@ -528,36 +519,6 @@ func readDataFromSession(participantID, sessionID string) ([]DataItem, error) {
 	return allData, nil
 }
 
-func readLegacyData(folderPath string) ([]DataItem, error) {
-	files, err := os.ReadDir(folderPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	gzipFiles := make([]string, 0, len(files))
-	for _, file := range files {
-		if !file.IsDir() && filepath.Ext(file.Name()) == ".gz" {
-			gzipFiles = append(gzipFiles, file.Name())
-		}
-	}
-	sort.Strings(gzipFiles)
-
-	var allData []DataItem
-	for _, gzipFile := range gzipFiles {
-		filePath := filepath.Join(folderPath, gzipFile)
-		dataItems, err := readCompressedFile(filePath)
-		if err != nil {
-			return nil, err
-		}
-		allData = append(allData, dataItems...)
-	}
-
-	return allData, nil
-}
-
 func getEarliestAndLatestDates(data []DataItem) (string, string, error) {
 	if len(data) == 0 {
 		return "", "", fmt.Errorf("no data points provided")
@@ -633,13 +594,13 @@ func getUserForParticipantID(app core.App, participantID string) (*core.Record, 
 
 func httpError(status int, message string) error { return apis.NewApiError(status, message, nil) }
 
-// The body identifier is optional for older clients, but can never override identity.
+// Every upload identifies its participant and must match the authenticated user.
 func authorizedParticipant(e *core.RequestEvent, supplied string) (string, error) {
 	if e.Auth == nil {
 		return "", httpError(401, "Participant authentication required")
 	}
 	id, err := sanitizeParticipantID(e.Auth.GetString("username"))
-	if err != nil || (supplied != "" && supplied != id) {
+	if err != nil || supplied != id {
 		return "", httpError(403, "Participant does not match authenticated session")
 	}
 	return id, nil

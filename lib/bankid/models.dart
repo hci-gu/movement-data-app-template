@@ -24,128 +24,72 @@ class ConsentDocument {
   };
 }
 
-class BankIdOrder {
-  final String id, status, hintCode, purpose, mode;
+class BankIdAttempt {
+  final String id, secret, status, hintCode, purpose, mode;
   final String? launchUrl, nonce, qrData, signatureId;
+  final int expiresAt;
   final int? qrSecondsRemaining;
-  final bool pickedUp;
-  const BankIdOrder({
+  final bool pickedUp, consentRequired;
+  final ConsentDocument? document;
+  final Map<String, dynamic>? grant;
+  const BankIdAttempt({
     required this.id,
-    required this.status,
-    required this.hintCode,
-    required this.purpose,
-    required this.mode,
+    required this.secret,
+    this.status = 'pending',
+    this.hintCode = '',
+    this.purpose = 'sign',
+    this.mode = 'sameDevice',
+    required this.expiresAt,
     this.launchUrl,
     this.nonce,
     this.qrData,
     this.signatureId,
     this.qrSecondsRemaining,
     this.pickedUp = false,
+    this.consentRequired = false,
+    this.document,
+    this.grant,
   });
-  factory BankIdOrder.fromJson(Map<String, dynamic> json) => BankIdOrder(
-    id: json['id'] as String,
-    status: json['status'] as String,
-    hintCode: json['hintCode'] as String? ?? '',
-    purpose: json['purpose'] as String,
-    mode: json['mode'] as String,
-    launchUrl: json['launchUrl'] as String?,
-    nonce: json['nonce'] as String?,
-    qrData: json['qrData'] as String?,
-    signatureId: json['signatureId'] as String?,
-    qrSecondsRemaining: json['qrSecondsRemaining'] as int?,
-    pickedUp: json['pickedUp'] as bool? ?? false,
-  );
-  bool get pending => const [
-    'creating',
-    'pending',
-    'collecting',
-    'collected',
-    'cancelling',
-  ].contains(status);
+  String get authorization => '$id.$secret';
+  bool get pending => status == 'pending';
   bool get accepted => status == 'accepted';
   bool get canExtendQR =>
       pending && mode == 'qr' && !pickedUp && qrSecondsRemaining == 0;
-}
-
-// Stored in Keychain before network calls, so interrupted requests can be retried
-// with the same secret and idempotency key after a cold start.
-class BankIdFlow {
-  final String id,
-      clientSecret,
-      kind,
-      invitationCode,
-      requestKey,
-      mode,
-      orderId,
-      nonce;
-  final int expiresAt;
-  final ConsentDocument? document;
-  const BankIdFlow({
-    required this.id,
-    required this.clientSecret,
-    required this.kind,
-    required this.expiresAt,
-    this.invitationCode = '',
-    this.requestKey = '',
-    this.mode = 'sameDevice',
-    this.orderId = '',
-    this.nonce = '',
-    this.document,
-  });
-  String get authorization => '$id.$clientSecret';
   bool expired(DateTime now) => now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
-  BankIdFlow copyWith({
-    String? id,
-    int? expiresAt,
-    String? requestKey,
-    String? mode,
-    String? orderId,
-    String? nonce,
-    ConsentDocument? document,
-    bool clearDocument = false,
-  }) => BankIdFlow(
-    id: id ?? this.id,
-    clientSecret: clientSecret,
-    kind: kind,
-    expiresAt: expiresAt ?? this.expiresAt,
-    invitationCode: invitationCode,
-    requestKey: requestKey ?? this.requestKey,
-    mode: mode ?? this.mode,
-    orderId: orderId ?? this.orderId,
-    nonce: nonce ?? this.nonce,
-    document: clearDocument ? null : document ?? this.document,
-  );
-  factory BankIdFlow.fromJson(Map<String, dynamic> json) => BankIdFlow(
-    id: json['id'] as String,
-    clientSecret: json['clientSecret'] as String,
-    kind: json['kind'] as String,
-    expiresAt: json['expiresAt'] as int,
-    invitationCode: json['invitationCode'] as String? ?? '',
-    requestKey: json['requestKey'] as String? ?? '',
-    mode: json['mode'] as String? ?? 'sameDevice',
-    orderId: json['orderId'] as String? ?? '',
-    nonce: json['nonce'] as String? ?? '',
-    document: json['document'] == null
-        ? null
-        : ConsentDocument.fromJson(
-            Map<String, dynamic>.from(json['document'] as Map),
-          ),
-  );
-  Map<String, dynamic> toJson() => {
+  factory BankIdAttempt.fromJson(Map<String, dynamic> json, String secret) =>
+      BankIdAttempt(
+        id: json['id'] as String,
+        secret: secret,
+        expiresAt: json['expiresAt'] as int,
+        status: json['status'] as String? ?? 'pending',
+        hintCode: json['hintCode'] as String? ?? '',
+        purpose: json['purpose'] as String? ?? 'sign',
+        mode: json['mode'] as String? ?? 'sameDevice',
+        launchUrl: json['launchUrl'] as String?,
+        nonce: json['nonce'] as String?,
+        qrData: json['qrData'] as String?,
+        signatureId: json['signatureId'] as String?,
+        qrSecondsRemaining: json['qrSecondsRemaining'] as int?,
+        pickedUp: json['pickedUp'] == true,
+        consentRequired: json['consentRequired'] == true,
+        document: json['document'] == null
+            ? null
+            : ConsentDocument.fromJson(
+                Map<String, dynamic>.from(json['document'] as Map),
+              ),
+        grant: json['grant'] == null
+            ? null
+            : Map<String, dynamic>.from(json['grant'] as Map),
+      );
+  // Only the credential/reference survives an app restart. Fetch all results from the server.
+  Map<String, dynamic> toStorage() => {
     'id': id,
-    'clientSecret': clientSecret,
-    'kind': kind,
+    'secret': secret,
     'expiresAt': expiresAt,
-    'invitationCode': invitationCode,
-    'requestKey': requestKey,
-    'mode': mode,
-    'orderId': orderId,
-    'nonce': nonce,
-    'document': document?.toJson(),
   };
 }
 
-String bankIdMessage(BankIdOrder order) {
+String bankIdMessage(BankIdAttempt order) {
   if (order.accepted) {
     return order.purpose == 'sign'
         ? 'Your consent has been signed and saved.'
@@ -178,7 +122,7 @@ String bankIdMessage(BankIdOrder order) {
         'No participant account was found. Use your study invitation to enroll.',
     'riskRejected':
         'This request could not be accepted. Contact the study team if it happens again.',
-    'sessionExpired': 'Your enrollment session expired. Start again.',
+    'sessionExpired': 'Your BankID request expired. Start again.',
     'unknownResult':
         'We could not confirm the result. No access was granted. Start a new request.',
     'invalidEvidence':

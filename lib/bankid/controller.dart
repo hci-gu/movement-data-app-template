@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
-
+import 'package:crypto/crypto.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:research_steps_template/app_config.dart';
 import 'package:research_steps_template/bankid/gateway.dart';
@@ -10,49 +10,51 @@ import 'package:research_steps_template/state/auth.dart';
 import 'package:research_steps_template/storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-abstract class BankIdFlowStore {
+abstract class BankIdAttemptStore {
   Future<Map<String, dynamic>?> read();
   Future<void> write(Map<String, dynamic> value);
   Future<void> clear();
 }
 
-class SecureBankIdFlowStore implements BankIdFlowStore {
+class SecureBankIdAttemptStore implements BankIdAttemptStore {
   @override
-  Future<Map<String, dynamic>?> read() => Storage().readBankIdFlow();
+  Future<Map<String, dynamic>?> read() => Storage().readBankIdAttempt();
   @override
   Future<void> write(Map<String, dynamic> value) =>
-      Storage().writeBankIdFlow(value);
+      Storage().writeBankIdAttempt(value);
   @override
-  Future<void> clear() => Storage().clearBankIdFlow();
+  Future<void> clear() => Storage().clearBankIdAttempt();
 }
 
 class SigningState {
-  final BankIdFlow? flow;
+  final BankIdAttempt? attempt;
   final ConsentDocument? document;
-  final BankIdOrder? order;
-  final bool busy, reviewed;
+  final bool begun, returning, busy, reviewed;
   final String? error;
   const SigningState({
-    this.flow,
+    this.attempt,
     this.document,
-    this.order,
+    this.begun = false,
+    this.returning = false,
     this.busy = false,
     this.reviewed = false,
     this.error,
   });
   SigningState copyWith({
-    BankIdFlow? flow,
+    BankIdAttempt? attempt,
     ConsentDocument? document,
-    BankIdOrder? order,
+    bool? begun,
+    bool? returning,
     bool? busy,
     bool? reviewed,
     String? error,
-    bool clearOrder = false,
+    bool clearAttempt = false,
     bool clearError = false,
   }) => SigningState(
-    flow: flow ?? this.flow,
+    attempt: clearAttempt ? null : attempt ?? this.attempt,
     document: document ?? this.document,
-    order: clearOrder ? null : order ?? this.order,
+    begun: begun ?? this.begun,
+    returning: returning ?? this.returning,
     busy: busy ?? this.busy,
     reviewed: reviewed ?? this.reviewed,
     error: clearError ? null : error ?? this.error,
@@ -61,14 +63,13 @@ class SigningState {
 
 class BankIdController extends StateNotifier<SigningState> {
   final BankIdGateway gateway;
-  final BankIdFlowStore store;
+  final BankIdAttemptStore store;
   final Future<bool> Function(Uri) launch;
   final Future<void> Function(Map<String, dynamic>) onGrant;
   final DateTime Function() now;
   Timer? _timer;
-  Future<void>? _refreshing;
-  Future<void>? _restoration;
-
+  Future<void>? _refreshing, _restoration;
+  String _invitation = '', _authAttempt = '';
   BankIdController({
     required this.gateway,
     required this.store,
@@ -77,13 +78,18 @@ class BankIdController extends StateNotifier<SigningState> {
     DateTime Function()? now,
   }) : now = now ?? DateTime.now,
        super(const SigningState());
-  String _random() => base64UrlEncode(
-    List<int>.generate(32, (_) => Random.secure().nextInt(256)),
-  ).replaceAll('=', '');
 
-  Future<void> _save(BankIdFlow flow) async {
-    await store.write(flow.toJson());
-    state = state.copyWith(flow: flow);
+  Future<void> _error(Object error) async {
+    if (error is AttemptExpired) {
+      _timer?.cancel();
+      _timer = null;
+      await store.clear();
+      _invitation = '';
+      _authAttempt = '';
+      if (mounted) state = SigningState(error: bankIdError(error));
+    } else if (mounted) {
+      state = state.copyWith(error: bankIdError(error));
+    }
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -92,114 +98,88 @@ class BankIdController extends StateNotifier<SigningState> {
     try {
       await _refreshing;
       if (mounted) await action();
-    } catch (error) {
-      if (mounted) state = state.copyWith(error: bankIdError(error));
+    } catch (e) {
+      await _error(e);
     } finally {
       if (mounted) state = state.copyWith(busy: false);
     }
   }
 
-  Future<void> restore() => _restoration ??= _run(_restore);
-  Future<void> _restore() async {
-    try {
-      final saved = await store.read();
-      if (saved == null) return;
-      final flow = BankIdFlow.fromJson(saved);
-      if (flow.expired(now())) {
-        await store.clear();
-        return;
-      }
-      state = SigningState(flow: flow, document: flow.document);
-      if (flow.id.isEmpty) {
-        return; // user can retry the persisted enrollment request
-      }
-      if (flow.requestKey.isNotEmpty) {
-        // Same key recovers the launch response after a lost HTTP response.
-        final order = await gateway.start(flow);
-        await _save(
-          flow.copyWith(orderId: order.id, nonce: order.nonce ?? flow.nonce),
-        );
-        await _updateOrder(order);
-      } else if (flow.kind == 'enroll' || flow.document != null) {
-        final document = await gateway.currentConsent();
-        state = state.copyWith(document: document);
-      }
-    } catch (error) {
-      if (mounted) state = state.copyWith(error: bankIdError(error));
-    }
-  }
-
+  Future<void> restore() => _restoration ??= _run(() async {
+    final saved = await store.read();
+    if (saved == null) return;
+    final a = BankIdAttempt.fromJson(saved, saved['secret'] as String);
+    if (a.expired(now())) throw const AttemptExpired();
+    state = state.copyWith(attempt: a, begun: true);
+    await _update(await gateway.status(a));
+  });
   void setReviewed(bool value) => state = state.copyWith(reviewed: value);
-
   Future<void> begin({String invitationCode = '', bool returning = false}) =>
       _run(() async {
-        _timer?.cancel();
-        _timer = null;
-        // Reuse an unacknowledged creation request after a network failure.
-        var flow = state.flow;
-        if (flow == null || flow.id.isNotEmpty || flow.expired(now())) {
-          flow = BankIdFlow(
-            id: '',
-            clientSecret: _random(),
-            kind: returning ? 'login' : 'enroll',
-            invitationCode: invitationCode.trim(),
-            expiresAt:
-                now().add(const Duration(minutes: 20)).millisecondsSinceEpoch ~/
-                1000,
-          );
-          state = const SigningState(busy: true);
-          await _save(flow);
-        }
-        final response = await gateway.createFlow(flow);
-        flow = flow.copyWith(
-          id: response['id'] as String,
-          expiresAt: response['expiresAt'] as int,
+        _invitation = invitationCode.trim();
+        _authAttempt = '';
+        final doc = returning ? null : await gateway.currentConsent();
+        state = SigningState(
+          begun: true,
+          returning: returning,
+          document: doc,
+          busy: true,
         );
-        await _save(flow);
-        if (flow.kind == 'enroll') {
-          final document = await gateway.currentConsent();
-          state = state.copyWith(
-            document: document,
-            reviewed: false,
-            clearOrder: true,
-          );
-        }
       });
-
-  Future<void> start(String mode, {bool retry = false}) => _run(() async {
-    var flow = state.flow;
-    if (flow == null || flow.id.isEmpty || flow.expired(now())) {
-      throw StateError('No active enrollment.');
+  Future<void> start(String mode) => _run(() => _start(mode));
+  Future<void> _start(String mode) async {
+    if (state.document != null && !state.reviewed) return;
+    if (state.attempt?.pending == true) {
+      await _update(await gateway.status(state.attempt!));
+      return;
     }
-    final isConsent = state.document != null;
-    if (!retry && isConsent && !state.reviewed) return;
-    if (!retry) {
-      flow = flow.copyWith(
-        requestKey: _random(),
-        mode: mode,
-        orderId: '',
-        nonce: '',
-        document: state.document,
-      );
-      await _save(
-        flow,
-      ); // must complete before the BankID request or app launch
+    final secret = base64UrlEncode(
+      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
+    ).replaceAll('=', '');
+    final a = BankIdAttempt(
+      id: sha256.convert(utf8.encode(secret)).toString().substring(0, 32),
+      secret: secret,
+      mode: mode,
+      purpose: state.document == null ? 'auth' : 'sign',
+      expiresAt:
+          now().add(const Duration(minutes: 30)).millisecondsSinceEpoch ~/ 1000,
+    );
+    await store.write(a.toStorage());
+    state = state.copyWith(attempt: a);
+    final input = <String, dynamic>{
+      'clientSecret': secret,
+      'invitationCode': _invitation,
+      'authAttempt': _authAttempt,
+      'consentTextId': state.document?.id ?? '',
+      'documentHash': state.document?.documentHash ?? '',
+      'mode': mode,
+    };
+    BankIdAttempt result;
+    try {
+      result = await gateway.start(a, input);
+    } on BankIdStartRejected catch (error) {
+      await store.clear();
+      state = state.copyWith(clearAttempt: true, reviewed: false);
+      if (error.reason == 'consentChanged') {
+        state = state.copyWith(document: await gateway.currentConsent());
+      } else if (error.reason == 'invitationUnavailable') {
+        _invitation = '';
+        state = const SigningState(busy: true);
+      }
+      rethrow;
     }
-    final order = await gateway.start(flow);
-    flow = flow.copyWith(orderId: order.id, nonce: order.nonce ?? flow.nonce);
-    await _save(flow);
-    await _updateOrder(order);
-    if (order.pending && mode == 'sameDevice' && order.launchUrl != null) {
-      await _launch(order.launchUrl!);
+    await _update(result);
+    if (result.pending && mode == 'sameDevice' && result.launchUrl != null) {
+      await _launch(result.launchUrl!);
     }
-  });
+  }
 
   Future<void> _launch(String value) async {
     final uri = Uri.parse(value);
     if (uri.scheme != 'https' || uri.host != 'app.bankid.com') {
-      throw StateError('Invalid BankID launch URL.');
+      throw StateError('Invalid launch URL');
     }
-    if (!await launch(uri)) {
+    if (!await launch(uri) && mounted) {
       state = state.copyWith(
         error:
             'BankID could not open. Install and set up the BankID app, then try again.',
@@ -208,111 +188,107 @@ class BankIdController extends StateNotifier<SigningState> {
   }
 
   Future<void> openBankId() => _run(() async {
-    final flow = state.flow;
-    if (flow == null) return;
-    final order = await gateway.start(
-      flow,
-    ); // recover the original launch token
-    await _updateOrder(order);
-    if (order.launchUrl != null) await _launch(order.launchUrl!);
+    final a = state.attempt;
+    if (a == null) return;
+    final result = await gateway.status(a);
+    await _update(result);
+    if (result.launchUrl != null) await _launch(result.launchUrl!);
   });
-
   Future<void> refresh() {
-    if (state.busy || state.flow?.orderId.isEmpty != false) {
-      return Future.value();
-    }
+    if (state.busy || state.attempt == null) return Future.value();
     return _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
   }
 
   Future<void> _refresh() async {
     try {
-      if (state.flow!.expired(now())) {
-        _timer?.cancel();
-        _timer = null;
-        state = state.copyWith(
-          error: 'Your enrollment session expired. Start again.',
-        );
-        return;
-      }
-      await _updateOrder(await gateway.status(state.flow!));
-    } catch (error) {
-      if (mounted) state = state.copyWith(error: bankIdError(error));
+      final a = state.attempt!;
+      if (a.expired(now())) throw const AttemptExpired();
+      await _update(await gateway.status(a));
+    } catch (e) {
+      await _error(e);
     }
   }
 
-  Future<void> _updateOrder(BankIdOrder order) async {
+  Future<void> _update(BankIdAttempt a) async {
     if (!mounted) return;
-    state = state.copyWith(order: order, clearError: true);
-    if (order.pending) {
+    await store.write(a.toStorage());
+    if (!mounted) return;
+    state = state.copyWith(
+      attempt: a,
+      document: a.document,
+      begun: true,
+      clearError: true,
+    );
+    if (a.pending) {
       _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => refresh());
-    } else {
-      _timer?.cancel();
-      _timer = null;
-      if (order.accepted && order.purpose == 'auth') await _complete();
+      return;
+    }
+    _timer?.cancel();
+    _timer = null;
+    if (a.accepted && a.consentRequired) {
+      // Keep the accepted attempt credential in secure storage until the next start.
+      _authAttempt = a.authorization;
+      _invitation = '';
+      final doc = await gateway.currentConsent();
+      state = state.copyWith(
+        document: doc,
+        clearAttempt: true,
+        reviewed: false,
+        returning: true,
+      );
+    } else if (a.accepted && a.purpose == 'auth') {
+      await _finish();
     }
   }
 
   Future<void> cancel() => _run(() async {
-    if (state.flow == null) return;
-    await _updateOrder(await gateway.cancel(state.flow!));
+    if (state.attempt != null) {
+      await _update(await gateway.cancel(state.attempt!));
+    }
   });
-
   Future<void> reviewAgain() => _run(() async {
-    final document = await gateway.currentConsent();
-    final flow = state.flow!;
-    await _save(
-      flow.copyWith(requestKey: '', orderId: '', nonce: '', document: document),
-    );
-    state = state.copyWith(
-      document: document,
-      clearOrder: true,
-      reviewed: false,
-    );
-  });
-
-  Future<void> extendQR() => _run(() async {
-    if (state.flow == null || state.order?.canExtendQR != true) return;
-    final result = await gateway.cancel(state.flow!);
-    await _updateOrder(result);
-    if (result.accepted || result.pending) return;
-    final flow = state.flow!.copyWith(
-      requestKey: _random(),
-      orderId: '',
-      nonce: '',
-    );
-    await _save(flow);
-    final order = await gateway.start(flow);
-    await _save(flow.copyWith(orderId: order.id));
-    await _updateOrder(order);
-  });
-
-  Future<void> finish() => _run(_complete);
-  Future<void> _complete() async {
-    final flow = state.flow;
-    if (flow == null || state.order?.accepted != true) return;
-    final grant = await gateway.complete(flow);
-    if (grant['consentRequired'] == true) {
-      final document = await gateway.currentConsent();
-      await _save(
-        flow.copyWith(
-          requestKey: '',
-          orderId: '',
-          nonce: '',
-          document: document,
-        ),
-      );
-      state = state.copyWith(
-        document: document,
-        clearOrder: true,
-        reviewed: false,
-      );
+    if (_invitation.isEmpty && _authAttempt.isEmpty) {
+      await store.clear();
+      state = const SigningState(busy: true);
       return;
     }
-    await onGrant(grant);
+    final doc = await gateway.currentConsent();
+    await store.clear();
+    state = state.copyWith(document: doc, clearAttempt: true, reviewed: false);
+  });
+  Future<void> extendQR() => _run(() async {
+    final a = state.attempt;
+    if (a == null || !a.canExtendQR) return;
+    final result = await gateway.cancel(a);
+    await _update(result);
+    if (!result.pending && !result.accepted) {
+      if (a.purpose == 'sign' && _invitation.isEmpty && _authAttempt.isEmpty) {
+        await store.clear();
+        state = const SigningState(busy: true);
+        return;
+      }
+      state = state.copyWith(clearAttempt: true);
+      await _start('qr');
+    }
+  });
+  Future<void> finish() => _run(_finish);
+  Future<void> _finish() async {
+    final a = state.attempt;
+    if (a == null || !a.accepted) return;
+    // Recheck current consent and revocation before using a previously displayed receipt.
+    final fresh = await gateway.status(a);
+    if (fresh.consentRequired) {
+      await _update(fresh);
+      return;
+    }
+    if (fresh.grant == null) {
+      throw StateError('No authenticated session received');
+    }
+    await onGrant(fresh.grant!);
     await store.clear();
     _timer?.cancel();
     _timer = null;
-    state = const SigningState();
+    if (mounted) state = const SigningState();
   }
 
   Future<void> handleReturn(Uri uri) async {
@@ -324,35 +300,40 @@ class BankIdController extends StateNotifier<SigningState> {
       return;
     }
     await restore();
-    if (state.flow == null || state.flow!.orderId.isEmpty) return;
+    final a = state.attempt;
+    if (a == null) return;
     String? nonce;
     try {
       nonce = Uri.splitQueryString(uri.fragment)['nonce'];
     } on FormatException {
       return;
     }
-    if (nonce == null || nonce != state.flow!.nonce) {
+    if (nonce == null || nonce != a.nonce) {
       state = state.copyWith(
-        error: 'This BankID return does not match your current session.',
+        error: 'This BankID return does not match your current request.',
       );
       return;
     }
     await _run(() async {
-      await _updateOrder(await gateway.returned(state.flow!, nonce!));
+      await _update(await gateway.returned(a, nonce!));
     });
   }
 
   Future<void> reset() => _run(() async {
+    if (state.attempt?.pending == true) {
+      final result = await gateway.cancel(state.attempt!);
+      if (result.accepted) {
+        await _update(result);
+        return;
+      }
+    }
     _timer?.cancel();
     _timer = null;
-    final flow = state.flow;
-    if (flow != null && flow.id.isNotEmpty && !flow.expired(now())) {
-      await gateway.abandon(flow);
-    }
     await store.clear();
+    _invitation = '';
+    _authAttempt = '';
     state = const SigningState(busy: true);
   });
-
   @override
   void dispose() {
     _timer?.cancel();
@@ -363,7 +344,7 @@ class BankIdController extends StateNotifier<SigningState> {
 final bankIdProvider = StateNotifierProvider<BankIdController, SigningState>(
   (ref) => BankIdController(
     gateway: HttpBankIdGateway(),
-    store: SecureBankIdFlowStore(),
+    store: SecureBankIdAttemptStore(),
     launch: (uri) =>
         launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication),
     onGrant: (grant) async {

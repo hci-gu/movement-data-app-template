@@ -28,14 +28,14 @@ func PublishConsent(app core.App, cfg Config, version, title, text string) (*cor
 	}
 	var record *core.Record
 	err := app.RunInTransaction(func(tx core.App) error {
-		_, err := tx.FindFirstRecordByFilter("consent_versions", "study={:study} && version={:version}", dbx.Params{"study": cfg.StudyID, "version": version})
+		_, err := tx.FindFirstRecordByFilter("consent_texts", "study={:study} && version={:version}", dbx.Params{"study": cfg.StudyID, "version": version})
 		if err == nil {
 			return problem(400, "duplicateVersion", "This consent version already exists; use a new version label.")
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		record, err = newRecord(tx, "consent_versions")
+		record, err = newRecord(tx, "consent_texts")
 		if err != nil {
 			return err
 		}
@@ -44,19 +44,18 @@ func PublishConsent(app core.App, cfg Config, version, title, text string) (*cor
 		record.Set("title", title)
 		record.Set("text", text)
 		record.Set("documentHash", hash(text))
-		if err := tx.Save(record); err != nil {
-			return err
-		}
-		settings, err := tx.FindFirstRecordByData("study_settings", "study", cfg.StudyID)
-		if errors.Is(err, sql.ErrNoRows) {
-			settings, err = newRecord(tx, "study_settings")
-		}
+		current, err := tx.FindRecordsByFilter("consent_texts", "study={:study} && current=true", "", 0, 0, dbx.Params{"study": cfg.StudyID})
 		if err != nil {
 			return err
 		}
-		settings.Set("study", cfg.StudyID)
-		settings.Set("currentVersion", record.Id)
-		return tx.Save(settings)
+		for _, old := range current {
+			old.Set("current", false)
+			if err := tx.Save(old); err != nil {
+				return err
+			}
+		}
+		record.Set("current", true)
+		return tx.Save(record)
 	})
 	return record, err
 }
@@ -75,43 +74,57 @@ func IssueInvitation(app core.App, cfg Config, participant, expectedIdentity str
 		return nil, "", problem(400, "invalidIdentity", "Expected personal number must contain exactly 12 digits.")
 	}
 	var code string
-	record, err := newRecord(app, "study_invitations")
-	if err != nil {
-		return nil, "", err
-	}
-	record.Set("study", cfg.StudyID)
-	record.Set("participantId", participant)
-	record.Set("validityHours", hours)
-	record.Set("expiresAt", now.Add(time.Duration(hours)*time.Hour).Unix())
-	err = app.RunInTransaction(func(tx core.App) error {
+	var record *core.Record
+	err := app.RunInTransaction(func(tx core.App) error {
 		var err error
+		record, err = tx.FindFirstRecordByData("users", "username", participant)
+		if errors.Is(err, sql.ErrNoRows) {
+			record, err = newRecord(tx, "users")
+			if err != nil {
+				return err
+			}
+			record.Set("username", participant)
+			record.SetPassword(randomSecret())
+		} else if err != nil {
+			return err
+		}
+		if record.GetBool("active") {
+			return problem(409, "alreadyEnrolled", "This participant is already enrolled; use BankID login.")
+		}
+		if record.GetString("study") != "" && (record.GetString("study") != cfg.StudyID || record.GetString("environment") != cfg.Environment) {
+			return problem(409, "participantConflict", "Participant belongs to a different study or environment.")
+		}
 		code, err = unusedInvitationCode(tx, cfg, rand.Reader)
 		if err != nil {
 			return err
 		}
-		record.Set("tokenHash", cfg.digest("invitation", code))
-		// Allocate the ID used to bind the encrypted values to this invitation.
+		record.Set("study", cfg.StudyID)
+		record.Set("environment", cfg.Environment)
+		record.Set("invitationHash", cfg.digest("invitation", code))
+		record.Set("invitationExpiresAt", now.Add(time.Duration(hours)*time.Hour).Unix())
+		record.Set("expectedCipher", "")
+		record.Set("validityHours", hours)
 		if err := tx.Save(record); err != nil {
 			return err
 		}
-		sealedCode, err := cfg.seal("invitation-code:"+record.Id, code)
+		sealed, err := cfg.Seal("invitation-code:"+record.Id, code)
 		if err != nil {
 			return err
 		}
-		record.Set("tokenCipher", sealedCode)
+		record.Set("invitationCipher", sealed)
 		if expectedIdentity != "" {
-			sealedIdentity, err := cfg.seal("invitation:"+record.Id, identity{PersonalNumber: expectedIdentity})
+			sealed, err := cfg.Seal("expected:"+record.Id, identity{PersonalNumber: expectedIdentity})
 			if err != nil {
 				return err
 			}
-			record.Set("expectedCipher", sealedIdentity)
+			record.Set("expectedCipher", sealed)
 		}
 		return tx.Save(record)
 	})
 	return record, code, err
 }
 
-// Choose and reserve codes in the issuing transaction. The unique tokenHash
+// Choose and reserve codes in the issuing transaction. The unique invitationHash
 // index is the final guard against assigning the same code to two invitations.
 func unusedInvitationCode(app core.App, cfg Config, source io.Reader) (string, error) {
 	for attempt := 0; attempt < 32; attempt++ {
@@ -121,7 +134,7 @@ func unusedInvitationCode(app core.App, cfg Config, source io.Reader) (string, e
 		}
 		n := number.Int64()
 		code := fmt.Sprintf("%03d-%03d", n/1000, n%1000)
-		_, err = app.FindFirstRecordByData("study_invitations", "tokenHash", cfg.digest("invitation", code))
+		_, err = app.FindFirstRecordByData("users", "invitationHash", cfg.digest("invitation", code))
 		if errors.Is(err, sql.ErrNoRows) {
 			return code, nil
 		}

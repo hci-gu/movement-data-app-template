@@ -64,7 +64,7 @@ func RegisterCommands(app *pocketbase.PocketBase) {
 		if err != nil {
 			return err
 		}
-		cmd.Printf("Participant: %s\nInvitation: %s\nExpires: %s\n", participant, code, time.Unix(int64(r.GetInt("expiresAt")), 0).UTC().Format(time.RFC3339))
+		cmd.Printf("Participant: %s\nInvitation: %s\nExpires: %s\n", participant, code, time.Unix(int64(r.GetInt("invitationExpiresAt")), 0).UTC().Format(time.RFC3339))
 		return nil
 	}}
 	invite.Flags().StringVar(&participant, "participant", "", "Study participant identifier")
@@ -79,7 +79,7 @@ func RegisterCommands(app *pocketbase.PocketBase) {
 		if err := cfg.ValidateSecrets(); err != nil {
 			return err
 		}
-		r, err := app.FindRecordById("consent_signatures", signatureID)
+		r, err := app.FindRecordById("signatures", signatureID)
 		if err != nil {
 			return err
 		}
@@ -87,7 +87,7 @@ func RegisterCommands(app *pocketbase.PocketBase) {
 			return errors.New("signature belongs to another study")
 		}
 		var raw json.RawMessage
-		if err := cfg.open("signature:"+r.GetString("order"), r.GetString("evidenceCipher"), &raw); err != nil {
+		if err := cfg.Open("signature:"+r.Id, r.GetString("evidenceCipher"), &raw); err != nil {
 			return err
 		}
 		f, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -106,18 +106,6 @@ func RegisterCommands(app *pocketbase.PocketBase) {
 	}}
 	export.Flags().StringVar(&signatureID, "signature", "", "Signature record ID")
 	export.Flags().StringVar(&output, "out", "", "New private output file (contains personal information)")
-	purge := &cobra.Command{Use: "purge-sessions", Short: "Remove expired operational secrets after a 24-hour grace period", RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-		count, err := PurgeSessions(app, cfg, time.Now())
-		if err != nil {
-			return err
-		}
-		cmd.Printf("Purged %d operational records; consent evidence retained.\n", count)
-		return nil
-	}}
-	root.AddCommand(publish, invite, export, purge)
+	root.AddCommand(publish, invite, export)
 	app.RootCmd.AddCommand(root)
 }

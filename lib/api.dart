@@ -74,12 +74,12 @@ class Api {
         (await api.get('/api/study/consent/receipt')).data as Map,
       );
 
-  Future<void> uploadMetadata(
+  Future<void> saveParticipantMetadata(
     String participantId,
     Map<String, dynamic> metadata,
   ) async {
     await api.post(
-      '/info',
+      '/api/study/metadata',
       options: Options(
         headers: {'Content-Type': 'application/json; charset=UTF-8'},
       ),

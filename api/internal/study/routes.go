@@ -3,15 +3,13 @@ package study
 import (
 	"app/internal/bankid"
 	"crypto/subtle"
-	"database/sql"
-	"encoding/base64"
-	"errors"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
@@ -19,7 +17,17 @@ import (
 )
 
 func problem(status int, reason, message string) error {
-	return apis.NewApiError(status, message, map[string]any{"reason": reason})
+	return apis.NewApiError(status, message, map[string]any{"reason": validation.NewError(reason, message)})
+}
+func restartRequired() error {
+	return problem(410, "attemptExpired", "This BankID request has expired or the server restarted. Start a new request.")
+}
+func bearer(e *core.RequestEvent) string {
+	return strings.TrimPrefix(e.Request.Header.Get("Authorization"), "Bearer ")
+}
+func splitCredential(value string) (string, string, bool) {
+	id, secret, ok := strings.Cut(value, ".")
+	return id, secret, ok && len(id) == 32 && secretPattern.MatchString(secret)
 }
 
 type rateEntry struct {
@@ -69,6 +77,7 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 
 func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 	s.registerLinks(r)
+	s.registerQuestionnaireAccess()
 	g := r.Group("/api/study")
 	g.BindFunc(s.throttle)
 	g.BindFunc(func(e *core.RequestEvent) error {
@@ -80,110 +89,48 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return problem(503, "consentUnavailable", "Study consent is not available yet.")
 		}
-		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.Config.Environment != "disabled" && s.Config.SigningEnabled})
+		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil && s.Config.SigningEnabled})
 	})
-	g.POST("/enrollments", s.createFlow)
-	g.POST("/bankid-orders", s.withFlow(func(e *core.RequestEvent, flow *core.Record) error {
-		var input StartInput
-		if err := e.BindBody(&input); err != nil {
-			return problem(400, "invalidRequest", "Invalid signing request.")
+	g.POST("/bankid/attempts", func(e *core.RequestEvent) error {
+		var in StartInput
+		if err := e.BindBody(&in); err != nil {
+			return problem(400, "invalidRequest", "Invalid request.")
 		}
 		ip, err := s.Config.endUserIP(e.Request)
 		if err != nil {
-			return problem(400, "invalidIP", "Unable to establish your connection.")
+			return err
 		}
-		order, err := s.StartOrder(e.Request.Context(), flow, input, ip)
+		a, err := s.Start(e.Request.Context(), in, ip)
 		if err != nil {
 			return err
 		}
-		return s.orderResponse(e, order, true)
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		return s.attemptResponse(e, a)
+	})
+	g.GET("/bankid/attempts/{id}", s.withAttempt(s.attemptResponse))
+	g.POST("/bankid/attempts/{id}/cancel", s.withAttempt(func(e *core.RequestEvent, a *Attempt) error {
+		if err := s.cancel(e.Request.Context(), a); err != nil {
+			return err
+		}
+		return s.attemptResponse(e, a)
 	}))
-	g.GET("/bankid-orders/{id}", s.withFlow(func(e *core.RequestEvent, flow *core.Record) error {
-		order, err := s.ownedOrder(e, flow)
-		if err != nil {
-			return err
-		}
-		return s.orderResponse(e, order, false)
-	}))
-	g.POST("/bankid-orders/{id}/return", s.withFlow(func(e *core.RequestEvent, flow *core.Record) error {
-		order, err := s.ownedOrder(e, flow)
-		if err != nil {
-			return err
-		}
-		var body struct {
+	g.POST("/bankid/attempts/{id}/return", s.withAttempt(func(e *core.RequestEvent, a *Attempt) error {
+		var in struct {
 			Nonce string `json:"nonce"`
 		}
-		if err := e.BindBody(&body); err != nil {
-			return problem(400, "invalidReturn", "Invalid BankID return.")
-		}
-		if order.GetString("mode") != "sameDevice" || subtle.ConstantTimeCompare([]byte(hash(body.Nonce)), []byte(order.GetString("nonceHash"))) != 1 {
-			return problem(400, "invalidReturn", "This BankID return does not match your session.")
-		}
-		return s.orderResponse(e, order, false)
-	}))
-	g.POST("/bankid-orders/{id}/cancel", s.withFlow(func(e *core.RequestEvent, flow *core.Record) error {
-		order, err := s.ownedOrder(e, flow)
-		if err != nil {
+		if err := e.BindBody(&in); err != nil {
 			return err
 		}
-		// First collect the latest state. A completed signature is not a cancelled order.
-		if order.GetString("status") == "pending" && int64(order.GetInt("nextCollectAt")) <= s.now().UnixMilli() {
-			if err := s.advance(e.Request.Context(), order.Id); err != nil {
-				return err
-			}
-			order, err = s.App.FindRecordById("bankid_orders", order.Id)
-			if err != nil {
-				return err
-			}
+		if a.Mode != "sameDevice" || subtle.ConstantTimeCompare([]byte(in.Nonce), []byte(a.Nonce)) != 1 {
+			return problem(400, "invalidReturn", "This BankID return does not match your request.")
 		}
-		if err := s.cancel(e.Request.Context(), order); err != nil {
-			return err
-		}
-		return s.orderResponse(e, order, false)
-	}))
-	g.POST("/enrollments/{id}/complete", s.withFlow(s.completeFlow))
-	g.POST("/enrollments/{id}/abandon", s.withFlow(func(e *core.RequestEvent, flow *core.Record) error {
-		if flow.Id != e.Request.PathValue("id") {
-			return problem(404, "sessionNotFound", "Session not found.")
-		}
-		if id := flow.GetString("latestOrder"); id != "" {
-			order, err := s.App.FindRecordById("bankid_orders", id)
-			if err != nil {
-				return err
-			}
-			if err := s.cancel(e.Request.Context(), order); err != nil {
-				return err
-			}
-		}
-		err := s.App.RunInTransaction(func(tx core.App) error {
-			flow.Set("expiresAt", s.now().Unix())
-			if err := tx.Save(flow); err != nil {
-				return err
-			}
-			if id := flow.GetString("invitation"); id != "" {
-				invite, err := tx.FindRecordById("study_invitations", id)
-				if err != nil {
-					return err
-				}
-				if !invite.GetBool("consumed") && invite.GetString("claimedFlow") == flow.Id {
-					invite.Set("claimedFlow", "")
-					if err := tx.Save(invite); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return err
-		}
-		return e.NoContent(204)
+		return s.attemptResponse(e, a)
 	}))
 	g.GET("/me", func(e *core.RequestEvent) error { return e.JSON(200, s.userDTO(e.Auth)) }).BindFunc(s.RequireSession)
 	g.POST("/logout", func(e *core.RequestEvent) error {
-		session := e.Get("studySession").(*core.Record)
-		session.Set("revoked", true)
-		if err := s.App.Save(session); err != nil {
+		e.Auth.RefreshTokenKey()
+		if err := s.App.Save(e.Auth); err != nil {
 			return err
 		}
 		return e.NoContent(204)
@@ -197,11 +144,17 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 			if user.GetString("consentStatus") == "withdrawn" {
 				return nil
 			}
-			user.Set("consentStatus", "withdrawn")
-			if err := tx.Save(user); err != nil {
+			sig, err := tx.FindRecordById("signatures", user.GetString("consentSignature"))
+			if err != nil {
 				return err
 			}
-			return consentEvent(tx, s.Config.StudyID, user.Id, user.GetString("consentSignature"), "withdrawn", s.now())
+			sig.Set("withdrawnAt", s.now().Unix())
+			if err := tx.Save(sig); err != nil {
+				return err
+			}
+			user.Set("withdrawnAt", s.now().Unix())
+			user.Set("consentStatus", "withdrawn")
+			return tx.Save(user)
 		})
 		if err != nil {
 			return err
@@ -209,287 +162,180 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		return e.NoContent(204)
 	}).BindFunc(s.RequireSession)
 	g.GET("/consent/receipt", func(e *core.RequestEvent) error {
-		r, err := s.App.FindRecordById("consent_signatures", e.Auth.GetString("consentSignature"))
-		if err != nil || r.GetString("user") != e.Auth.Id {
+		sig, err := s.App.FindRecordById("signatures", e.Auth.GetString("consentSignature"))
+		if err != nil || sig.GetString("user") != e.Auth.Id {
 			return problem(404, "receiptUnavailable", "No signed consent receipt is available.")
 		}
-		doc, err := s.App.FindRecordById("consent_versions", r.GetString("version"))
+		doc, err := s.App.FindRecordById("consent_texts", sig.GetString("version"))
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"signatureId": r.Id, "receivedAt": r.GetInt("receivedAt"), "status": e.Auth.GetString("consentStatus"), "document": documentDTO(doc)})
+		return e.JSON(200, map[string]any{"signatureId": sig.Id, "receivedAt": sig.GetInt("receivedAt"), "status": e.Auth.GetString("consentStatus"), "document": documentDTO(doc)})
 	}).BindFunc(s.RequireSession)
 }
-
-func bearer(e *core.RequestEvent) string {
-	h := e.Request.Header.Get("Authorization")
-	if strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimPrefix(h, "Bearer ")
-	}
-	return h
-}
-
-func (s *Service) createFlow(e *core.RequestEvent) error {
-	if s.Config.Environment == "disabled" || !s.Config.SigningEnabled {
-		return problem(503, "signingUnavailable", "BankID is currently unavailable.")
-	}
-	var body struct {
-		Kind       string `json:"kind"`
-		Invitation string `json:"invitationCode"`
-		Secret     string `json:"clientSecret"`
-	}
-	if err := e.BindBody(&body); err != nil {
-		return problem(400, "invalidRequest", "Invalid enrollment request.")
-	}
-	secret, err := base64.RawURLEncoding.DecodeString(body.Secret)
-	if err != nil || len(secret) != 32 || (body.Kind != "enroll" && body.Kind != "login") {
-		return problem(400, "invalidRequest", "Invalid enrollment request.")
-	}
-	tokenHash := s.Config.digest("flow", body.Secret)
-	unlock := s.lock("create:" + s.Config.digest("invitation", body.Invitation))
-	defer unlock()
-	var flow *core.Record
-	err = s.App.RunInTransaction(func(tx core.App) error {
-		var err error
-		flow, err = tx.FindFirstRecordByData("enrollment_sessions", "tokenHash", tokenHash)
-		if err == nil {
-			if flow.GetString("kind") != body.Kind || flow.GetString("environment") != s.Config.Environment || flow.GetInt("expiresAt") <= int(s.now().Unix()) {
-				return problem(409, "sessionExpired", "Start a new enrollment session.")
-			}
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		var invite *core.Record
-		if body.Kind == "enroll" {
-			invite, err = tx.FindFirstRecordByData("study_invitations", "tokenHash", s.Config.digest("invitation", strings.TrimSpace(body.Invitation)))
-			if err != nil || invite.GetString("study") != s.Config.StudyID || invite.GetBool("consumed") || invite.GetInt("expiresAt") <= int(s.now().Unix()) {
-				return problem(400, "invitationUnavailable", "This invitation is invalid, used or expired.")
-			}
-			if claim := invite.GetString("claimedFlow"); claim != "" {
-				old, err := tx.FindRecordById("enrollment_sessions", claim)
-				if err == nil && old.GetInt("expiresAt") > int(s.now().Unix()) {
-					return problem(409, "invitationInUse", "This invitation is already open on another session. Resume that session or wait for it to expire.")
-				}
-				if err != nil && !errors.Is(err, sql.ErrNoRows) {
-					return err
-				}
-			}
-		}
-		flow, err = newRecord(tx, "enrollment_sessions")
+func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) func(*core.RequestEvent) error {
+	return func(e *core.RequestEvent) error {
+		a, err := s.owned(bearer(e))
 		if err != nil {
 			return err
 		}
-		flow.Set("study", s.Config.StudyID)
-		flow.Set("environment", s.Config.Environment)
-		flow.Set("kind", body.Kind)
-		flow.Set("tokenHash", tokenHash)
-		flow.Set("expiresAt", s.now().Add(FlowLifetime).Unix())
-		if invite != nil {
-			flow.Set("invitation", invite.Id)
-			flow.Set("participantId", invite.GetString("participantId"))
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if a.ID != e.Request.PathValue("id") || !s.alive(a) {
+			return restartRequired()
 		}
-		if err := tx.Save(flow); err != nil {
-			return err
-		}
-		if invite != nil {
-			invite.Set("claimedFlow", flow.Id)
-			if err := tx.Save(invite); err != nil {
+		if a.Mode == "sameDevice" {
+			ip, err := s.Config.endUserIP(e.Request)
+			if err != nil {
 				return err
 			}
+			if ip != a.IP {
+				return problem(409, "connectionChanged", "Return to the original connection or start again.")
+			}
 		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	return e.JSON(200, map[string]any{"id": flow.Id, "expiresAt": flow.GetInt("expiresAt"), "latestOrderId": flow.GetString("latestOrder")})
-}
-
-func (s *Service) withFlow(next func(*core.RequestEvent, *core.Record) error) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		id, secret, ok := strings.Cut(bearer(e), ".")
-		if !ok || len(id) != 15 || len(secret) != 43 {
-			return problem(401, "sessionExpired", "Your enrollment session has expired. Start again.")
-		}
-		unlock := s.lock(id)
-		defer unlock()
-		flow, err := s.App.FindRecordById("enrollment_sessions", id)
-		if err != nil || flow.GetString("study") != s.Config.StudyID || flow.GetString("environment") != s.Config.Environment || flow.GetInt("expiresAt") <= int(s.now().Unix()) || subtle.ConstantTimeCompare([]byte(flow.GetString("tokenHash")), []byte(s.Config.digest("flow", secret))) != 1 {
-			return problem(401, "sessionExpired", "Your enrollment session has expired. Start again.")
-		}
-		return next(e, flow)
+		return next(e, a)
 	}
 }
-
-func (s *Service) ownedOrder(e *core.RequestEvent, flow *core.Record) (*core.Record, error) {
-	order, err := s.App.FindRecordById("bankid_orders", e.Request.PathValue("id"))
-	if err != nil || order.GetString("flow") != flow.Id {
-		return nil, problem(404, "orderNotFound", "BankID request not found.")
+func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
+	response := map[string]any{"id": a.ID, "status": a.Status, "hintCode": a.Hint, "purpose": a.Purpose, "mode": a.Mode, "signatureId": a.SignatureID, "pickedUp": a.PickedUp, "expiresAt": a.ExpiresAt.Add(ResultLifetime).Unix(), "nonce": a.Nonce}
+	if a.Document != nil {
+		response["document"] = a.Document
 	}
-	return order, nil
-}
-
-func (s *Service) orderResponse(e *core.RequestEvent, order *core.Record, includeLaunch bool) error {
-	if order.GetString("mode") == "sameDevice" {
-		ip, err := s.Config.endUserIP(e.Request)
-		if err != nil {
-			return err
+	if a.Status == "pending" && a.Terminal == "" {
+		if a.Mode == "sameDevice" {
+			response["launchUrl"] = "https://app.bankid.com/?autostarttoken=" + url.QueryEscape(a.Order.AutoStartToken)
 		}
-		if subtle.ConstantTimeCompare([]byte(order.GetString("ipHash")), []byte(s.Config.digest("ip", ip))) != 1 {
-			return problem(409, "connectionChanged", "Your network connection changed. Return to the original connection or start a new BankID session.")
-		}
-	}
-	status := order.GetString("status")
-	response := map[string]any{"id": order.Id, "status": status, "hintCode": order.GetString("hintCode"), "purpose": order.GetString("purpose"), "mode": order.GetString("mode"), "signatureId": order.GetString("signatureId"), "pickedUp": order.GetBool("pickedUp")}
-	if status == "pending" {
-		var secrets orderSecrets
-		if err := s.Config.open("order:"+order.Id, order.GetString("requestCipher"), &secrets); err != nil {
-			return err
-		}
-		if includeLaunch && order.GetString("mode") == "sameDevice" {
-			response["launchUrl"] = "https://app.bankid.com/?autostarttoken=" + url.QueryEscape(secrets.Order.AutoStartToken)
-			response["nonce"] = secrets.Nonce
-		}
-		if order.GetString("mode") == "qr" && !order.GetBool("pickedUp") {
-			receivedAt := time.UnixMilli(int64(order.GetInt("receivedAt")))
-			remaining := 30 - int(s.now().Sub(receivedAt).Seconds())
+		if a.Mode == "qr" && !a.PickedUp {
+			remaining := 30 - int(s.now().Sub(a.ReceivedAt).Seconds())
 			if remaining < 0 {
 				remaining = 0
 			}
 			response["qrSecondsRemaining"] = remaining
 			if remaining > 0 {
-				response["qrData"] = bankid.QRPayload(secrets.Order, receivedAt, s.now())
+				response["qrData"] = bankid.QRPayload(a.Order, a.ReceivedAt, s.now())
 			}
+		}
+	}
+	if a.Status == "accepted" {
+		user, err := s.App.FindRecordById("users", a.UserID)
+		if err != nil {
+			return err
+		}
+		if !user.GetBool("active") || user.TokenKey() != a.TokenKey {
+			return restartRequired()
+		}
+		if !s.activeConsent(s.App, user) {
+			response["consentRequired"] = true
+		} else {
+			if a.Grant == nil {
+				expires := a.FinishedAt.Add(SessionLifetime)
+				token, err := security.NewJWT(jwt.MapClaims{core.TokenClaimType: core.TokenTypeAuth, core.TokenClaimId: user.Id, core.TokenClaimCollectionId: user.Collection().Id, core.TokenClaimRefreshable: false, "study": s.Config.StudyID, "environment": s.Config.Environment, "exp": expires.Unix()}, user.TokenKey()+user.Collection().AuthToken.Secret, expires.Sub(s.now()))
+				if err != nil {
+					return err
+				}
+				a.Grant = &grant{Token: token, ExpiresAt: expires.Unix(), Record: s.userDTO(user)}
+			}
+			if a.Grant.ExpiresAt <= s.now().Unix() {
+				return restartRequired()
+			}
+			response["grant"] = a.Grant
 		}
 	}
 	return e.JSON(200, response)
 }
 
 type grant struct {
-	Token           string         `json:"token"`
-	ExpiresAt       int64          `json:"expiresAt"`
-	Record          map[string]any `json:"record"`
-	ConsentRequired bool           `json:"consentRequired"`
+	Token     string         `json:"token"`
+	ExpiresAt int64          `json:"expiresAt"`
+	Record    map[string]any `json:"record"`
 }
 
 func (s *Service) userDTO(user *core.Record) map[string]any {
 	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "username": user.GetString("username"), "consentStatus": user.GetString("consentStatus"), "consentVersion": user.GetString("consentVersion"), "consentSignature": user.GetString("consentSignature"), "consentRequired": !s.activeConsent(s.App, user)}
 }
-
-func (s *Service) completeFlow(e *core.RequestEvent, flow *core.Record) error {
-	if flow.Id != e.Request.PathValue("id") {
-		return problem(404, "sessionNotFound", "Session not found.")
-	}
-	order, err := s.App.FindRecordById("bankid_orders", flow.GetString("latestOrder"))
-	if err != nil || order.GetString("status") != "accepted" {
-		return problem(409, "notCompleted", "Complete your BankID request first.")
-	}
-	if order.GetString("mode") == "sameDevice" {
-		ip, err := s.Config.endUserIP(e.Request)
-		if err != nil {
-			return err
-		}
-		if s.Config.digest("ip", ip) != order.GetString("ipHash") {
-			return problem(409, "connectionChanged", "Return to the original network to complete this session.")
-		}
-	}
-	user, err := s.App.FindRecordById("users", flow.GetString("user"))
-	if err != nil {
-		return err
-	}
-	if !s.activeConsent(s.App, user) {
-		return e.JSON(200, grant{ConsentRequired: true})
-	}
-	var response grant
-	if encrypted := flow.GetString("grantCipher"); encrypted != "" {
-		if err := s.Config.open("grant:"+flow.Id, encrypted, &response); err != nil {
-			return err
-		}
-		if response.ExpiresAt <= s.now().Unix() {
-			return problem(401, "sessionExpired", "Sign in again with BankID.")
-		}
-		return e.JSON(200, response)
-	}
-	expires := time.Unix(int64(flow.GetInt("authenticatedAt")), 0).Add(SessionLifetime)
-	if !s.now().Before(expires) {
-		return problem(401, "sessionExpired", "Sign in again with BankID.")
-	}
-	sessionID := randomSecret()
-	token, err := security.NewJWT(jwt.MapClaims{
-		core.TokenClaimType:         core.TokenTypeAuth,
-		core.TokenClaimId:           user.Id,
-		core.TokenClaimCollectionId: user.Collection().Id,
-		core.TokenClaimRefreshable:  false,
-		"studySession":              sessionID,
-	}, user.TokenKey()+user.Collection().AuthToken.Secret, expires.Sub(s.now()))
-	if err != nil {
-		return err
-	}
-	response = grant{Token: token, ExpiresAt: expires.Unix(), Record: s.userDTO(user)}
-	sealed, err := s.Config.seal("grant:"+flow.Id, response)
-	if err != nil {
-		return err
-	}
-	err = s.App.RunInTransaction(func(tx core.App) error {
-		flow.Set("grantCipher", sealed)
-		if err := tx.Save(flow); err != nil {
-			return err
-		}
-		r, err := newRecord(tx, "app_sessions")
-		if err != nil {
-			return err
-		}
-		r.Set("study", s.Config.StudyID)
-		r.Set("environment", s.Config.Environment)
-		r.Set("user", user.Id)
-		r.Set("tokenHash", hash(token))
-		r.Set("expiresAt", expires.Unix())
-		return tx.Save(r)
-	})
-	if err != nil {
-		return err
-	}
-	return e.JSON(200, response)
-}
-
-func (s *Service) RequireSession(e *core.RequestEvent) error {
+func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
 	user, err := s.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
-	if err != nil || user.Collection().Name != "users" {
+	if err != nil || user.Collection().Name != "users" || !user.GetBool("active") || user.GetString("study") != s.Config.StudyID || user.GetString("environment") != s.Config.Environment {
 		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
-	session, err := s.App.FindFirstRecordByData("app_sessions", "tokenHash", hash(token))
-	if err != nil || session.GetString("user") != user.Id || session.GetString("study") != s.Config.StudyID || session.GetString("environment") != s.Config.Environment || session.GetBool("revoked") || session.GetInt("expiresAt") <= int(s.now().Unix()) {
+	// The token was verified above; inspect the application scope claims.
+	claims, err := security.ParseUnverifiedJWT(token)
+	if err != nil || claims["study"] != s.Config.StudyID || claims["environment"] != s.Config.Environment || claims[core.TokenClaimRefreshable] != false {
 		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
 	e.Auth = user
-	e.Set("studySession", session)
-	return e.Next()
+	return nil
 }
-
-func (s *Service) RequireConsent(e *core.RequestEvent) error {
-	if e.Auth == nil || !s.activeConsent(s.App, e.Auth) {
-		return problem(403, "consentRequired", "Sign the current study consent before uploading.")
+func (s *Service) RequireSession(e *core.RequestEvent) error {
+	if err := s.validateSession(e); err != nil {
+		return err
 	}
 	return e.Next()
 }
-
-// Even superuser API writes must use the study operations, which preserve
-// immutable documents/evidence. Ordinary collection rules alone exclude no superusers.
+func (s *Service) RequireConsent(e *core.RequestEvent) error {
+	if e.Auth == nil || !s.activeConsent(s.App, e.Auth) {
+		return problem(403, "consentRequired", "Sign the current study consent before continuing.")
+	}
+	return e.Next()
+}
 func ProtectRecords(app core.App) {
-	immutable := []string{"consent_versions", "consent_signatures", "participant_identities", "consent_events", "study_settings"}
-	app.OnRecordCreateRequest(immutable...).BindFunc(func(e *core.RecordRequestEvent) error {
-		return problem(403, "managedRecord", "Use the enrollment administration or signing flow to create this record.")
+	managed := []string{"consent_texts", "signatures", "users"}
+	app.OnRecordCreateRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
+		return problem(403, "managedRecord", "Use the study administration or BankID flow.")
 	})
-	app.OnRecordUpdateRequest(immutable...).BindFunc(func(e *core.RecordRequestEvent) error {
-		return problem(403, "immutableRecord", "This study record is immutable.")
+	app.OnRecordUpdateRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
+		return problem(403, "managedRecord", "Use the study administration or BankID flow.")
 	})
-	app.OnRecordDeleteRequest(immutable...).BindFunc(func(e *core.RecordRequestEvent) error {
-		return problem(403, "immutableRecord", "Use the approved retention procedure for study evidence.")
+	app.OnRecordDeleteRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
+		return problem(403, "managedRecord", "Study evidence and participants cannot be deleted here.")
 	})
 	app.OnRecordAuthRequest("users").BindFunc(func(e *core.RecordAuthRequestEvent) error {
 		return problem(403, "bankidRequired", "Use BankID to sign in.")
 	})
+}
+
+// Questionnaire definitions are shared; answers remain owned by their participant.
+// Rules handle record selection, while these hooks enforce BankID scope and current consent.
+func (s *Service) registerQuestionnaireAccess() {
+	names := []string{"questionnaires", "questions", "questionOptions", "answers"}
+	guard := func(e *core.RequestEvent) error {
+		if err := s.validateSession(e); err != nil {
+			return err
+		}
+		if !s.activeConsent(s.App, e.Auth) {
+			return problem(403, "consentRequired", "Sign the current study consent before continuing.")
+		}
+		return nil
+	}
+	s.App.OnRecordsListRequest(names...).BindFunc(func(e *core.RecordsListRequestEvent) error {
+		if !e.HasSuperuserAuth() {
+			if err := guard(e.RequestEvent); err != nil {
+				return err
+			}
+		}
+		return e.Next()
+	})
+	s.App.OnRecordViewRequest(names...).BindFunc(func(e *core.RecordRequestEvent) error {
+		if !e.HasSuperuserAuth() {
+			if err := guard(e.RequestEvent); err != nil {
+				return err
+			}
+		}
+		return e.Next()
+	})
+	write := func(e *core.RecordRequestEvent) error {
+		if !e.HasSuperuserAuth() {
+			if err := guard(e.RequestEvent); err != nil {
+				return err
+			}
+			if e.Record.GetString("user") != e.Auth.Id {
+				return problem(403, "wrongParticipant", "Answers must belong to the authenticated participant.")
+			}
+		}
+		return e.Next()
+	}
+	s.App.OnRecordCreateRequest("answers").BindFunc(write)
+	s.App.OnRecordUpdateRequest("answers").BindFunc(write)
+	s.App.OnRecordDeleteRequest("answers").BindFunc(write)
 }

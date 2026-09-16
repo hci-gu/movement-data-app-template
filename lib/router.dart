@@ -105,7 +105,7 @@ class LoadingScreen extends HookConsumerWidget {
 
         if (!loggedIn) {
           context.goNamed(
-            ref.read(bankIdProvider).flow == null ? 'introduction' : 'login',
+            !ref.read(bankIdProvider).begun ? 'introduction' : 'login',
           );
           return;
         }

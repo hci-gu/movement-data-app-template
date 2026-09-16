@@ -4,26 +4,26 @@ import 'package:research_steps_template/bankid/models.dart';
 
 abstract class BankIdGateway {
   Future<ConsentDocument> currentConsent();
-  Future<Map<String, dynamic>> createFlow(BankIdFlow flow);
-  Future<BankIdOrder> start(BankIdFlow flow);
-  Future<BankIdOrder> status(BankIdFlow flow);
-  Future<BankIdOrder> cancel(BankIdFlow flow);
-  Future<BankIdOrder> returned(BankIdFlow flow, String nonce);
-  Future<Map<String, dynamic>> complete(BankIdFlow flow);
-  Future<void> abandon(BankIdFlow flow);
+  Future<BankIdAttempt> start(
+    BankIdAttempt attempt,
+    Map<String, dynamic> input,
+  );
+  Future<BankIdAttempt> status(BankIdAttempt attempt);
+  Future<BankIdAttempt> cancel(BankIdAttempt attempt);
+  Future<BankIdAttempt> returned(BankIdAttempt attempt, String nonce);
 }
 
 class HttpBankIdGateway implements BankIdGateway {
   final Dio client;
   HttpBankIdGateway([Dio? client]) : client = client ?? Api().api;
-  Options _options([BankIdFlow? flow]) => Options(
+  Options _options([BankIdAttempt? attempt]) => Options(
     extra: {'public': true},
-    headers: flow == null
+    headers: attempt == null
         ? null
-        : {'Authorization': 'Bearer ${flow.authorization}'},
+        : {'Authorization': 'Bearer ${attempt.authorization}'},
   );
-  Map<String, dynamic> _json(Response<dynamic> response) =>
-      Map<String, dynamic>.from(response.data as Map);
+  Map<String, dynamic> _json(Response<dynamic> r) =>
+      Map<String, dynamic>.from(r.data as Map);
   @override
   Future<ConsentDocument> currentConsent() async {
     final data = _json(
@@ -35,86 +35,96 @@ class HttpBankIdGateway implements BankIdGateway {
     );
   }
 
-  @override
-  Future<Map<String, dynamic>> createFlow(BankIdFlow flow) async => _json(
-    await client.post(
-      '/api/study/enrollments',
-      data: {
-        'kind': flow.kind,
-        'invitationCode': flow.invitationCode,
-        'clientSecret': flow.clientSecret,
-      },
-      options: _options(),
-    ),
-  );
-  @override
-  Future<BankIdOrder> start(BankIdFlow flow) async => BankIdOrder.fromJson(
-    _json(
-      await client.post(
-        '/api/study/bankid-orders',
-        data: {
-          'consentVersionId': flow.document?.id ?? '',
-          'documentHash': flow.document?.documentHash ?? '',
-          'mode': flow.mode,
-          'requestKey': flow.requestKey,
-        },
-        options: _options(flow),
-      ),
-    ),
-  );
-  @override
-  Future<BankIdOrder> status(BankIdFlow flow) async => BankIdOrder.fromJson(
-    _json(
-      await client.get(
-        '/api/study/bankid-orders/${flow.orderId}',
-        options: _options(flow),
-      ),
-    ),
-  );
-  @override
-  Future<BankIdOrder> cancel(BankIdFlow flow) async => BankIdOrder.fromJson(
-    _json(
-      await client.post(
-        '/api/study/bankid-orders/${flow.orderId}/cancel',
-        options: _options(flow),
-      ),
-    ),
-  );
-  @override
-  Future<BankIdOrder> returned(BankIdFlow flow, String nonce) async =>
-      BankIdOrder.fromJson(
-        _json(
-          await client.post(
-            '/api/study/bankid-orders/${flow.orderId}/return',
-            data: {'nonce': nonce},
-            options: _options(flow),
-          ),
-        ),
-      );
-  @override
-  Future<void> abandon(BankIdFlow flow) async {
-    await client.post(
-      '/api/study/enrollments/${flow.id}/abandon',
-      options: _options(flow),
-    );
+  Future<BankIdAttempt> _result(
+    BankIdAttempt a,
+    Future<Response<dynamic>> call,
+  ) async {
+    try {
+      return BankIdAttempt.fromJson(_json(await call), a.secret);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 410) throw const AttemptExpired();
+      rethrow;
+    }
   }
 
   @override
-  Future<Map<String, dynamic>> complete(BankIdFlow flow) async => _json(
-    await client.post(
-      '/api/study/enrollments/${flow.id}/complete',
-      options: _options(flow),
+  Future<BankIdAttempt> start(
+    BankIdAttempt a,
+    Map<String, dynamic> input,
+  ) async {
+    try {
+      return await _result(
+        a,
+        client.post(
+          '/api/study/bankid/attempts',
+          data: input,
+          options: _options(),
+        ),
+      );
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 400 || e.response?.statusCode == 409) {
+        final data = e.response?.data;
+        var reason = '';
+        if (data is Map && data['data'] is Map) {
+          // PocketBase wraps custom error data in validation error objects.
+          final detail = data['data']['reason'];
+          reason = detail is Map ? detail['code'] as String? ?? '' : '';
+        }
+        throw BankIdStartRejected(
+          reason,
+          data is Map && data['message'] is String
+              ? data['message'] as String
+              : 'This request could not start.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<BankIdAttempt> status(BankIdAttempt a) => _result(
+    a,
+    client.get('/api/study/bankid/attempts/${a.id}', options: _options(a)),
+  );
+  @override
+  Future<BankIdAttempt> cancel(BankIdAttempt a) => _result(
+    a,
+    client.post(
+      '/api/study/bankid/attempts/${a.id}/cancel',
+      options: _options(a),
     ),
   );
+  @override
+  Future<BankIdAttempt> returned(BankIdAttempt a, String nonce) => _result(
+    a,
+    client.post(
+      '/api/study/bankid/attempts/${a.id}/return',
+      data: {'nonce': nonce},
+      options: _options(a),
+    ),
+  );
+}
+
+class BankIdStartRejected implements Exception {
+  final String reason, message;
+  const BankIdStartRejected(this.reason, this.message);
 }
 
 class BankIdUnavailable implements Exception {
   const BankIdUnavailable();
 }
 
+class AttemptExpired implements Exception {
+  const AttemptExpired();
+}
+
 String bankIdError(Object error) {
+  if (error is BankIdStartRejected) return error.message;
+  if (error is AttemptExpired) {
+    return 'This BankID request has expired or the server restarted. Start a new request.';
+  }
   if (error is BankIdUnavailable) {
-    return 'BankID signing is not available yet. Please try later.';
+    return 'BankID is not available yet. Please try later.';
   }
   if (error is DioException) {
     final data = error.response?.data;
@@ -123,7 +133,7 @@ String bankIdError(Object error) {
         error.response!.statusCode! < 500) {
       return data['message'] as String;
     }
-    return 'The service could not be reached. Check your connection and try again. Your request can be resumed.';
+    return 'The service could not be reached. Check your connection and check the request status before starting again.';
   }
   return 'The request could not be completed. Please try again.';
 }

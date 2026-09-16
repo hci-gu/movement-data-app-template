@@ -22,17 +22,17 @@ class Storage {
     }
   }
 
-  Future<Map<String, dynamic>?> readAuthSession() => _read('authSession');
+  Future<Map<String, dynamic>?> readAuthSession() => _read('authSessionV2');
   Future<void> writeAuthSession(Map<String, dynamic> session) =>
-      _secure.write(key: _key('authSession'), value: jsonEncode(session));
-  Future<Map<String, dynamic>?> readBankIdFlow() => _read('bankidFlow');
-  Future<void> writeBankIdFlow(Map<String, dynamic> flow) =>
-      _secure.write(key: _key('bankidFlow'), value: jsonEncode(flow));
-  Future<void> clearBankIdFlow() => _secure.delete(key: _key('bankidFlow'));
+      _secure.write(key: _key('authSessionV2'), value: jsonEncode(session));
+  Future<Map<String, dynamic>?> readBankIdAttempt() => _read('bankidAttempt');
+  Future<void> writeBankIdAttempt(Map<String, dynamic> attempt) =>
+      _secure.write(key: _key('bankidAttempt'), value: jsonEncode(attempt));
+  Future<void> clearBankIdAttempt() =>
+      _secure.delete(key: _key('bankidAttempt'));
 
   Future<void> reloadPrefs() async {
     prefs = await SharedPreferences.getInstance();
-    await prefs.remove('password');
   }
 
   String? getParticipantId() {
@@ -68,10 +68,9 @@ class Storage {
   }
 
   Future<void> clearSession() async {
-    await _secure.delete(key: _key('authSession'));
+    await _secure.delete(key: _key('authSessionV2'));
     final sharedPrefs = await SharedPreferences.getInstance();
     await sharedPrefs.remove('participantId');
-    await sharedPrefs.remove('password');
     await sharedPrefs.remove('hasUploadedData');
     await sharedPrefs.remove('lastUploadAt');
   }

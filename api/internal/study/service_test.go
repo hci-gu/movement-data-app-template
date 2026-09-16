@@ -11,36 +11,46 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
-	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/security"
 )
 
 type fakeBankID struct {
-	calls     int
-	req       bankid.Request
-	result    bankid.Result
-	err       error
-	cancelled bool
+	mu                       sync.Mutex
+	calls, collects, cancels int
+	req                      bankid.Request
+	result                   bankid.Result
+	err                      error
 }
 
 func (f *fakeBankID) Start(_ context.Context, purpose string, req bankid.Request) (bankid.Order, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls++
 	f.req = req
 	return bankid.Order{OrderRef: fmt.Sprintf("order-%d", f.calls), AutoStartToken: "auto", QRStartToken: "qr", QRStartSecret: "secret"}, f.err
 }
 func (f *fakeBankID) Collect(_ context.Context, ref string) (bankid.Result, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.collects++
 	r := f.result
 	r.OrderRef = ref
 	return r, f.err
 }
-func (f *fakeBankID) Cancel(context.Context, string) error { f.cancelled = true; return f.err }
-
+func (f *fakeBankID) Cancel(context.Context, string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cancels++
+	return f.err
+}
 func testService(t *testing.T) (*Service, *fakeBankID, http.Handler) {
 	t.Helper()
 	app := pocketbase.NewWithConfig(pocketbase.Config{DefaultDataDir: t.TempDir()})
@@ -53,21 +63,9 @@ func testService(t *testing.T) (*Service, *fakeBankID, http.Handler) {
 	t.Cleanup(func() { _ = app.ResetBootstrapState() })
 	now := time.Now().Truncate(time.Second)
 	cfg := Config{Environment: "test", StudyID: "study", AppID: "org.example.study", ReturnURL: "researchsteps://bankid/return", ActiveKey: "v1", EncryptionKeys: map[string][]byte{"v1": bytes.Repeat([]byte{1}, 32)}, IdentityKey: bytes.Repeat([]byte{2}, 32), SigningEnabled: true}
-	fake := &fakeBankID{result: bankid.Result{Status: "pending", HintCode: "userSign"}}
-	s := &Service{App: app, Config: cfg, providers: map[string]bankid.Provider{"test-cert": fake}, activeCertificate: "test-cert", now: func() time.Time { return now }, rates: map[string]rateEntry{}}
-	doc, _ := newRecord(app, "consent_versions")
-	doc.Set("study", "study")
-	doc.Set("version", "v1")
-	doc.Set("title", "Study consent")
-	doc.Set("text", "I consent to sharing step data for this study.")
-	doc.Set("documentHash", hash(doc.GetString("text")))
-	if err := app.Save(doc); err != nil {
-		t.Fatal(err)
-	}
-	settings, _ := newRecord(app, "study_settings")
-	settings.Set("study", "study")
-	settings.Set("currentVersion", doc.Id)
-	if err := app.Save(settings); err != nil {
+	f := &fakeBankID{result: bankid.Result{Status: "pending", HintCode: "userSign"}}
+	s := &Service{App: app, Config: cfg, provider: f, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: func() time.Time { return now }}
+	if _, err := PublishConsent(app, cfg, "v1", "Study consent", "I consent to sharing step data for this study."); err != nil {
 		t.Fatal(err)
 	}
 	ProtectRecords(app)
@@ -82,9 +80,8 @@ func testService(t *testing.T) (*Service, *fakeBankID, http.Handler) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return s, fake, mux
+	return s, f, mux
 }
-
 func request(t *testing.T, h http.Handler, method, path, token string, body any) (int, map[string]any) {
 	t.Helper()
 	raw, _ := json.Marshal(body)
@@ -101,369 +98,485 @@ func request(t *testing.T, h http.Handler, method, path, token string, body any)
 	return w.Code, result
 }
 
-func enroll(t *testing.T, s *Service, h http.Handler, expected string) (string, *core.Record) {
+func start(t *testing.T, s *Service, h http.Handler, invitation, parent string) (*Attempt, string, StartInput) {
 	t.Helper()
-	invite, _ := newRecord(s.App, "study_invitations")
-	invite.Set("study", "study")
-	invite.Set("participantId", "PART-001")
-	invite.Set("tokenHash", s.Config.digest("invitation", "invite-code"))
-	invite.Set("expiresAt", s.now().Add(time.Hour).Unix())
-	if err := s.App.Save(invite); err != nil {
-		t.Fatal(err)
-	}
-	if expected != "" {
-		sealed, _ := s.Config.seal("invitation:"+invite.Id, identity{PersonalNumber: expected})
-		invite.Set("expectedCipher", sealed)
-		if err := s.App.Save(invite); err != nil {
+	in := StartInput{ClientSecret: randomSecret(), InvitationCode: invitation, AuthAttempt: parent, Mode: "sameDevice"}
+	if invitation != "" || parent != "" {
+		d, err := currentDocument(s.App, s.Config.StudyID)
+		if err != nil {
 			t.Fatal(err)
 		}
+		in.Version = d.Id
+		in.DocumentHash = d.GetString("documentHash")
 	}
-	secret := randomSecret()
-	code, res := request(t, h, "POST", "/api/study/enrollments", "", map[string]any{"kind": "enroll", "invitationCode": "invite-code", "clientSecret": secret})
-	if code != 200 {
-		t.Fatal(code, res)
+	status, result := request(t, h, "POST", "/api/study/bankid/attempts", "", in)
+	if status != 200 {
+		t.Fatal(status, result)
 	}
-	id := res["id"].(string)
-	flow, _ := s.App.FindRecordById("enrollment_sessions", id)
-	return id + "." + secret, flow
+	id := result["id"].(string)
+	return s.lookup(id), id + "." + in.ClientSecret, in
 }
-
-func start(t *testing.T, s *Service, h http.Handler, token string) *core.Record {
+func invite(t *testing.T, s *Service, participant, expected string) string {
 	t.Helper()
-	doc, _ := currentDocument(s.App, "study")
-	code, res := request(t, h, "POST", "/api/study/bankid-orders", token, StartInput{Version: doc.Id, DocumentHash: doc.GetString("documentHash"), Mode: "sameDevice", RequestKey: "idempotency-key-123"})
-	if code != 200 {
-		t.Fatal(code, res)
-	}
-	order, err := s.App.FindRecordById("bankid_orders", res["id"].(string))
+	_, code, err := IssueInvitation(s.App, s.Config, participant, expected, 24, s.now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return order
+	return code
 }
-
 func completed(f *fakeBankID, pnr, risk string) {
-	f.result = bankid.Result{Status: "complete", CompletionData: &bankid.Completion{User: bankid.User{PersonalNumber: pnr, Name: "Test Signer"}, Signature: base64.StdEncoding.EncodeToString([]byte("<signed-evidence/>")), OCSPResponse: base64.StdEncoding.EncodeToString([]byte("ocsp")), Risk: risk}}
+	f.result = bankid.Result{Status: "complete", CompletionData: &bankid.Completion{User: bankid.User{PersonalNumber: pnr, Name: "Test Signer"}, Signature: base64.StdEncoding.EncodeToString([]byte("<signature/>")), OCSPResponse: base64.StdEncoding.EncodeToString([]byte("ocsp")), Risk: risk}}
 }
-
-func TestSigningEvidenceSessionAndUploadGate(t *testing.T) {
-	s, f, h := testService(t)
-	token, flow := enroll(t, s, h, "")
-	order := start(t, s, h, token)
-	if code, _ := request(t, h, "POST", "/upload-test", "", nil); code != 401 {
-		t.Fatal("unsigned upload accepted", code)
-	}
-	if code, _ := request(t, h, "POST", "/api/study/enrollments/"+flow.Id+"/complete", token, nil); code != 409 {
-		t.Fatal("pending order exchanged", code)
-	}
-	completed(f, "200001012384", "low")
-	if err := s.advance(context.Background(), order.Id); err != nil {
+func advance(t *testing.T, s *Service, a *Attempt) {
+	t.Helper()
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := s.advance(context.Background(), a); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.advance(context.Background(), order.Id); err != nil {
-		t.Fatal(err)
-	}
-	signatures, err := s.App.FindAllRecords("consent_signatures")
-	if err != nil || len(signatures) != 1 {
-		t.Fatal("completion not idempotent", err, len(signatures))
-	}
-	if strings.Contains(signatures[0].GetString("evidenceCipher"), "200001012384") {
-		t.Fatal("plaintext identity in evidence")
-	}
-	var evidence map[string]any
-	if err := s.Config.open("signature:"+order.Id, signatures[0].GetString("evidenceCipher"), &evidence); err != nil {
-		t.Fatal(err)
-	}
-	if evidence["request"].(map[string]any)["userVisibleData"] != f.req.UserVisibleData {
-		t.Fatal("signed bytes lost")
-	}
-	code, grant := request(t, h, "POST", "/api/study/enrollments/"+flow.Id+"/complete", token, nil)
+}
+func status(t *testing.T, h http.Handler, a *Attempt, credential string) map[string]any {
+	t.Helper()
+	code, res := request(t, h, "GET", "/api/study/bankid/attempts/"+a.ID, credential, nil)
 	if code != 200 {
-		t.Fatal(code, grant)
+		t.Fatal(code, res)
 	}
-	auth := grant["token"].(string)
-	s.Config.SigningEnabled = false
-	_ = start(t, s, h, token) // Recover a saved grant even while new signing is disabled.
-	s.Config.SigningEnabled = true
-	if f.calls != 1 {
-		t.Fatal("grant recovery created another BankID order")
+	return res
+}
+func session(t *testing.T, h http.Handler, a *Attempt, credential string) string {
+	t.Helper()
+	r := status(t, h, a, credential)
+	g, ok := r["grant"].(map[string]any)
+	if !ok {
+		t.Fatal("missing grant", r)
 	}
-	_, again := request(t, h, "POST", "/api/study/enrollments/"+flow.Id+"/complete", token, nil)
-	if again["token"] != auth {
-		t.Fatal("grant retry extended the session")
-	}
-	if code, res := request(t, h, "POST", "/upload-test", auth, nil); code != 204 {
-		t.Fatal("valid signed upload blocked", code, res)
-	}
-	if code, _ := request(t, h, "POST", "/api/collections/users/auth-refresh", auth, nil); code == 200 {
-		t.Fatal("session refresh bypass")
-	}
-	if code, _ := request(t, h, "PATCH", "/api/collections/users/"+signatures[0].GetString("user"), auth, map[string]any{"consentStatus": "accepted"}); code < 400 {
-		t.Fatal("direct user mutation allowed")
-	}
-	if code, _ := request(t, h, "POST", "/api/study/consent/withdraw", auth, nil); code != 204 {
-		t.Fatal("withdrawal failed", code)
-	}
-	if code, _ := request(t, h, "POST", "/upload-test", auth, nil); code != 403 {
-		t.Fatal("withdrawn upload accepted", code)
-	}
-	if code, _ := request(t, h, "POST", "/api/study/logout", auth, nil); code != 204 {
-		t.Fatal("logout failed", code)
-	}
-	if code, _ := request(t, h, "GET", "/api/study/me", auth, nil); code != 401 {
-		t.Fatal("revoked session accepted", code)
-	}
+	return g["token"].(string)
+}
+func enroll(t *testing.T, s *Service, f *fakeBankID, h http.Handler) (*Attempt, string, string) {
+	t.Helper()
+	a, c, _ := start(t, s, h, invite(t, s, "PART-001", ""), "")
+	completed(f, "200001012384", "low")
+	advance(t, s, a)
+	return a, c, session(t, h, a, c)
 }
 
-func TestWrongSignerRiskAndMissingEvidenceNeverActivate(t *testing.T) {
-	for _, tc := range []struct {
-		name, pnr, risk, expected string
-		missing                   bool
-	}{{"wrongSigner", "200001012384", "low", "199001012384", false}, {"highRisk", "200001012384", "high", "", false}, {"moderateRisk", "200001012384", "moderate", "", false}, {"missingRisk", "200001012384", "", "", false}, {"missingEvidence", "200001012384", "low", "", true}} {
+func TestEightCollections(t *testing.T) {
+	s, _, _ := testService(t)
+	cs, err := s.App.FindAllCollections()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string]bool{"users": true, "answers": true, "dataUploads": true, "signatures": true, "consent_texts": true, "questionnaires": true, "questions": true, "questionOptions": true}
+	for _, c := range cs {
+		if c.System {
+			continue
+		}
+		if !expected[c.Name] {
+			t.Fatal("unexpected collection", c.Name)
+		}
+		delete(expected, c.Name)
+	}
+	if len(expected) != 0 {
+		t.Fatal(expected)
+	}
+}
+func TestSigningEvidenceLoginWithdrawalAndLogout(t *testing.T) {
+	s, f, h := testService(t)
+	a, credential, token := enroll(t, s, f, h)
+	if a.Status != "accepted" {
+		t.Fatal(a.Status, a.Hint)
+	}
+	if code, res := request(t, h, "POST", "/upload-test", token, nil); code != 204 {
+		t.Fatal(code, res)
+	}
+	if code, res := request(t, h, "GET", "/api/study/consent/receipt", token, nil); code != 200 || res["signatureId"] != a.SignatureID {
+		t.Fatal(code, res)
+	}
+	sig, err := s.App.FindRecordById("signatures", a.SignatureID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ev Evidence
+	if err := s.Config.Open("signature:"+sig.Id, sig.GetString("evidenceCipher"), &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev.Document.Text != "I consent to sharing step data for this study." || ev.Request.UserVisibleData != base64.StdEncoding.EncodeToString([]byte(ev.Document.Text)) || len(ev.Completion) == 0 {
+		t.Fatal("incomplete evidence")
+	}
+	if token != session(t, h, a, credential) {
+		t.Fatal("session delivery changed token")
+	}
+	login, lc, _ := start(t, s, h, "", "")
+	advance(t, s, login)
+	second := session(t, h, login, lc)
+	if code, _ := request(t, h, "POST", "/api/collections/users/auth-refresh", token, nil); code == 200 {
+		t.Fatal("token refreshed")
+	}
+	if code, _ := request(t, h, "GET", "/api/collections/users/records/"+a.UserID, token, nil); code == 200 {
+		t.Fatal("private user exposed")
+	}
+	if code, _ := request(t, h, "POST", "/api/study/consent/withdraw", token, nil); code != 204 {
+		t.Fatal(code)
+	}
+	if code, _ := request(t, h, "POST", "/upload-test", second, nil); code != 403 {
+		t.Fatal("withdrawal did not block upload", code)
+	}
+	sig, _ = s.App.FindRecordById("signatures", a.SignatureID)
+	if sig.GetInt("withdrawnAt") == 0 {
+		t.Fatal("withdrawal missing")
+	}
+	if code, _ := request(t, h, "POST", "/api/study/logout", token, nil); code != 204 {
+		t.Fatal(code)
+	}
+	for _, tok := range []string{token, second} {
+		if code, _ := request(t, h, "GET", "/api/study/me", tok, nil); code != 401 {
+			t.Fatal("session survived logout", code)
+		}
+	}
+	if code, _ := request(t, h, "GET", "/api/study/bankid/attempts/"+a.ID, credential, nil); code != 410 {
+		t.Fatal("attempt reissued revoked session", code)
+	}
+}
+func TestReturningLoginRequiresNewConsent(t *testing.T) {
+	s, f, h := testService(t)
+	old, _, token := enroll(t, s, f, h)
+	if _, err := PublishConsent(s.App, s.Config, "v2", "New consent", "Updated consent."); err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := request(t, h, "POST", "/upload-test", token, nil); code != 403 {
+		t.Fatal(code)
+	}
+	auth, credential, _ := start(t, s, h, "", "")
+	advance(t, s, auth)
+	if status(t, h, auth, credential)["consentRequired"] != true {
+		t.Fatal("missing review")
+	}
+	next, nc, _ := start(t, s, h, "", credential)
+	advance(t, s, next)
+	if code, _ := request(t, h, "POST", "/upload-test", session(t, h, next, nc), nil); code != 204 {
+		t.Fatal(code)
+	}
+	if next.UserID != old.UserID {
+		t.Fatal("created another participant")
+	}
+}
+func TestRejectedAndFailedAttemptsPersist(t *testing.T) {
+	for _, tc := range []struct{ name, pnr, risk, expected, hint string }{
+		{"wrong signer", "200001012384", "low", "199001012384", "wrongSigner"},
+		{"risk", "200001012384", "high", "", "riskRejected"},
+		{"invalid evidence", "bad", "low", "", "invalidEvidence"},
+	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, f, h := testService(t)
-			token, flow := enroll(t, s, h, tc.expected)
-			order := start(t, s, h, token)
+			a, c, _ := start(t, s, h, invite(t, s, "PART-001", tc.expected), "")
 			completed(f, tc.pnr, tc.risk)
-			if tc.missing {
-				f.result.CompletionData.Signature = ""
+			advance(t, s, a)
+			if a.Status != "rejected" || a.Hint != tc.hint {
+				t.Fatal(a.Status, a.Hint)
 			}
-			if err := s.advance(context.Background(), order.Id); err != nil {
-				t.Fatal(err)
+			if status(t, h, a, c)["grant"] != nil {
+				t.Fatal("rejected grant")
 			}
-			r, _ := s.App.FindRecordById("bankid_orders", order.Id)
-			if r.GetString("status") != "rejected" {
-				t.Fatal(r.GetString("status"))
+			r, _ := s.App.FindRecordById("signatures", a.SignatureID)
+			if r == nil || r.GetString("outcome") != "rejected" {
+				t.Fatal("missing evidence")
 			}
-			if code, _ := request(t, h, "POST", "/api/study/enrollments/"+flow.Id+"/complete", token, nil); code != 409 {
-				t.Fatal("rejected order exchanged", code)
+		})
+	}
+	for _, kind := range []string{"failed", "cancelled", "unknown", "start-error"} {
+		t.Run(kind, func(t *testing.T) {
+			s, f, h := testService(t)
+			code := invite(t, s, "PART-001", "")
+			if kind == "start-error" {
+				f.err = &bankid.APIError{Status: 400, Code: "alreadyInProgress", Raw: json.RawMessage(`{"errorCode":"alreadyInProgress"}`)}
+			}
+			a, c, _ := start(t, s, h, code, "")
+			switch kind {
+			case "failed":
+				f.result = bankid.Result{Status: "failed", HintCode: "userCancel"}
+				advance(t, s, a)
+			case "cancelled":
+				if status, _ := request(t, h, "POST", "/api/study/bankid/attempts/"+a.ID+"/cancel", c, nil); status != 200 {
+					t.Fatal(status)
+				}
+			case "unknown":
+				f.err = errors.New("connection lost")
+				advance(t, s, a)
+			}
+			if a.SignatureID == "" || status(t, h, a, c)["grant"] != nil {
+				t.Fatal("missing failure record or unexpected grant")
 			}
 		})
 	}
 }
-
-func TestOrderOwnershipNonceAndIdempotency(t *testing.T) {
+func TestDuplicateOwnershipExpiryAndRestart(t *testing.T) {
 	s, f, h := testService(t)
-	token, flow := enroll(t, s, h, "")
-	order := start(t, s, h, token)
-	_ = start(t, s, h, token)
-	if f.calls != 1 {
-		t.Fatal("duplicate provider order")
-	}
-	if code, _ := request(t, h, "GET", "/api/study/bankid-orders/"+order.Id, flow.Id+"."+randomSecret(), nil); code != 401 {
-		t.Fatal("another secret can read order", code)
-	}
-	if code, _ := request(t, h, "POST", "/api/study/bankid-orders/"+order.Id+"/return", token, map[string]string{"nonce": "wrong"}); code != 400 {
-		t.Fatal("wrong nonce accepted", code)
-	}
-	var secrets orderSecrets
-	_ = s.Config.open("order:"+order.Id, order.GetString("requestCipher"), &secrets)
-	code, res := request(t, h, "POST", "/api/study/bankid-orders/"+order.Id+"/return", token, map[string]string{"nonce": secrets.Nonce})
-	if code != 200 || res["status"] != "pending" {
-		t.Fatal("callback manufactured completion", code, res)
-	}
-	if _, exists := res["qrStartSecret"]; exists {
-		t.Fatal("secret exposed")
-	}
-}
-
-func TestAmbiguousCollectCannotGrantAccess(t *testing.T) {
-	s, f, h := testService(t)
-	token, _ := enroll(t, s, h, "")
-	order := start(t, s, h, token)
-	f.err = errors.New("connection reset")
-	if err := s.advance(context.Background(), order.Id); err != nil {
-		t.Fatal(err)
-	}
-	r, _ := s.App.FindRecordById("bankid_orders", order.Id)
-	if r.GetString("status") != "unresolved" {
-		t.Fatal("ambiguous response treated as conclusive")
-	}
-}
-
-func TestEncryptedValuesBoundToRecordAndOldKeys(t *testing.T) {
-	s, _, _ := testService(t)
-	sealed, err := s.Config.seal("record:a", identity{PersonalNumber: "200001012384"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var value identity
-	if err := s.Config.open("record:b", sealed, &value); err == nil {
-		t.Fatal("ciphertext can be substituted")
-	}
-	s.Config.EncryptionKeys["v2"] = bytes.Repeat([]byte{3}, 32)
-	s.Config.ActiveKey = "v2"
-	if err := s.Config.open("record:a", sealed, &value); err != nil || value.PersonalNumber != "200001012384" {
-		t.Fatal("rotation lost old evidence", err)
-	}
-}
-
-func TestTrustedProxyChain(t *testing.T) {
-	c := Config{TrustedProxies: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}}
-	for _, tc := range []struct{ peer, forwarded, want string }{{"192.0.2.1:1", "198.51.100.1", "192.0.2.1"}, {"10.0.0.1:1", "203.0.113.9, 198.51.100.1, 10.0.0.2", "198.51.100.1"}, {"[2001:db8::1]:1", "", "2001:db8::1"}} {
-		r := httptest.NewRequest("GET", "/", nil)
-		r.RemoteAddr = tc.peer
-		r.Header.Set("X-Forwarded-For", tc.forwarded)
-		got, err := c.endUserIP(r)
-		if err != nil || got != tc.want {
-			t.Fatal(got, err, tc.want)
+	a, c, in := start(t, s, h, invite(t, s, "PART-001", ""), "")
+	for i := 0; i < 3; i++ {
+		if code, _ := request(t, h, "POST", "/api/study/bankid/attempts", "", in); code != 200 {
+			t.Fatal(code)
 		}
 	}
-}
-
-func TestReturningAuthenticationRequiresCurrentConsentAndRejectsTamperedEvidence(t *testing.T) {
-	s, f, h := testService(t)
-	enrollment, flow := enroll(t, s, h, "")
-	order := start(t, s, h, enrollment)
+	if f.calls != 1 {
+		t.Fatal("duplicate provider start")
+	}
+	if code, _ := request(t, h, "GET", "/api/study/bankid/attempts/"+a.ID, a.ID+"."+randomSecret(), nil); code != 410 {
+		t.Fatal("unowned status")
+	}
 	completed(f, "200001012384", "low")
-	if err := s.advance(context.Background(), order.Id); err != nil {
-		t.Fatal(err)
+	advance(t, s, a)
+	advance(t, s, a)
+	rs, _ := s.App.FindAllRecords("signatures")
+	if len(rs) != 1 {
+		t.Fatal("duplicate result")
 	}
-	_, original := request(t, h, "POST", "/api/study/enrollments/"+flow.Id+"/complete", enrollment, nil)
-	originalToken := original["token"].(string)
-	doc, _ := currentDocument(s.App, "study")
-	next, _ := newRecord(s.App, "consent_versions")
-	next.Set("study", "study")
-	next.Set("version", "v2")
-	next.Set("title", "Updated consent")
-	next.Set("text", "I agree to the updated study.")
-	next.Set("documentHash", hash(next.GetString("text")))
-	if err := s.App.Save(next); err != nil {
-		t.Fatal(err)
+	s.mu.Lock()
+	s.attempts = map[string]*Attempt{}
+	s.mu.Unlock()
+	if code, _ := request(t, h, "POST", "/api/study/bankid/attempts", "", in); code != 410 {
+		t.Fatal("completed request restarted after process reset", code)
 	}
-	settings, _ := s.App.FindFirstRecordByData("study_settings", "study", "study")
-	settings.Set("currentVersion", next.Id)
-	if err := s.App.Save(settings); err != nil {
-		t.Fatal(err)
+	if f.calls != 1 {
+		t.Fatal("replayed completed attempt contacted provider")
 	}
-	if code, _ := request(t, h, "POST", "/upload-test", originalToken, nil); code != 403 {
-		t.Fatal("old consent still uploads", code)
+
+	if code, _ := request(t, h, "GET", "/api/study/bankid/attempts/"+a.ID, c, nil); code != 410 {
+		t.Fatal("restart was not explicit")
 	}
-	secret := randomSecret()
-	code, res := request(t, h, "POST", "/api/study/enrollments", "", map[string]string{"kind": "login", "clientSecret": secret})
-	if code != 200 {
-		t.Fatal(code, res)
+	auth, ac, _ := start(t, s, h, "", "")
+	advance(t, s, auth)
+	if session(t, h, auth, ac) == "" {
+		t.Fatal("committed user cannot return")
 	}
-	token := res["id"].(string) + "." + secret
-	path := "/api/study/enrollments/" + res["id"].(string) + "/complete"
-	code, res = request(t, h, "POST", "/api/study/bankid-orders", token, StartInput{Mode: "qr", RequestKey: "login-request-12345"})
-	if code != 200 || res["purpose"] != "auth" {
-		t.Fatal(code, res)
-	}
-	if err := s.advance(context.Background(), res["id"].(string)); err != nil {
-		t.Fatal(err)
-	}
-	code, res = request(t, h, "POST", path, token, nil)
-	if code != 200 || res["consentRequired"] != true || res["token"] != "" {
-		t.Fatal("login bypassed reconsent", code, res)
-	}
-	signed := start(t, s, h, token)
-	if f.req.Requirement == nil || f.req.Requirement.PersonalNumber != "200001012384" {
-		t.Fatal("reconsent lost expected identity")
-	}
-	if err := s.advance(context.Background(), signed.Id); err != nil {
-		t.Fatal(err)
-	}
-	code, res = request(t, h, "POST", path, token, nil)
-	if code != 200 {
-		t.Fatal(code, res)
-	}
-	auth := res["token"].(string)
-	if auth == originalToken {
-		t.Fatal("separate sessions reused a token")
-	}
-	if code, res := request(t, h, "POST", "/upload-test", auth, nil); code != 204 {
-		t.Fatal(code, res)
-	}
-	signatures, _ := s.App.FindAllRecords("consent_signatures")
-	if len(signatures) != 2 {
-		t.Fatal("immutable evidence history lost")
-	}
-	if old, err := s.App.FindRecordById("consent_versions", doc.Id); err != nil || old.GetString("version") != "v1" {
-		t.Fatal("old document changed")
-	}
-	current, _ := s.App.FindRecordById("bankid_orders", signed.Id)
-	signature, _ := s.App.FindRecordById("consent_signatures", current.GetString("signatureId"))
-	signature.Set("evidenceCipher", "v1:corrupted")
-	if err := s.App.Save(signature); err != nil {
-		t.Fatal(err)
-	}
-	if code, _ := request(t, h, "POST", "/upload-test", auth, nil); code != 403 {
-		t.Fatal("tampered evidence still enables uploads", code)
+	now := s.now().Add(AttemptLifetime + ResultLifetime + time.Second)
+	s.now = func() time.Time { return now }
+	s.tick(context.Background())
+	if s.lookup(auth.ID) != nil {
+		t.Fatal("expired attempt retained")
 	}
 }
-
-func TestCancelCompletionRaceAndExpiredSessions(t *testing.T) {
+func TestPersistenceRetryDoesNotRecollect(t *testing.T) {
 	s, f, h := testService(t)
-	token, flow := enroll(t, s, h, "")
-	order := start(t, s, h, token)
+	a, c, _ := start(t, s, h, invite(t, s, "PART-001", ""), "")
+	completed(f, "200001012384", "low")
+	s.App.OnRecordCreate("signatures").BindFunc(func(e *core.RecordEvent) error { return errors.New("disk unavailable") })
+	if err := s.advance(context.Background(), a); err == nil {
+		t.Fatal("expected storage failure")
+	}
+	if a.Status != "pending" || a.Result == nil {
+		t.Fatal("reported unsaved acceptance")
+	}
+	if status(t, h, a, c)["grant"] != nil {
+		t.Fatal("unsaved grant")
+	}
+	receivedAt := s.now()
+	later := receivedAt.Add(time.Minute)
+	s.now = func() time.Time { return later }
+	s.App.OnRecordCreate("signatures").UnbindAll()
+	advance(t, s, a)
+	if !a.FinishedAt.Equal(receivedAt) {
+		t.Fatal("persistence retry shifted authentication time")
+	}
+	if f.collects != 1 || a.Status != "accepted" {
+		t.Fatal("recollected terminal result", f.collects, a.Status)
+	}
+}
+func TestInvitationChangeAndConsentChangeRejectPending(t *testing.T) {
+	for _, change := range []string{"reissue", "expired", "consent"} {
+		t.Run(change, func(t *testing.T) {
+			s, f, h := testService(t)
+			a, _, _ := start(t, s, h, invite(t, s, "PART-001", ""), "")
+			switch change {
+			case "reissue":
+				invite(t, s, "PART-001", "")
+			case "expired":
+				u, _ := s.App.FindRecordById("users", a.UserID)
+				u.Set("invitationExpiresAt", 1)
+				if err := s.App.Save(u); err != nil {
+					t.Fatal(err)
+				}
+			case "consent":
+				if _, err := PublishConsent(s.App, s.Config, "v2", "New", "New text"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			completed(f, "200001012384", "low")
+			advance(t, s, a)
+			if a.Status != "rejected" {
+				t.Fatal(a.Status)
+			}
+		})
+	}
+}
+func TestIdentityConflictAndCancelCompletionRace(t *testing.T) {
+	s, f, h := testService(t)
+	enroll(t, s, f, h)
+	a, c, _ := start(t, s, h, invite(t, s, "PART-002", ""), "")
+	advance(t, s, a)
+	if a.Hint != "identityConflict" {
+		t.Fatal(a.Hint)
+	}
+	auth, ac, _ := start(t, s, h, "", "")
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		auth.mu.Lock()
+		defer auth.mu.Unlock()
+		_ = s.advance(context.Background(), auth)
+	}()
+	go func() {
+		defer wg.Done()
+		request(t, h, "POST", "/api/study/bankid/attempts/"+auth.ID+"/cancel", ac, nil)
+	}()
+	wg.Wait()
+	if auth.Status != "accepted" || f.cancels != 0 {
+		t.Fatal("completion lost to cancellation")
+	}
+	_ = c
+}
+
+func TestAttemptScopeAndChangedStart(t *testing.T) {
+	s, f, h := testService(t)
+	a, credential, in := start(t, s, h, invite(t, s, "PART-001", ""), "")
+	in.Mode = "qr"
+	if code, _ := request(t, h, "POST", "/api/study/bankid/attempts", "", in); code != 409 {
+		t.Fatal("changed idempotent request", code)
+	}
+	if code, _ := request(t, h, "POST", "/api/study/bankid/attempts/"+a.ID+"/return", credential, map[string]any{"nonce": "wrong"}); code != 400 {
+		t.Fatal("wrong callback accepted", code)
+	}
+	if code, _ := request(t, h, "POST", "/api/study/bankid/attempts/"+a.ID+"/return", credential, map[string]any{"nonce": a.Nonce}); code != 200 {
+		t.Fatal(code)
+	}
+	if f.collects != 0 {
+		t.Fatal("mobile poll called provider")
+	}
+	r := httptest.NewRequest("GET", "/api/study/bankid/attempts/"+a.ID, nil)
+	r.RemoteAddr = "192.0.2.2:12345"
+	r.Header.Set("Authorization", "Bearer "+credential)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != 409 {
+		t.Fatal("connection changed", w.Code)
+	}
+	if _, err := PublishConsent(s.App, s.Config, "v2", "Changed", "Changed"); err != nil {
+		t.Fatal(err)
+	}
+	in.ClientSecret = randomSecret()
+	code, res := request(t, h, "POST", "/api/study/bankid/attempts", "", in)
+	if code != 409 {
+		t.Fatal(code, res)
+	}
+	reason := res["data"].(map[string]any)["reason"].(map[string]any)["code"]
+	if reason != "consentChanged" {
+		t.Fatal("unusable reason", reason)
+	}
+}
+func TestWorkerCollectsWithoutAppAndPersistsExpiry(t *testing.T) {
+	s, f, h := testService(t)
+	a, _, _ := start(t, s, h, invite(t, s, "PART-001", ""), "")
 	completed(f, "200001012384", "low")
 	now := s.now().Add(3 * time.Second)
 	s.now = func() time.Time { return now }
-	code, res := request(t, h, "POST", "/api/study/bankid-orders/"+order.Id+"/cancel", token, nil)
-	if code != 200 || res["status"] != "accepted" || f.cancelled {
-		t.Fatal("cancel hid a completed signature", code, res)
+	s.tick(context.Background())
+	if a.Status != "accepted" {
+		t.Fatal("worker needs app poll")
 	}
-	_, grant := request(t, h, "POST", "/api/study/enrollments/"+flow.Id+"/complete", token, nil)
-	auth := grant["token"].(string)
-	now = now.Add(SessionLifetime + time.Second)
-	if code, _ := request(t, h, "GET", "/api/study/me", auth, nil); code != 401 {
-		t.Fatal("expired session accepted", code)
+	b, _, _ := start(t, s, h, invite(t, s, "PART-002", ""), "")
+	f.result = bankid.Result{Status: "pending"}
+	now = now.Add(AttemptLifetime + time.Second)
+	s.tick(context.Background())
+	if b.Status != "cancelled" || b.SignatureID == "" {
+		t.Fatal("expired attempt missing outcome", b.Status)
 	}
-	if code, _ := request(t, h, "GET", "/api/study/bankid-orders/"+order.Id, token, nil); code != 401 {
-		t.Fatal("expired flow accepted", code)
+}
+func TestTokensHaveAbsoluteExpiryAndEnvironmentScope(t *testing.T) {
+	s, f, h := testService(t)
+	a, credential, token := enroll(t, s, f, h)
+	claims, err := security.ParseUnverifiedJWT(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(claims["exp"].(float64)) != a.FinishedAt.Add(SessionLifetime).Unix() {
+		t.Fatal("wrong expiry")
+	}
+	original := a.Grant.ExpiresAt
+	now := s.now().Add(5 * time.Minute)
+	s.now = func() time.Time { return now }
+	if session(t, h, a, credential) != token || a.Grant.ExpiresAt != original {
+		t.Fatal("retry extended session")
+	}
+	s.Config.Environment = "production"
+	if code, _ := request(t, h, "POST", "/upload-test", token, nil); code != 401 {
+		t.Fatal("cross environment token accepted")
+	}
+	s.Config.Environment = "test"
+	user, _ := s.App.FindRecordById("users", a.UserID)
+	expired, err := security.NewJWT(jwt.MapClaims{core.TokenClaimType: core.TokenTypeAuth, core.TokenClaimId: a.UserID, core.TokenClaimCollectionId: "_pb_users_auth_", core.TokenClaimRefreshable: false, "study": "study", "environment": "test", "exp": time.Now().Add(-time.Second).Unix()}, a.TokenKey+user.Collection().AuthToken.Secret, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _ := request(t, h, "GET", "/api/study/me", expired, nil); code != 401 {
+		t.Fatal("expired token accepted")
 	}
 }
 
-func TestRecoveryAndOperationalPurgePreserveConsent(t *testing.T) {
+func TestTamperedEvidenceCannotAuthorizeWrites(t *testing.T) {
 	s, f, h := testService(t)
-	token, flow := enroll(t, s, h, "")
-	order := start(t, s, h, token)
-	// A response persisted before a process crash can be finalized without collecting again.
-	completed(f, "200001012384", "low")
-	result := f.result
-	var secrets orderSecrets
-	_ = s.Config.open("order:"+order.Id, order.GetString("requestCipher"), &secrets)
-	result.OrderRef = secrets.Order.OrderRef
-	raw, _ := json.Marshal(result)
-	sealed, _ := s.Config.seal("result:"+order.Id, json.RawMessage(raw))
-	order.Set("resultCipher", sealed)
-	order.Set("status", "collected")
-	if err := s.App.Save(order); err != nil {
+	a, _, token := enroll(t, s, f, h)
+	sig, _ := s.App.FindRecordById("signatures", a.SignatureID)
+	sig.Set("evidenceCipher", "invalid")
+	if err := s.App.Save(sig); err != nil {
 		t.Fatal(err)
 	}
-	f.err = errors.New("provider unavailable")
-	if err := s.Recover(); err != nil {
+	if code, _ := request(t, h, "POST", "/upload-test", token, nil); code != 403 {
+		t.Fatal("tampered evidence accepted", code)
+	}
+}
+
+func TestQuestionnairesAndAnswersRequireConsentAndOwnership(t *testing.T) {
+	s, f, h := testService(t)
+	a, _, token := enroll(t, s, f, h)
+	q, _ := newRecord(s.App, "questionnaires")
+	q.Set("name", "Baseline")
+	q.Set("occurance", "once")
+	if err := s.App.Save(q); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.advance(context.Background(), order.Id); err != nil {
-		t.Fatal(err)
+	path := "/api/collections/answers/records"
+	body := map[string]any{"user": a.UserID, "questionnaire": q.Id, "answers": map[string]any{"example": true}}
+	code, result := request(t, h, "POST", path, token, body)
+	if code != 200 {
+		t.Fatal("consenting participant cannot answer", code, result)
 	}
-	flow, _ = s.App.FindRecordById("enrollment_sessions", flow.Id)
-	user, _ := s.App.FindRecordById("users", flow.GetString("user"))
-	if !s.activeConsent(s.App, user) {
-		t.Fatal("durably collected evidence was not recovered")
+	answerID := result["id"].(string)
+	if code, _ := request(t, h, "GET", "/api/collections/questionnaires/records", token, nil); code != 200 {
+		t.Fatal(code)
 	}
-	if _, err := PurgeSessions(s.App, s.Config, s.now().Add(48*time.Hour)); err != nil {
-		t.Fatal(err)
+	f.result = bankid.Result{Status: "pending"}
+	other, oc, _ := start(t, s, h, invite(t, s, "PART-002", ""), "")
+	completed(f, "199001012384", "low")
+	advance(t, s, other)
+	otherToken := session(t, h, other, oc)
+	if code, _ := request(t, h, "GET", path+"/"+answerID, otherToken, nil); code == 200 {
+		t.Fatal("another participant can read answer")
 	}
-	if !s.activeConsent(s.App, user) {
-		t.Fatal("purge deleted signing evidence")
+	if code, _ := request(t, h, "POST", path, otherToken, body); code == 200 {
+		t.Fatal("another participant can write answer")
 	}
-	order, _ = s.App.FindRecordById("bankid_orders", order.Id)
-	if order.GetString("requestCipher") != "" || order.GetString("resultCipher") != "" {
-		t.Fatal("operational secrets retained")
+	if code, _ := request(t, h, "PATCH", path+"/"+answerID, token, map[string]any{"user": other.UserID}); code == 200 {
+		t.Fatal("answer ownership can change")
 	}
-	// An in-flight collect at a crash boundary must remain inconclusive.
-	order.Set("status", "collecting")
-	if err := s.App.Save(order); err != nil {
-		t.Fatal(err)
+	if code, _ := request(t, h, "POST", "/api/study/consent/withdraw", token, nil); code != 204 {
+		t.Fatal(code)
 	}
-	if err := s.Recover(); err != nil {
-		t.Fatal(err)
+	for _, method := range []string{"POST", "GET"} {
+		if code, _ := request(t, h, method, path, token, body); code != 403 {
+			t.Fatal("withdrawn participant answer access", method, code)
+		}
 	}
-	order, _ = s.App.FindRecordById("bankid_orders", order.Id)
-	if order.GetString("status") != "unresolved" {
-		t.Fatal("ambiguous crash result accepted")
+	if code, _ := request(t, h, "GET", "/api/collections/questionnaires/records", token, nil); code != 403 {
+		t.Fatal("withdrawn participant questionnaire access", code)
 	}
 }

@@ -11,31 +11,32 @@ const document = ConsentDocument(
   text: 'I agree to share step data.',
   documentHash: 'hash1',
 );
-const pending = BankIdOrder(
+const pending = BankIdAttempt(
   id: 'order1',
+  secret: 'secret',
+  expiresAt: 4102444800,
   status: 'pending',
   hintCode: 'userSign',
-  purpose: 'sign',
-  mode: 'sameDevice',
   nonce: 'nonce1',
   launchUrl: 'https://app.bankid.com/?autostarttoken=token',
 );
-const accepted = BankIdOrder(
+const accepted = BankIdAttempt(
   id: 'order1',
+  secret: 'secret',
+  expiresAt: 4102444800,
   status: 'accepted',
-  hintCode: '',
-  purpose: 'sign',
-  mode: 'sameDevice',
+  document: document,
+  grant: {'token': 'server-grant'},
 );
-const cancelled = BankIdOrder(
+const cancelled = BankIdAttempt(
   id: 'order1',
+  secret: 'secret',
+  expiresAt: 4102444800,
   status: 'cancelled',
   hintCode: 'userCancel',
-  purpose: 'sign',
-  mode: 'sameDevice',
 );
 
-class MemoryStore implements BankIdFlowStore {
+class MemoryStore implements BankIdAttemptStore {
   Map<String, dynamic>? value;
   @override
   Future<Map<String, dynamic>?> read() async => value;
@@ -53,54 +54,46 @@ class MemoryStore implements BankIdFlowStore {
 class Gateway extends BankIdGateway {
   final MemoryStore store;
   Gateway(this.store);
-  final starts = <BankIdFlow>[];
-  BankIdOrder result = pending;
-  bool loseStart = false, needsConsent = false;
-  int completes = 0, returns = 0, abandons = 0;
-  Completer<BankIdOrder>? delayedStatus;
+  final starts = <Map<String, dynamic>>[];
+  BankIdAttempt result = pending;
+  bool loseStart = false, expired = false;
+  Object? startError;
+  int returns = 0, cancels = 0, statuses = 0;
+  Completer<BankIdAttempt>? delayedStatus;
   @override
   Future<ConsentDocument> currentConsent() async => document;
   @override
-  Future<Map<String, dynamic>> createFlow(BankIdFlow flow) async {
+  Future<BankIdAttempt> start(
+    BankIdAttempt a,
+    Map<String, dynamic> input,
+  ) async {
     expect(
-      store.value!['clientSecret'],
-      flow.clientSecret,
-      reason: 'Persist secret before sending enrollment',
+      store.value!['secret'],
+      a.secret,
+      reason: 'Persist credential before starting BankID',
     );
-    return {'id': 'flow1', 'expiresAt': flow.expiresAt};
-  }
-
-  @override
-  Future<BankIdOrder> start(BankIdFlow flow) async {
-    expect(
-      store.value!['requestKey'],
-      flow.requestKey,
-      reason: 'Persist idempotency key before starting BankID',
-    );
-    starts.add(flow);
+    starts.add(input);
+    if (startError != null) throw startError!;
     if (loseStart) throw StateError('lost response');
     return result;
   }
 
   @override
-  Future<BankIdOrder> status(BankIdFlow flow) async =>
-      delayedStatus == null ? result : delayedStatus!.future;
+  Future<BankIdAttempt> status(BankIdAttempt a) async {
+    statuses++;
+    if (expired) throw const AttemptExpired();
+    return delayedStatus == null ? result : delayedStatus!.future;
+  }
+
   @override
-  Future<BankIdOrder> returned(BankIdFlow flow, String nonce) async {
+  Future<BankIdAttempt> returned(BankIdAttempt a, String nonce) async {
     returns++;
     return result;
   }
 
   @override
-  Future<BankIdOrder> cancel(BankIdFlow flow) async => cancelled;
-  @override
-  Future<void> abandon(BankIdFlow flow) async {
-    abandons++;
-  }
-
-  @override
-  Future<Map<String, dynamic>> complete(BankIdFlow flow) async {
-    completes++;
-    return needsConsent ? {'consentRequired': true} : {'token': 'server-grant'};
+  Future<BankIdAttempt> cancel(BankIdAttempt a) async {
+    cancels++;
+    return cancelled;
   }
 }

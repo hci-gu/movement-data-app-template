@@ -19,8 +19,7 @@ class LoginScreen extends HookConsumerWidget {
       controller.restore();
       return null;
     }, const []);
-    final flow = state.flow;
-    final order = state.order;
+    final order = state.attempt;
     final document = state.document;
     final disabled = state.busy;
 
@@ -43,7 +42,7 @@ class LoginScreen extends HookConsumerWidget {
               padding: EdgeInsets.all(12),
               child: CupertinoActivityIndicator(),
             ),
-          if (flow == null) ...[
+          if (!state.begun) ...[
             const Text(
               'Enroll with your study invitation',
               style: AppTheme.sectionTitle,
@@ -74,17 +73,6 @@ class LoginScreen extends HookConsumerWidget {
                   ? null
                   : () => controller.begin(returning: true),
               child: const Text('Already enrolled? Sign in with BankID'),
-            ),
-          ] else if (flow.id.isEmpty) ...[
-            const Text('Resume your request', style: AppTheme.sectionTitle),
-            const SizedBox(height: 12),
-            const Text(
-              'Your request was saved. Continue to recover it.',
-              style: AppTheme.body,
-            ),
-            CupertinoButton.filled(
-              onPressed: disabled ? null : () => controller.begin(),
-              child: const Text('Resume request'),
             ),
           ] else if (order != null) ...[
             AppCard(
@@ -172,7 +160,7 @@ class LoginScreen extends HookConsumerWidget {
                     ? null
                     : () => order.purpose == 'sign'
                           ? controller.reviewAgain()
-                          : controller.start(flow.mode),
+                          : controller.start(order.mode),
                 child: Text(
                   order.purpose == 'sign'
                       ? 'Review consent and try again'
@@ -219,14 +207,7 @@ class LoginScreen extends HookConsumerWidget {
                   : () => controller.start('qr'),
               child: const Text('Use BankID on another device'),
             ),
-            if (flow.requestKey.isNotEmpty && state.error != null)
-              CupertinoButton(
-                onPressed: disabled
-                    ? null
-                    : () => controller.start(flow.mode, retry: true),
-                child: const Text('Resume signing request'),
-              ),
-          ] else if (flow.kind == 'enroll') ...[
+          ] else if (!state.returning) ...[
             CupertinoButton.filled(
               onPressed: disabled ? null : controller.reviewAgain,
               child: const Text('Load study consent'),
@@ -240,12 +221,7 @@ class LoginScreen extends HookConsumerWidget {
             ),
             const SizedBox(height: 20),
             CupertinoButton.filled(
-              onPressed: disabled
-                  ? null
-                  : () => controller.start(
-                      'sameDevice',
-                      retry: flow.requestKey.isNotEmpty,
-                    ),
+              onPressed: disabled ? null : () => controller.start('sameDevice'),
               child: const Text('Open BankID'),
             ),
             CupertinoButton(
@@ -253,7 +229,7 @@ class LoginScreen extends HookConsumerWidget {
               child: const Text('Use BankID on another device'),
             ),
           ],
-          if (flow != null && !state.busy && order?.accepted != true) ...[
+          if (state.begun && !state.busy && order?.accepted != true) ...[
             const SizedBox(height: 24),
             CupertinoButton(
               onPressed: controller.reset,

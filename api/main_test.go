@@ -44,7 +44,7 @@ func TestUploadEndpointsRequireBankIDSessionBeforeBodyOrStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/data", "/info"} {
+	for _, path := range []string{"/data", "/api/study/metadata"} {
 		req := httptest.NewRequest("POST", path, bytes.NewBufferString("invalid gzip"))
 		req.Header.Set("Content-Encoding", "gzip")
 		req.Header.Set("Content-Type", "application/json")
@@ -99,10 +99,10 @@ func TestAuthenticatedUploadIdentityGzipAndChunkOrdering(t *testing.T) {
 	if code := send("OTHER-001", 0); code != http.StatusForbidden {
 		t.Fatal("cross-participant upload", code)
 	}
-	if code := send("", 1); code != http.StatusConflict {
+	if code := send("PART-001", 1); code != http.StatusConflict {
 		t.Fatal("nonzero first chunk", code)
 	}
-	if code := send("", 0); code != 200 {
+	if code := send("PART-001", 0); code != 200 {
 		t.Fatal("gzip chunk", code)
 	}
 	if code := send("PART-001", 0); code != 200 {
@@ -126,11 +126,55 @@ func TestAuthenticatedUploadIdentityGzipAndChunkOrdering(t *testing.T) {
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatal("private upload permissions", err)
 	}
-	req := httptest.NewRequest("POST", "/info", bytes.NewBufferString(`{"participantId":"OTHER-001","data":{}}`))
+	req := httptest.NewRequest("POST", "/api/study/metadata", bytes.NewBufferString(`{"participantId":"OTHER-001","data":{}}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
 	if w.Code != 403 {
 		t.Fatal("cross-participant metadata", w.Code, w.Body.String())
+	}
+}
+
+func TestMetadataHistoryAndRemovedCompatibilityRoutes(t *testing.T) {
+	app := uploadApp(t)
+	users, _ := app.FindCollectionByNameOrId("users")
+	user := core.NewRecord(users)
+	user.Set("username", "PART-001")
+	user.SetPassword("fixture-password-123456")
+	if err := app.Save(user); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := apis.NewRouter(app)
+	registerDataRoutes(app, r, func(e *core.RequestEvent) error { e.Auth = user; return e.Next() }, func(e *core.RequestEvent) error { return e.Next() })
+	h, err := r.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("POST", "/api/study/metadata", bytes.NewBufferString(`{"participantId":"PART-001","data":{"example":true}}`))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != 201 {
+			t.Fatal(w.Code, w.Body.String())
+		}
+	}
+	updated, _ := app.FindRecordById("users", user.Id)
+	var entries []map[string]any
+	if err := updated.UnmarshalJSONField("metadata", &entries); err != nil || len(entries) != 2 {
+		t.Fatal("metadata was overwritten", err)
+	}
+	req := httptest.NewRequest("POST", "/info", bytes.NewBufferString(`{}`))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 404 {
+		t.Fatal("obsolete endpoint remains", w.Code)
+	}
+	req = httptest.NewRequest("POST", "/data", bytes.NewBufferString(`{"chunkIndex":0,"data":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != 403 {
+		t.Fatal("missing participant accepted", w.Code)
 	}
 }

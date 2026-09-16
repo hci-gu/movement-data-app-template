@@ -43,7 +43,7 @@ class _AppState extends ConsumerState<App> with WidgetsBindingObserver {
 
   Future<void> _returned(Uri uri) async {
     await ref.read(bankIdProvider.notifier).handleReturn(uri);
-    if (mounted && ref.read(bankIdProvider).flow != null) {
+    if (mounted && ref.read(bankIdProvider).begun) {
       ref.read(routerProvider).goNamed('login');
     }
   }

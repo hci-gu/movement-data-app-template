@@ -19,6 +19,7 @@ dependencies:
   health:
     path: ./health
   dio: ^5.8.0+1
+  crypto: ^3.0.6
   flutter_secure_storage: ^10.3.1
   url_launcher: ^6.3.2
   qr_flutter: ^4.1.0

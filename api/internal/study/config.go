@@ -21,21 +21,19 @@ import (
 )
 
 const SessionLifetime = 2 * time.Hour
-const FlowLifetime = 20 * time.Minute
 
 type Config struct {
-	Environment                       string
-	StudyID                           string
-	AppID                             string
-	IOSAppID                          string
-	ReturnURL                         string
-	CertFile, KeyFile, CAFile         string
-	PreviousCertFile, PreviousKeyFile string
-	ActiveKey                         string
-	EncryptionKeys                    map[string][]byte
-	IdentityKey                       []byte
-	TrustedProxies                    []netip.Prefix
-	SigningEnabled                    bool
+	Environment               string
+	StudyID                   string
+	AppID                     string
+	IOSAppID                  string
+	ReturnURL                 string
+	CertFile, KeyFile, CAFile string
+	ActiveKey                 string
+	EncryptionKeys            map[string][]byte
+	IdentityKey               []byte
+	TrustedProxies            []netip.Prefix
+	SigningEnabled            bool
 }
 
 func LoadConfig() (Config, error) {
@@ -46,7 +44,6 @@ func LoadConfig() (Config, error) {
 		IOSAppID:    os.Getenv("BANKID_IOS_APP_ID"),
 		ReturnURL:   os.Getenv("BANKID_RETURN_URL"),
 		CertFile:    os.Getenv("BANKID_CERT_FILE"), KeyFile: os.Getenv("BANKID_KEY_FILE"), CAFile: os.Getenv("BANKID_CA_FILE"),
-		PreviousCertFile: os.Getenv("BANKID_PREVIOUS_CERT_FILE"), PreviousKeyFile: os.Getenv("BANKID_PREVIOUS_KEY_FILE"),
 		ActiveKey:      os.Getenv("STUDY_ACTIVE_ENCRYPTION_KEY"),
 		EncryptionKeys: map[string][]byte{},
 		SigningEnabled: env("BANKID_SIGNING_ENABLED", "true") == "true",
@@ -162,7 +159,7 @@ func (c Config) digest(purpose, value string) string {
 }
 
 // Associated data prevents ciphertext from being moved to another record/purpose.
-func (c Config) seal(purpose string, value any) (string, error) {
+func (c Config) Seal(purpose string, value any) (string, error) {
 	block, err := aes.NewCipher(c.EncryptionKeys[c.ActiveKey])
 	if err != nil {
 		return "", err
@@ -183,7 +180,7 @@ func (c Config) seal(purpose string, value any) (string, error) {
 	return c.ActiveKey + ":" + base64.RawStdEncoding.EncodeToString(sealed), nil
 }
 
-func (c Config) open(purpose, value string, target any) error {
+func (c Config) Open(purpose, value string, target any) error {
 	id, encoded, ok := strings.Cut(value, ":")
 	if !ok {
 		return errors.New("invalid encrypted value")

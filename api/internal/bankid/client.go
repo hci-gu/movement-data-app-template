@@ -71,11 +71,12 @@ type Provider interface {
 	Cancel(context.Context, string) error
 }
 
-// APIError contains a machine-readable code only. Never log provider details,
-// which can contain submitted personal information.
+// APIError keeps the response for encrypted evidence. Error() exposes only the code;
+// never log Raw, which can contain submitted personal information.
 type APIError struct {
 	Status int
 	Code   string
+	Raw    json.RawMessage
 }
 
 func (e *APIError) Error() string { return fmt.Sprintf("BankID HTTP %d (%s)", e.Status, e.Code) }
@@ -156,7 +157,7 @@ func (c *Client) post(ctx context.Context, method string, body any) ([]byte, err
 			Code string `json:"errorCode"`
 		}
 		_ = json.Unmarshal(data, &payload)
-		return nil, &APIError{Status: res.StatusCode, Code: payload.Code}
+		return nil, &APIError{Status: res.StatusCode, Code: payload.Code, Raw: append([]byte(nil), data...)}
 	}
 	return data, nil
 }
@@ -188,8 +189,6 @@ func (c *Client) Collect(ctx context.Context, ref string) (Result, error) {
 	if err != nil {
 		return result, err
 	}
-	// print raw response for debugging
-	fmt.Println(string(raw))
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return result, errors.New("invalid BankID collect response")
 	}

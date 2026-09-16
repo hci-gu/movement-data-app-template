@@ -1,226 +1,139 @@
-# BankID: configuration, testing and operations
+# BankID setup, testing and operations
 
-Start here to configure the Flutter app and PocketBase API. Enrollment administration uses the PocketBase admin portal: publish consent and issue participant invitations in **Collections**. Certificates, server secrets and app builds remain deployment setup tasks. The [research and design](bankid-signing-plan.md) explains the provider decisions; this document describes the actual implementation.
+## Backend configuration
 
-## What you need to provide
+Use the Go toolchain pinned in `api/go.mod` and Flutter compatible with `pubspec.yaml`. Keep test and production databases and credentials separate.
 
-Direct Swedish BankID integration uses **mutual TLS certificates, not an API key, client ID or OAuth secret**. No intermediary signing provider account is required by this implementation. The public test environment is free; production requires an agreement with a connected bank or reseller. [BankID environments](https://developers.bankid.com/getting-started/environments), [connect a company](https://www.bankid.com/foretag/anslut-foeretag).
-
-| Item | How to obtain it | Configuration |
-| --- | --- | --- |
-| BankID RP client certificate and corresponding private key for **test** | Download the certificate bundle from the [official test information page](https://developers.bankid.com/test-portal/test-information). It currently offers `FPTestcert5_20240610.p12`, PEM and a legacy PFX; its published test passphrase is `qwerty123`. | Backend `BANKID_CERT_FILE` and `BANKID_KEY_FILE`, both PEM files. The private key must be unencrypted in its protected runtime mount. |
-| BankID server trust CA for the chosen environment | Use the correct PEM certificate from [BankID environments](https://developers.bankid.com/getting-started/environments). The test and production trust roots differ. | Backend `BANKID_CA_FILE`. Normal website trust alone is not used by this client. |
-| Test BankID on an iPhone | Follow the [test client setup guide](https://developers.bankid.com/test-portal/bankid-for-test), then [issue a test BankID](https://developers.bankid.com/test-portal/testing). Use a dedicated test device and synthetic identity. | Installed in the BankID app; never supply the participant's security code to this backend. |
-| Evidence encryption keyring and identity HMAC key | Generate locally using the included script below; these are **our secrets**, not credentials issued by BankID. | Backend `STUDY_SECRETS_FILE`; keep a secure backup separate from the database. |
-| Actual iOS bundle identifier | Runner target in Xcode. The repository currently has `com.appademin.swedHeart`; change it for the intended study if necessary. | Backend `BANKID_APP_IDENTIFIER` must match the installed app exactly. [BankID app request fields](https://developers.bankid.com/api-references/auth--sign/sign). |
-| API hostname and return URL | Your test/production hosting. The phone must reach the API over HTTPS for a realistic test. | Flutter `API_BASE_URL`; the same `BANKID_RETURN_URL` on Flutter and backend. |
-| Apple app ID prefix and associated domain, for HTTPS returns | Your [Apple developer account](https://developer.apple.com/account/), app identifier and provisioning profile. The prefix is usually the team ID; confirm the installed app's identifier. | `BANKID_IOS_APP_ID=PREFIX.bundle.identifier`, the domain entitlement, and the AASA endpoint described below. [Flutter universal link setup](https://docs.flutter.dev/cookbook/navigation/set-up-universal-links). |
-| Production RP certificate/key and agreement, later | Order through the bank/reseller selected by the service owner. They determine certificate issuance, organization display name and commercial terms. | Separate production deployment, database, trust root and keyring; `BANKID_ENVIRONMENT=production`. |
-| Optional researcher export credential | Generate a separate random secret if using the existing `GET /data/{participantId}` research export. | Backend `API_KEY`; send as `X-API-Key`. This is unrelated to BankID and must never be compiled into Flutter. |
-
-No real RP credentials or test identities were installed during implementation. Fake BankID responses exist only in automated test files, with no runtime bypass flag.
-
-## Configure a test backend
-
-Use Go 1.27.1 (the module pins the toolchain), Flutter 3.35.2 or later compatible with the lockfile, and a working iOS Xcode installation. Keep test and production in different data directories and deployments.
-
-From the repository root:
+The BankID client uses mutual TLS. Configure PEM client certificate/private key and the BankID server CA for the selected environment. Obtain test material and test BankID setup instructions from the official BankID developer portal. The private key belongs on the backend only.
 
 ```bash
 python3 scripts/create-study-secrets.py --out api/secrets/study-keys.json
 cp api/.env.example api/.env
 cd api
-go build -o app .
-```
-
-The script creates two independent random 32-byte secrets, writes a new file with mode `0600`, and refuses to overwrite it. It does not print keys. Store the downloaded certificates under `api/secrets/`, which is excluded from Git and Docker contexts.
-
-If you downloaded the P12 bundle, extract PEM files using OpenSSL. These commands prompt for its import passphrase. Use the modern P12 with OpenSSL 3; if your local OpenSSL cannot read it, use a compatible OpenSSL installation or the official PEM alternative.
-
-```bash
-umask 077
-openssl pkcs12 -in secrets/FPTestcert5_20240610.p12 -clcerts -nokeys -out secrets/client.pem
-openssl pkcs12 -in secrets/FPTestcert5_20240610.p12 -nocerts -nodes -out secrets/client-key.pem
-```
-
-Save the **test server CA** as `secrets/bankid-server-ca.pem`. Set the actual bundle identifier in `.env`, retain `BANKID_ENVIRONMENT=test`, and choose a unique test `STUDY_ID`. Paths in `.env` are relative to the API process working directory. The program deliberately does not load `.env` automatically:
-
-```bash
+# Edit .env with certificate paths, study identity, bundle ID and return URL.
 set -a
 source .env
 set +a
+go build -o app .
 ```
 
-An unset environment defaults to `disabled`; signing and new logins are unavailable until configured, and the BankID background worker does not poll the database. Consent can still be published in the portal; issuing invitations also requires the configured study encryption and identity keys. Enabled environments fail startup when required keys, certificates or return configuration are invalid. The provider endpoint is fixed by the environment, with no arbitrary URL override:
+The key-generation script refuses to overwrite an existing file and does not print secrets. Preserve the study keyring separately from database backups. The backend does not automatically load `.env`.
 
-- Test: `https://appapi2.test.bankid.com/rp/v6.0`
-- Production: `https://appapi2.bankid.com/rp/v6.0`
+| Setting | Meaning |
+| --- | --- |
+| `BANKID_ENVIRONMENT` | `test`, `production`, or `disabled` (default). |
+| `STUDY_ID` | Study namespace. |
+| `BANKID_APP_IDENTIFIER` | Installed iOS bundle identifier. |
+| `BANKID_CERT_FILE`, `BANKID_KEY_FILE`, `BANKID_CA_FILE` | PEM credential and trust files. |
+| `STUDY_SECRETS_FILE` | JSON keyring and identity HMAC key. |
+| `BANKID_RETURN_URL` | Test custom return URL or HTTPS universal link. |
+| `BANKID_IOS_APP_ID` | Apple app ID prefix plus bundle ID, required for HTTPS returns. |
+| `TRUSTED_PROXY_CIDRS` | Actual ingress proxy ranges; empty for direct access. |
+| `BANKID_SIGNING_ENABLED` | Set `false` to stop new attempts while existing attempts finish. |
+| `API_KEY` | Optional researcher export credential; never put it in Flutter. |
 
-If an ingress sits in front of PocketBase, set `TRUSTED_PROXY_CIDRS` to its actual network ranges. The backend walks `X-Forwarded-For` from the trusted proxy back toward the caller, ignoring spoofed forwarding headers from other peers. The proxy must preserve the genuine client address and restrict direct access to the backend. Wrong addresses can affect BankID's risk assessment. [Request IP requirements](https://developers.bankid.com/api-references/auth--sign/auth).
+Enabled environments require valid certificates, keys, and return configuration. Disabled mode permits consent administration but no BankID requests. Configure the intended environment before issuing invitations. The backend verifies client IP through its configured trusted proxy chain.
 
-## Administer enrollment in PocketBase
+## Existing installation: one-time cutover
 
-Start the API with the deployment configuration above:
+Stop the old backend and keep its data directory and encryption keys. From `api/`, with the same study configuration loaded:
+
+```bash
+go run ./cmd/cutover --source ./pb_data --out ./pb_data-v2
+./app serve --http=0.0.0.0:8080 --dir=./pb_data-v2
+```
+
+The output directory must not exist and must be outside the source directory. The converter copies SQLite databases using SQLite snapshots and copies uploaded files with private permissions. It never modifies the source. Keep the server stopped to maintain consistency between database and file snapshots. If conversion fails, treat its output as incomplete and use a new output directory for the next attempt.
+
+The conversion preserves participant IDs, answers and questionnaire relations, consent documents/evidence, metadata history, and upload files. Conflicting live invitations or identity mappings stop conversion for reconciliation. Old pending attempts become unknown outcomes; missing provider responses are not invented. Existing login tokens are invalidated. The matching Flutter release must be installed; old clients are unsupported.
+
+After verifying the converted copy, point the deployment's persistent data directory at that copy. Retain the source as an offline backup according to the study's storage policy. Do not run the previous backend against the converted database.
+
+A fresh installation needs no conversion:
 
 ```bash
 ./app serve --http=0.0.0.0:8080 --dir=./pb_data
 ```
 
-Open `http://localhost:8080/_/` locally, or `https://YOUR_TEST_API_HOST/_/` through your protected admin access, and sign in as a PocketBase superuser. On a new installation, use PocketBase's initial superuser setup link printed at startup. Keep the API running for all enrollment administration below; no `study` commands or service restarts are needed.
+## Publish consent and issue invitations
 
-The enrollment sequence is **publish consent → issue invitation → participant signs in the app → participant record becomes enrolled**. An invitation is permission to begin enrollment, not evidence of consent. You do not need to create a `users` record manually.
+Open the protected PocketBase administration UI at `/_/` as a superuser while this backend is running.
 
-### 1. Publish the consent participants will sign
+In **Collections → consent_texts → New record**, enter `version`, `title`, and `text`. Saving publishes the immutable text immediately and makes it current. The backend assigns study and hash. Publish another version to change the text; participants must sign that version before further writes.
 
-In **Collections → consent_versions → New record**, fill in only these fields:
+In **Collections → users → New record**, enter `username` (the participant ID), optionally `validityHours` (default 168), and optionally `expectedPersonalNumber` (12 digits). PocketBase’s auth-record form also requires its password fields: use **Generate and set random password**. The backend ignores those inputs and keeps password login disabled. Leave server-managed fields at their defaults. Saving creates an inactive participant with a six-digit invitation code formatted `XXX-XXX`. Reopen the record to copy `invitationCode`. The expected personal number clears after saving; the stored value is encrypted.
 
-| Field | What to enter |
-| --- | --- |
-| `version` | A new version label, such as `2026-01`. It must be unique within this study. |
-| `title` | The title participants should see, such as `Study participation consent`. |
-| `text` | Paste the complete approved plain-text consent. In a test database, use clearly labelled test consent. |
+To reissue an invitation, create another invitation using the same `username`, or use the command below. The operation retains the existing inactive user and replaces the invitation. Already enrolled users use BankID login and cannot receive an enrollment invitation.
 
-Leave the remaining fields at their defaults and click **Create**. Saving **publishes the document immediately** for the server's configured `STUDY_ID`; the server generates `documentHash` and updates `study_settings.currentVersion` together. No separate settings edit is required.
+After signing, the same user becomes active, the invitation is cleared, and a `signatures` record contains the encrypted evidence and outcome. `signatures` also includes authentication, rejected signing, and observed failed/cancelled/unknown attempts. No pending-attempt collection exists.
 
-The exact saved text is hashed, displayed in the app and sent to BankID. Maximum size is 30,000 UTF-8 bytes (40,000 after Base64); unsupported control characters and emoji are rejected. No approved study consent is invented or automatically published by this integration.
+Equivalent offline operator commands (stop the server first):
 
-Published versions cannot be edited or deleted in the portal. To change the consent, create another record with a new version label. This preserves old documents and signatures and immediately requires participants to sign the new version before further uploads. Existing boolean consent does not count as a BankID signature.
+```bash
+./app study publish-consent --file consent.txt --version 2026-01 --title 'Study consent' --dir=./pb_data
+./app study invite --participant TEST-001 --hours 168 --dir=./pb_data
+./app study export-evidence --signature SIGNATURE_ID --out evidence.json --dir=./pb_data
+```
 
-### 2. Issue a participant invitation
+`invite` accepts `--expected-identity-file` containing the expected 12-digit signer identity. Evidence export creates a new private file and includes personal information; it never overwrites an existing file.
 
-In **Collections → study_invitations → New record**, use these fields:
+## Configure and run Flutter
 
-| Field | What to enter |
-| --- | --- |
-| `participantId` | Your study identifier, such as `TEST-001`: 4–64 letters, digits, underscores or hyphens, beginning with a letter or digit. Use the existing identifier when inviting an existing participant. |
-| `validityHours` | Optional lifetime from 1 to 2160 whole hours. Blank or `0` means 168 hours (7 days). |
-| `expectedPersonalNumber` | Optional expected signer's 12-digit personal number. Use synthetic identities for BankID testing. Leave blank if the invitation is not bound to a known signer. |
-
-Leave `invitationCode` and all other fields at their defaults, then click **Create**. Reopen the saved record and copy **`invitationCode`**. Deliver that code through your study's existing enrollment process. The participant enters the code in the app; they do not enter `participantId` as an invitation.
-
-The server generates a random, one-use six-digit code formatted as `XXX-XXX` (for example `042-817`), its verification digest and expiry. It retries collisions so the code is not already assigned within the study. It encrypts the delivery code and optional signer identity before storing them. Existing longer codes remain valid until used or expired; newly issued invitations use the numeric format. `expectedPersonalNumber` clears after saving; a nonempty `expectedCipher` indicates that a signer binding was stored. Superusers can reopen and copy the code while it is unused and unexpired. The code disappears from responses once consumed or expired. Invitations created before this portal feature have no recoverable delivery code; use the original code or issue a new invitation.
-
-Without the optional signer binding, possession of the invitation authorizes the first eligible signer to enroll that participant. Verify the intended recipient before delivering an invitation for an existing participant. [BankID test identity guidance](https://developers.bankid.com/test-portal/test-information).
-
-Issued invitation records cannot be edited or deleted in the portal. If input was wrong or the invitation expired, create a new invitation. Issuing another invitation does **not** revoke an earlier unused one; treat any already-delivered code as valid until its expiry. Do not edit the server-generated hashes, encrypted fields or enrollment state.
-
-### 3. Check enrollment
-
-After the participant signs successfully in the app, inspect **study_invitations** (`consumed` becomes true), **users** (participant and consent status), and **consent_signatures** (signature record and outcome). `claimedFlow` alone only means an enrollment attempt has started. The server manages `study_settings`, `enrollment_sessions`, `bankid_orders`, identity mappings and consent events; operators do not need to create those records.
-
-Local `study publish-consent` and `study invite` commands remain available for scripted operations and use the same validation as the portal. If using those optional commands, stop the API first and use the same environment and `--dir`. Evidence export and retention maintenance below remain deployment/operator tasks.
-
-## Connect the iPhone app
-
-Run the Flutter commands from the repository root in another terminal.
-
-For an initial **test-only** same-device return, `.env.example` uses the registered custom scheme `researchsteps://bankid/return`. Build with the same value:
+Set the final bundle identifier and HealthKit permission text in Xcode. For test custom-scheme returns:
 
 ```bash
 flutter pub get
-flutter run \
-  --dart-define=API_BASE_URL=https://YOUR_TEST_API_HOST \
+flutter run --dart-define=API_BASE_URL=https://YOUR_TEST_API_HOST \
   --dart-define=BANKID_RETURN_URL=researchsteps://bankid/return
 ```
 
-Use a physical device with BankID configured for test. A production BankID cannot sign against the test RP endpoint. The official setup procedure changes the BankID app's environment and can require reinstalling it, which is why a dedicated test device is preferable. Follow the current [BankID iOS test instructions](https://developers.bankid.com/test-portal/bankid-for-test) rather than changing a daily-use installation casually.
+Production uses an HTTPS return URL at `/bankid/return`. Configure the same URL in Flutter/backend and use `scripts/configure-bankid-ios.py` to configure the associated domain as described by its `--help`. The backend serves `/.well-known/apple-app-site-association` using `BANKID_IOS_APP_ID`. Keep Flutter's default deep link handler disabled so `app_links` owns return handling.
 
-BankID launches through `https://app.bankid.com/` using iOS universal-links-only mode. App returns are received through `app_links`; Flutter's default deep link handler is disabled to avoid competition. Pending flow secrets and app session tokens live in iOS Keychain; the shared Runner entitlements include the secure-storage capability for all build configurations. The old generated password is removed from preferences.
+The shared Runner entitlements explicitly configure the app’s Keychain access group, used by secure storage in all build modes. See the [secure-storage plugin’s Keychain setup](https://github.com/juliansteenbakker/flutter_secure_storage#macos--ios) when changing signing or app-group configuration. The app saves attempt credentials and login tokens in secure storage. A relaunch can resume an attempt while the backend process still holds it. A backend restart requires a new attempt. Session expiry and logout clear the app's authentication and health state. Logout signs out every device for that participant.
 
-For **production**, or a realistic universal-link test:
+## HTTP interface
 
-```bash
-python3 scripts/configure-bankid-ios.py --domain YOUR_API_HOST
-```
+All participant responses use explicit public fields. Generic collection endpoints cannot bypass consent or expose invitation/identity/evidence fields. Authenticated participants with current consent can read questionnaire definitions and read/write their own `answers` through the standard PocketBase collection endpoints.
 
-1. Enable Associated Domains for the app identifier and use an appropriate provisioning profile in Xcode.
-2. Set backend `BANKID_RETURN_URL=https://YOUR_API_HOST/bankid/return` and `BANKID_IOS_APP_ID=PREFIX.YOUR_BUNDLE_IDENTIFIER`.
-3. Build Flutter with that exact return URL and the correct `API_BASE_URL`.
-4. Serve `https://YOUR_API_HOST/.well-known/apple-app-site-association` publicly, as JSON, without authentication or redirects. The API generates it from `BANKID_IOS_APP_ID`, restricted to `/bankid/return`.
-5. Install the build and test the link from another app. Apple caches domain associations, so provisioning/CDN issues may delay recognition. If the return opens in a browser, a static fallback asks the participant to return to the app; it never declares success or exposes a session token.
-
-The helper preserves existing HealthKit entitlements and adds the domain you provide. It does not change your bundle ID, developer team or provisioning account. See the [official Flutter/Apple setup instructions](https://docs.flutter.dev/cookbook/navigation/set-up-universal-links).
-
-## Real BankID acceptance test
-
-The following steps require your certificates, published consent, invitation and test device:
-
-1. Open the app, enter the invitation, read the full consent, acknowledge review and choose **Sign with BankID**. Check that BankID shows the intended consent text. Return to the app, see the accepted receipt, then continue to Apple Health.
-2. Permit HealthKit read access, preview step data and upload. Check the backend's `info` and `dataUploads` records and the files under `<data-dir>/raw/` belong to the authenticated participant.
-3. Check **View signed consent** from the summary, or the document button on the Apple Health screen before uploading. Export the corresponding evidence with the command below and verify it includes the exact request, consent, raw completion, signature and OCSP response.
-4. Repeat enrollment using a fresh invitation and **Use BankID on another device**. Scan the changing QR code with the second device. Let a code reach its 30-second scan limit and use **Show a new QR code**. Once BankID has picked up an order, continue collecting its result rather than resetting it on the scan deadline. [Animated QR guidance](https://developers.bankid.com/getting-started/qr-code).
-5. Cancel in BankID and in the app. Test an expired/blocked test BankID, a signer that does not match a bound invitation, and an already-used invitation. None should enable uploads.
-6. Background or terminate the study app during signing, then reopen it. Saved request IDs recover the existing order. Drop network connectivity around start/completion, then retry. An ambiguous provider result can require a new signature; a callback by itself cannot authenticate the participant.
-7. Sign out and use **Already enrolled? Sign in with BankID**. This uses `/auth`. Publish a new consent version, sign in again, and confirm `/sign` is required before uploads resume.
-8. Withdraw consent from the receipt. Future uploads must fail, including requests made with an earlier unexpired session. Sign in and review/sign again only if participation is to resume.
-9. Confirm expiry after two hours, rejected PocketBase auth-refresh, direct collection mutation denial, and that a different `participantId` in `/info` or `/data` is rejected. Test same-device Wi-Fi/mobile changes: this implementation requires the original caller IP until the grant is completed, so switching networks prompts a restart.
-
-The application accepts only `risk=low`. Moderate, high, unknown and absent risk indications never activate consent or grant access. A valid BankID signature can therefore be retained with a rejected application outcome. This conservative first-release policy needs review with the service owner if real test traffic regularly produces other results. [Collect and risk indications](https://developers.bankid.com/api-references/auth--sign/collect).
-
-For App Store/TestFlight review, prepare a separate test backend and synthetic reviewer invitation with instructions for obtaining a test BankID. Coordinate this with the review process; the production build has no fake-login or fake-consent fallback. [BankID app review guidance](https://developers.bankid.com/support).
-
-## Evidence, maintenance and rotation
-
-```bash
-# Stop the API and use its environment and data directory.
-./app study export-evidence --dir=./pb_data \
-  --signature=SIGNATURE_RECORD_ID \
-  --out=/private/evidence-exports/consent-evidence.json
-
-./app study purge-sessions --dir=./pb_data
-```
-
-Use encrypted persistent volumes and encrypted backups for the database and raw health uploads. The application-level encryption specifically protects identity and BankID evidence fields.
-
-Evidence export creates a new `0600` file and refuses to overwrite it. It includes identifying information. Completion/signature records are encrypted with AES-256-GCM and bound to their record; personal number lookup uses a study/environment-specific keyed HMAC. The portal supports validated creation of consent versions and invitations as described above. Published consent, issued invitations, publication settings, identity mappings and evidence cannot be directly edited or deleted through generic record APIs, including by superusers. Evidence export uses the local command above. PocketBase superusers still have read access to private collections; restrict admin access to operators.
-
-`purge-sessions` clears expired flow credentials, flow identities, invitation credentials (including encrypted delivery codes) and terminal-order operational payloads after a 24-hour grace period, and removes expired app sessions. It retains immutable consent evidence, identity mappings, consent events and minimal order history. It does not erase pending or durably collected work. Schedule it during maintenance; determine the study's retention period for the retained evidence, identities, health data, backups and audit logs separately.
-
-For encryption rotation, add a new random key under a new `encryptionKeys` ID and make it `activeKey`. Keep earlier keys for old records and backups. This changes the key for new writes; it does not rewrite old evidence. Do not replace `identityHmacKey` casually: identity lookup would stop resolving existing participants. Back up all required keys separately from the database and rehearse restoration. Never reuse test keys in production.
-
-For RP certificate rotation, configure the new cert/key as current and retain the old pair using `BANKID_PREVIOUS_CERT_FILE` and `BANKID_PREVIOUS_KEY_FILE` until previous pending orders finish. Each order selects its original certificate by fingerprint. Startup validates certificate validity and logs its expiry. Monitor expiry, `unresolved`/`rejected` counts, stuck `collected` records, database errors and BankID availability. `BANKID_SIGNING_ENABLED=false` stops new flows/orders while the worker can finish existing ones.
-
-The provider verifies BankID signatures; this implementation retains the XML signature, OCSP and complete provider response as evidence, rather than implementing a second XML signature validator. Evidence authentication is checked again before upload authorization. [BankID signature verification guidance](https://developers.bankid.com/how-to-guides/verifying-signatures).
-
-## Deployment and upgrading existing data
-
-[Dockerfile](../api/Dockerfile) builds the Go API, including its internal packages and compiled migrations, then runs as a non-root user. [Deployment template](../api/deploy/api.yaml) uses one replica and `Recreate`, a persistent data volume, and a read-only secret volume. Fill the hostname, image tag, app identifiers and actual proxy CIDRs before deploying; the placeholders deliberately do not enable a working production connection.
-
-Create the cluster secret from protected local files using your existing cluster workflow. Its required filenames are `client.pem`, `client-key.pem`, `bankid-server-ca.pem` and `study-keys.json`. No secret values are included in the manifest. Ensure the runtime UID/group can read the mount and write the persistent volume. Terminate HTTPS at the ingress and keep the PocketBase admin UI off public participant access through your ingress policy. Do not run overlapping replicas against the same database.
-
-PocketBase has been upgraded from 0.22.5 to 0.40.3, and the Dart SDK to 0.25.1. Before production migration, stop the old service and take a restorable backup of the complete data directory, raw uploads, configuration and encryption keys. Rehearse on a copy. The historical Go migrations were adapted for the current API, and the final migration locks participant collection APIs and disables the old password login. Existing participant IDs and legacy records remain; existing users need a correctly delivered invitation and an actual signature. Review the [PocketBase Go upgrade guide](https://pocketbase.io/v023upgrade/go/).
-
-This database change is not a supported automatic downgrade. Roll back by restoring the pre-upgrade backup with the previous binary, not by running the old binary against an upgraded database. Keep any older upload files in their original relative paths when moving data directories.
-
-## API contract and automated checks
-
-Flow authorization is `Bearer <flowID>.<clientSecret>`; the app generates and securely saves the 32-byte random secret before creating a flow. The server stores a keyed digest. Creation and order starts are retry-safe for the same secret/request key. App authorization uses the granted PocketBase token **plus** a private server session record, expires at most two hours after the BankID event, and cannot be refreshed. Enrollment flows last 20 minutes.
-
-| Endpoint | Purpose |
+| Operation | Request |
 | --- | --- |
-| `GET /api/study/consent/current` | Published document and availability. |
-| `POST /api/study/enrollments` | `{kind: "enroll"/"login", clientSecret, invitationCode}`. |
-| `POST /api/study/bankid-orders` | Flow auth; `{consentVersionId, documentHash, mode: "sameDevice"/"qr", requestKey}`. Omit consent fields for initial returning `/auth`. |
-| `GET /api/study/bankid-orders/{id}` | Owner-only cached order status and current QR frame. |
-| `POST /api/study/bankid-orders/{id}/return` | Validate nonce and flow possession, then return cached status. |
-| `POST /api/study/bankid-orders/{id}/cancel` | Serialize cancellation with collection and acceptance. |
-| `POST /api/study/enrollments/{id}/complete` | Obtain a short session or `consentRequired`; a retry returns the same grant. |
-| `POST /api/study/enrollments/{id}/abandon` | End the flow and release an unused invitation. |
-| `GET /api/study/me`, `POST /api/study/logout` | Validate or revoke the app session. |
-| `GET /api/study/consent/receipt`, `POST /api/study/consent/withdraw` | Own receipt and withdrawal. |
-| `POST /info`, `POST /data` | Require current signed consent and derive identity from the app session. |
+| Current consent | `GET /api/study/consent/current` |
+| Start enrollment signing | `POST /api/study/bankid/attempts` with `clientSecret`, `invitationCode`, `consentTextId`, `documentHash`, and `mode`. |
+| Start returning login | Same endpoint, with `clientSecret` and `mode`. |
+| Sign after returning login | Same endpoint, with a new `clientSecret`, `authAttempt` credential and reviewed consent fields. |
+| Status and session delivery | `GET /api/study/bankid/attempts/{id}` |
+| Cancel | `POST /api/study/bankid/attempts/{id}/cancel` |
+| BankID return | `POST /api/study/bankid/attempts/{id}/return` with `nonce`. |
+| Participant | `GET /api/study/me` |
+| Receipt | `GET /api/study/consent/receipt` |
+| Withdraw | `POST /api/study/consent/withdraw` |
+| Logout all devices | `POST /api/study/logout` |
+| Participant metadata | `POST /api/study/metadata` with matching `participantId` and `data`. |
+| Chunked upload | `POST /data` with matching `participantId`, `chunkIndex`, and `data`; gzip supported. |
+| Researcher export | `GET /data/{participantId}` with `X-API-Key`. |
 
-The backend collects independently of app polling, at least two seconds apart per order. It saves the provider result before finalizing consent in a transaction. Lost terminal responses remain unresolved and cannot create access. There is no claim of exactly-once provider delivery. [BankID collect contract](https://developers.bankid.com/api-references/auth--sign/collect), [error handling](https://developers.bankid.com/api-references/errors).
+The app generates a 32-byte random Base64URL `clientSecret` without padding. The attempt ID is the first 32 hexadecimal characters of its SHA-256 digest. Save ID/secret/expiry before starting. Attempt authorization is `Bearer <id>.<clientSecret>`; participant authorization is the returned PocketBase token. Retrying an identical start is safe while its attempt remains in memory. After a lost start response, query status; do not automatically start another provider request.
+
+Accepted status includes either a `grant` or `consentRequired: true`. A signing receipt can be displayed before accepting the grant. The server rechecks current consent and revocation when returning status. An expired/missing attempt returns HTTP 410, requiring a fresh start. A return callback never substitutes for accepted status.
+
+## Verification
 
 ```bash
-flutter analyze
-flutter test
 cd api
 go test -race ./...
 go vet ./...
-go build .
+cd ..
+flutter analyze
+flutter test
+flutter build ios --simulator
 ```
 
-Automated tests cover disabled-worker polling, portal consent publication and invitation enrollment, admin access checks and encrypted invitation storage, official QR vectors, mutual TLS and server trust, response preservation, signing evidence, wrong signer/risk failures, owner/nonce checks, idempotent completion, returning authentication and re-consent, session expiry/withdrawal/revocation, recovery after a persisted result, ambiguous results, key rotation, proxy handling, upload identity/gzip/chunk behavior, app cold starts, cancellation races and review/QR UI on a small screen. A synthetic 0.22.5 database upgrade was also rehearsed with legacy participant and info records preserved.
+Automated tests use fake BankID responses with real temporary PocketBase databases. They verify stored evidence, identity checks, consent renewal/withdrawal, invitation replacement, duplicate requests, cancellation races, persistence retry, restart handling, revoked sessions, conversion, and upload ownership/chunk ordering. Flutter tests verify consent review, launch/return handling, resume, expiry, and QR layout. No runtime fake-provider switch exists.
 
-Real BankID/device acceptance is still required after configuration. On the implementation machine, Dart analysis/tests and Go checks run; the native iOS build is currently blocked by Xcode reporting the iOS 26.2 platform component is missing. Install that component in **Xcode → Settings → Components**, then build and run on the configured test phone. Automated provider tests do not replace that final device test. Docker image execution was not verified on this machine because its Docker daemon is unavailable.
+On a test iPhone, verify invitation → review → BankID signing → return → receipt → HealthKit → upload. Then verify returning login, a newly published consent, wrong signer, cancellation, QR signing with another device, app background/termination, backend restart, and logout. Record these results separately from automated tests; a simulator build does not prove real BankID handoff or HealthKit behavior.
+
+## Deployment and maintenance
+
+Use `api/deploy/api.yaml` with the actual image, hostnames, app identifiers and secret mount. Keep `replicas: 1` and the `Recreate` strategy. Pending attempts are process-local and do not survive rolling replacement or certificate rotation; participants retry after restart.
+
+For certificate rotation, finish or cancel active attempts, then restart with the new certificate. For encryption key rotation, retain old decryption keys and change the active key ID; deleting old keys makes existing evidence unreadable. No database session-purge command is needed. Monitor certificate expiry, failed/rejected outcomes, persistence errors, and process memory. Configure backup and retention for participant data and evidence with the study owner.

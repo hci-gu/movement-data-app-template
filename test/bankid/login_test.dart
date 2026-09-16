@@ -40,8 +40,10 @@ void main() {
       await tester.tap(find.byType(CupertinoSwitch));
       await tester.pumpAndSettle();
       expect(button('Sign with BankID').onPressed, isNotNull);
-      gateway.result = const BankIdOrder(
+      gateway.result = const BankIdAttempt(
         id: 'qr1',
+        secret: 'secret',
+        expiresAt: 4102444800,
         status: 'pending',
         hintCode: 'outstandingTransaction',
         purpose: 'sign',
