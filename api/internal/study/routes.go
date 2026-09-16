@@ -479,9 +479,9 @@ func (s *Service) RequireConsent(e *core.RequestEvent) error {
 // Even superuser API writes must use the study operations, which preserve
 // immutable documents/evidence. Ordinary collection rules alone exclude no superusers.
 func ProtectRecords(app core.App) {
-	immutable := []string{"consent_versions", "consent_signatures", "participant_identities", "consent_events"}
+	immutable := []string{"consent_versions", "consent_signatures", "participant_identities", "consent_events", "study_settings"}
 	app.OnRecordCreateRequest(immutable...).BindFunc(func(e *core.RecordRequestEvent) error {
-		return problem(403, "managedRecord", "Use the study command or signing flow to create this record.")
+		return problem(403, "managedRecord", "Use the enrollment administration or signing flow to create this record.")
 	})
 	app.OnRecordUpdateRequest(immutable...).BindFunc(func(e *core.RecordRequestEvent) error {
 		return problem(403, "immutableRecord", "This study record is immutable.")

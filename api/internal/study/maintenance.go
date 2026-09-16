@@ -18,7 +18,7 @@ func PurgeSessions(app core.App, cfg Config, now time.Time) (int, error) {
 			fields             []string
 		}{
 			{"enrollment_sessions", "expiresAt < {:cutoff}", []string{"identityCipher", "grantCipher", "tokenHash"}},
-			{"study_invitations", "expiresAt < {:cutoff}", []string{"expectedCipher", "tokenHash"}},
+			{"study_invitations", "expiresAt < {:cutoff}", []string{"expectedCipher", "tokenHash", "tokenCipher"}},
 			{"bankid_orders", "startedAt < {:cutoff} && (status='accepted' || status='rejected' || status='failed' || status='cancelled' || status='unresolved')", []string{"requestCipher", "resultCipher", "nonceHash", "ipHash"}},
 		}
 		for _, spec := range specs {

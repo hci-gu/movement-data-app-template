@@ -188,6 +188,8 @@ func (c *Client) Collect(ctx context.Context, ref string) (Result, error) {
 	if err != nil {
 		return result, err
 	}
+	// print raw response for debugging
+	fmt.Println(string(raw))
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return result, errors.New("invalid BankID collect response")
 	}

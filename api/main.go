@@ -86,6 +86,7 @@ func main() {
 		if err := svc.Recover(); err != nil {
 			return err
 		}
+		svc.RegisterAdmin()
 		svc.RegisterRoutes(e.Router)
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan struct{})

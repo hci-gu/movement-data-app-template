@@ -1,6 +1,6 @@
 # BankID: configuration, testing and operations
 
-Implemented 2026-09-07. Start here to configure the Flutter app and PocketBase API. The [research and design](bankid-signing-plan.md) explains the provider decisions; this document describes the actual implementation.
+Start here to configure the Flutter app and PocketBase API. Enrollment administration uses the PocketBase admin portal: publish consent and issue participant invitations in **Collections**. Certificates, server secrets and app builds remain deployment setup tasks. The [research and design](bankid-signing-plan.md) explains the provider decisions; this document describes the actual implementation.
 
 ## What you need to provide
 
@@ -51,34 +51,64 @@ source .env
 set +a
 ```
 
-An unset environment defaults to `disabled`; signing and new logins are unavailable until configured. Enabled environments fail startup when required keys, certificates or return configuration are invalid. The provider endpoint is fixed by the environment, with no arbitrary URL override:
+An unset environment defaults to `disabled`; signing and new logins are unavailable until configured, and the BankID background worker does not poll the database. Consent can still be published in the portal; issuing invitations also requires the configured study encryption and identity keys. Enabled environments fail startup when required keys, certificates or return configuration are invalid. The provider endpoint is fixed by the environment, with no arbitrary URL override:
 
 - Test: `https://appapi2.test.bankid.com/rp/v6.0`
 - Production: `https://appapi2.bankid.com/rp/v6.0`
 
 If an ingress sits in front of PocketBase, set `TRUSTED_PROXY_CIDRS` to its actual network ranges. The backend walks `X-Forwarded-For` from the trusted proxy back toward the caller, ignoring spoofed forwarding headers from other peers. The proxy must preserve the genuine client address and restrict direct access to the backend. Wrong addresses can affect BankID's risk assessment. [Request IP requirements](https://developers.bankid.com/api-references/auth--sign/auth).
 
-## Publish consent and issue an invitation
+## Administer enrollment in PocketBase
 
-Run local study commands against the same `--dir` as the service. Stop the service during operator commands: this release uses one process per database, including its BankID worker. Commands run migrations before operating. No approved study consent is invented or automatically published by this integration.
-
-Create a UTF-8 plain-text file containing the approved consent. In a test database, use clearly labelled test consent. The exact bytes are hashed, displayed in the app and sent as `userVisibleData` to BankID. Maximum size is 30,000 UTF-8 bytes (40,000 after Base64); unsupported control characters and emoji are rejected.
+Start the API with the deployment configuration above:
 
 ```bash
-./app study publish-consent --dir=./pb_data \
-  --file=/absolute/path/to/approved-consent.txt \
-  --version=2026-01 --title='Study participation consent'
-
-./app study invite --dir=./pb_data --participant=TEST-001 --hours=168
-
 ./app serve --http=0.0.0.0:8080 --dir=./pb_data
 ```
 
-The invitation is a random, one-use bearer code printed once by the local command. Deliver it through your study's existing enrollment process. A participant cannot choose or claim a record by typing an identifier. To bind an invitation to a known signer, add `--expected-identity-file=/private/path/test-identity.txt`; the file must contain the expected 12-digit personal number. Its content is encrypted, not printed or supplied as a command-line value. In the test environment use synthetic identities only. [BankID test identity guidance](https://developers.bankid.com/test-portal/test-information).
+Open `http://localhost:8080/_/` locally, or `https://YOUR_TEST_API_HOST/_/` through your protected admin access, and sign in as a PocketBase superuser. On a new installation, use PocketBase's initial superuser setup link printed at startup. Keep the API running for all enrollment administration below; no `study` commands or service restarts are needed.
 
-Without that optional binding, possession of the invitation authorizes the first eligible signer to enroll that participant. For existing participant records, verify the intended recipient before issuing or delivering their invitation.
+The enrollment sequence is **publish consent → issue invitation → participant signs in the app → participant record becomes enrolled**. An invitation is permission to begin enrollment, not evidence of consent. You do not need to create a `users` record manually.
 
-Publishing a new version preserves old documents/signatures and immediately requires the new version for further uploads. Existing boolean consent does not count as a BankID signature.
+### 1. Publish the consent participants will sign
+
+In **Collections → consent_versions → New record**, fill in only these fields:
+
+| Field | What to enter |
+| --- | --- |
+| `version` | A new version label, such as `2026-01`. It must be unique within this study. |
+| `title` | The title participants should see, such as `Study participation consent`. |
+| `text` | Paste the complete approved plain-text consent. In a test database, use clearly labelled test consent. |
+
+Leave the remaining fields at their defaults and click **Create**. Saving **publishes the document immediately** for the server's configured `STUDY_ID`; the server generates `documentHash` and updates `study_settings.currentVersion` together. No separate settings edit is required.
+
+The exact saved text is hashed, displayed in the app and sent to BankID. Maximum size is 30,000 UTF-8 bytes (40,000 after Base64); unsupported control characters and emoji are rejected. No approved study consent is invented or automatically published by this integration.
+
+Published versions cannot be edited or deleted in the portal. To change the consent, create another record with a new version label. This preserves old documents and signatures and immediately requires participants to sign the new version before further uploads. Existing boolean consent does not count as a BankID signature.
+
+### 2. Issue a participant invitation
+
+In **Collections → study_invitations → New record**, use these fields:
+
+| Field | What to enter |
+| --- | --- |
+| `participantId` | Your study identifier, such as `TEST-001`: 4–64 letters, digits, underscores or hyphens, beginning with a letter or digit. Use the existing identifier when inviting an existing participant. |
+| `validityHours` | Optional lifetime from 1 to 2160 whole hours. Blank or `0` means 168 hours (7 days). |
+| `expectedPersonalNumber` | Optional expected signer's 12-digit personal number. Use synthetic identities for BankID testing. Leave blank if the invitation is not bound to a known signer. |
+
+Leave `invitationCode` and all other fields at their defaults, then click **Create**. Reopen the saved record and copy **`invitationCode`**. Deliver that code through your study's existing enrollment process. The participant enters the code in the app; they do not enter `participantId` as an invitation.
+
+The server generates a random, one-use six-digit code formatted as `XXX-XXX` (for example `042-817`), its verification digest and expiry. It retries collisions so the code is not already assigned within the study. It encrypts the delivery code and optional signer identity before storing them. Existing longer codes remain valid until used or expired; newly issued invitations use the numeric format. `expectedPersonalNumber` clears after saving; a nonempty `expectedCipher` indicates that a signer binding was stored. Superusers can reopen and copy the code while it is unused and unexpired. The code disappears from responses once consumed or expired. Invitations created before this portal feature have no recoverable delivery code; use the original code or issue a new invitation.
+
+Without the optional signer binding, possession of the invitation authorizes the first eligible signer to enroll that participant. Verify the intended recipient before delivering an invitation for an existing participant. [BankID test identity guidance](https://developers.bankid.com/test-portal/test-information).
+
+Issued invitation records cannot be edited or deleted in the portal. If input was wrong or the invitation expired, create a new invitation. Issuing another invitation does **not** revoke an earlier unused one; treat any already-delivered code as valid until its expiry. Do not edit the server-generated hashes, encrypted fields or enrollment state.
+
+### 3. Check enrollment
+
+After the participant signs successfully in the app, inspect **study_invitations** (`consumed` becomes true), **users** (participant and consent status), and **consent_signatures** (signature record and outcome). `claimedFlow` alone only means an enrollment attempt has started. The server manages `study_settings`, `enrollment_sessions`, `bankid_orders`, identity mappings and consent events; operators do not need to create those records.
+
+Local `study publish-consent` and `study invite` commands remain available for scripted operations and use the same validation as the portal. If using those optional commands, stop the API first and use the same environment and `--dir`. Evidence export and retention maintenance below remain deployment/operator tasks.
 
 ## Connect the iPhone app
 
@@ -142,9 +172,9 @@ For App Store/TestFlight review, prepare a separate test backend and synthetic r
 
 Use encrypted persistent volumes and encrypted backups for the database and raw health uploads. The application-level encryption specifically protects identity and BankID evidence fields.
 
-Evidence export creates a new `0600` file and refuses to overwrite it. It includes identifying information. Completion/signature records are encrypted with AES-256-GCM and bound to their record; personal number lookup uses a study/environment-specific keyed HMAC. Generic record APIs cannot modify immutable consent/identity/evidence records, including through the admin UI. Use the local study commands. PocketBase superusers still have read access to private collections; restrict admin access to operators.
+Evidence export creates a new `0600` file and refuses to overwrite it. It includes identifying information. Completion/signature records are encrypted with AES-256-GCM and bound to their record; personal number lookup uses a study/environment-specific keyed HMAC. The portal supports validated creation of consent versions and invitations as described above. Published consent, issued invitations, publication settings, identity mappings and evidence cannot be directly edited or deleted through generic record APIs, including by superusers. Evidence export uses the local command above. PocketBase superusers still have read access to private collections; restrict admin access to operators.
 
-`purge-sessions` clears expired flow credentials, flow identities, invitation credentials and terminal-order operational payloads after a 24-hour grace period, and removes expired app sessions. It retains immutable consent evidence, identity mappings, consent events and minimal order history. It does not erase pending or durably collected work. Schedule it during maintenance; determine the study's retention period for the retained evidence, identities, health data, backups and audit logs separately.
+`purge-sessions` clears expired flow credentials, flow identities, invitation credentials (including encrypted delivery codes) and terminal-order operational payloads after a 24-hour grace period, and removes expired app sessions. It retains immutable consent evidence, identity mappings, consent events and minimal order history. It does not erase pending or durably collected work. Schedule it during maintenance; determine the study's retention period for the retained evidence, identities, health data, backups and audit logs separately.
 
 For encryption rotation, add a new random key under a new `encryptionKeys` ID and make it `activeKey`. Keep earlier keys for old records and backups. This changes the key for new writes; it does not rewrite old evidence. Do not replace `identityHmacKey` casually: identity lookup would stop resolving existing participants. Back up all required keys separately from the database and rehearse restoration. Never reuse test keys in production.
 
@@ -191,6 +221,6 @@ go vet ./...
 go build .
 ```
 
-Automated tests cover official QR vectors, mutual TLS and server trust, response preservation, signing evidence, wrong signer/risk failures, owner/nonce checks, idempotent completion, returning authentication and re-consent, session expiry/withdrawal/revocation, recovery after a persisted result, ambiguous results, key rotation, proxy handling, upload identity/gzip/chunk behavior, app cold starts, cancellation races and review/QR UI on a small screen. A synthetic 0.22.5 database upgrade was also rehearsed with legacy participant and info records preserved.
+Automated tests cover disabled-worker polling, portal consent publication and invitation enrollment, admin access checks and encrypted invitation storage, official QR vectors, mutual TLS and server trust, response preservation, signing evidence, wrong signer/risk failures, owner/nonce checks, idempotent completion, returning authentication and re-consent, session expiry/withdrawal/revocation, recovery after a persisted result, ambiguous results, key rotation, proxy handling, upload identity/gzip/chunk behavior, app cold starts, cancellation races and review/QR UI on a small screen. A synthetic 0.22.5 database upgrade was also rehearsed with legacy participant and info records preserved.
 
 Real BankID/device acceptance is still required after configuration. On the implementation machine, Dart analysis/tests and Go checks run; the native iOS build is currently blocked by Xcode reporting the iOS 26.2 platform component is missing. Install that component in **Xcode → Settings → Components**, then build and run on the configured test phone. Automated provider tests do not replace that final device test. Docker image execution was not verified on this machine because its Docker daemon is unavailable.

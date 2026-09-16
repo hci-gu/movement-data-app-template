@@ -1,18 +1,13 @@
 package study
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/core"
 	"github.com/spf13/cobra"
 )
 
@@ -37,52 +32,11 @@ func RegisterCommands(app *pocketbase.PocketBase) {
 		if err != nil {
 			return err
 		}
-		if !utf8.Valid(text) || len(text) == 0 || len(text) > 30000 || strings.TrimSpace(version) == "" || strings.TrimSpace(title) == "" {
-			return errors.New("provide a version, title and nonempty UTF-8 consent file of at most 30000 bytes")
-		}
-		// BankID supports a subset of Unicode; avoid unsupported controls/emoji.
-		for _, r := range string(text) {
-			if !(r == '\n' || r == '\r' || r == '\t' || r >= 0x20 && r <= 0x7e || r >= 0xa0 && r <= 0xffef) {
-				return fmt.Errorf("consent contains unsupported character U+%04X", r)
-			}
-		}
-		var id string
-		err = app.RunInTransaction(func(tx core.App) error {
-			existing, err := tx.FindFirstRecordByFilter("consent_versions", "study={:study} && version={:version}", dbx.Params{"study": cfg.StudyID, "version": version})
-			if err == nil {
-				return fmt.Errorf("version already exists (%s); use a new version", existing.Id)
-			}
-			if !errors.Is(err, sql.ErrNoRows) {
-				return err
-			}
-			r, err := newRecord(tx, "consent_versions")
-			if err != nil {
-				return err
-			}
-			r.Set("study", cfg.StudyID)
-			r.Set("version", version)
-			r.Set("title", title)
-			r.Set("text", string(text))
-			r.Set("documentHash", hash(string(text)))
-			if err := tx.Save(r); err != nil {
-				return err
-			}
-			id = r.Id
-			settings, err := tx.FindFirstRecordByData("study_settings", "study", cfg.StudyID)
-			if errors.Is(err, sql.ErrNoRows) {
-				settings, err = newRecord(tx, "study_settings")
-			}
-			if err != nil {
-				return err
-			}
-			settings.Set("study", cfg.StudyID)
-			settings.Set("currentVersion", r.Id)
-			return tx.Save(settings)
-		})
+		record, err := PublishConsent(app, cfg, version, title, string(text))
 		if err != nil {
 			return err
 		}
-		cmd.Printf("Published consent %s (%s). Existing participants must sign this version before further uploads.\n", version, id)
+		cmd.Printf("Published consent %s (%s). Existing participants must sign this version before further uploads.\n", version, record.Id)
 		return nil
 	}}
 	publish.Flags().StringVar(&file, "file", "", "Path to approved consent text")
@@ -95,48 +49,22 @@ func RegisterCommands(app *pocketbase.PocketBase) {
 		if err != nil {
 			return err
 		}
-		if err := cfg.ValidateSecrets(); err != nil {
-			return err
-		}
-		if !participantPattern.MatchString(participant) || hours < 1 || hours > 2160 {
-			return errors.New("participant must be 4–64 safe characters; validity must be 1–2160 hours")
-		}
-		code := randomSecret()
-		r, err := newRecord(app, "study_invitations")
-		if err != nil {
-			return err
-		}
-		r.Set("study", cfg.StudyID)
-		r.Set("participantId", participant)
-		r.Set("tokenHash", cfg.digest("invitation", code))
-		r.Set("expiresAt", time.Now().Add(time.Duration(hours)*time.Hour).Unix())
-		// Save to allocate the ID used in authenticated encryption, in one transaction.
-		err = app.RunInTransaction(func(tx core.App) error {
-			if err := tx.Save(r); err != nil {
+		var expectedIdentity string
+		if expectedFile != "" {
+			raw, err := os.ReadFile(expectedFile)
+			if err != nil {
 				return err
 			}
-			if expectedFile != "" {
-				raw, err := os.ReadFile(expectedFile)
-				if err != nil {
-					return err
-				}
-				pnr := strings.TrimSpace(string(raw))
-				if !personalNumberPattern.MatchString(pnr) {
-					return errors.New("expected identity file must contain a 12-digit personal number")
-				}
-				sealed, err := cfg.seal("invitation:"+r.Id, identity{PersonalNumber: pnr})
-				if err != nil {
-					return err
-				}
-				r.Set("expectedCipher", sealed)
-				return tx.Save(r)
+			expectedIdentity = strings.TrimSpace(string(raw))
+			if expectedIdentity == "" {
+				return errors.New("expected identity file must contain a 12-digit personal number")
 			}
-			return nil
-		})
+		}
+		r, code, err := IssueInvitation(app, cfg, participant, expectedIdentity, hours, time.Now())
 		if err != nil {
 			return err
 		}
-		cmd.Printf("Participant: %s\nInvitation (shown once): %s\nExpires: %s\n", participant, code, time.Unix(int64(r.GetInt("expiresAt")), 0).UTC().Format(time.RFC3339))
+		cmd.Printf("Participant: %s\nInvitation: %s\nExpires: %s\n", participant, code, time.Unix(int64(r.GetInt("expiresAt")), 0).UTC().Format(time.RFC3339))
 		return nil
 	}}
 	invite.Flags().StringVar(&participant, "participant", "", "Study participant identifier")

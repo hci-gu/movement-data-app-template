@@ -71,6 +71,7 @@ func testService(t *testing.T) (*Service, *fakeBankID, http.Handler) {
 		t.Fatal(err)
 	}
 	ProtectRecords(app)
+	s.RegisterAdmin()
 	r, err := apis.NewRouter(app)
 	if err != nil {
 		t.Fatal(err)

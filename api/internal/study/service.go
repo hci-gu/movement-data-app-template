@@ -287,6 +287,9 @@ func (s *Service) Recover() error {
 }
 
 func (s *Service) Run(ctx context.Context) {
+	if s.Config.Environment == "disabled" {
+		return
+	}
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
