@@ -3,74 +3,64 @@ package migrations
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/daos"
+	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/models/schema"
 )
 
 func init() {
-	m.Register(func(db dbx.Builder) error {
-		dao := daos.New(db);
+	m.Register(func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("b2mshgf2i5wivh1")
+		collection, err := app.FindCollectionByNameOrId("b2mshgf2i5wivh1")
 		if err != nil {
 			return err
 		}
 
 		// add
-		new_dataFrom := &schema.SchemaField{}
+		new_dataFrom := &core.DateField{}
 		if err := json.Unmarshal([]byte(`{
-			"system": false,
-			"id": "ww5tq4wd",
-			"name": "dataFrom",
-			"type": "date",
-			"required": false,
-			"presentable": false,
-			"unique": false,
-			"options": {
-				"min": "",
-				"max": ""
-			}
-		}`), new_dataFrom); err != nil {
+  "system": false,
+  "id": "ww5tq4wd",
+  "name": "dataFrom",
+  "type": "date",
+  "required": false,
+  "presentable": false,
+  "min": "",
+  "max": ""
+}`), new_dataFrom); err != nil {
 			return err
 		}
-		collection.Schema.AddField(new_dataFrom)
+		collection.Fields.Add(new_dataFrom)
 
 		// add
-		new_dataTo := &schema.SchemaField{}
+		new_dataTo := &core.DateField{}
 		if err := json.Unmarshal([]byte(`{
-			"system": false,
-			"id": "kkixhcs3",
-			"name": "dataTo",
-			"type": "date",
-			"required": false,
-			"presentable": false,
-			"unique": false,
-			"options": {
-				"min": "",
-				"max": ""
-			}
-		}`), new_dataTo); err != nil {
+  "system": false,
+  "id": "kkixhcs3",
+  "name": "dataTo",
+  "type": "date",
+  "required": false,
+  "presentable": false,
+  "min": "",
+  "max": ""
+}`), new_dataTo); err != nil {
 			return err
 		}
-		collection.Schema.AddField(new_dataTo)
+		collection.Fields.Add(new_dataTo)
 
-		return dao.SaveCollection(collection)
-	}, func(db dbx.Builder) error {
-		dao := daos.New(db);
+		return app.Save(collection)
+	}, func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("b2mshgf2i5wivh1")
+		collection, err := app.FindCollectionByNameOrId("b2mshgf2i5wivh1")
 		if err != nil {
 			return err
 		}
 
 		// remove
-		collection.Schema.RemoveField("ww5tq4wd")
+		collection.Fields.RemoveById("ww5tq4wd")
 
 		// remove
-		collection.Schema.RemoveField("kkixhcs3")
+		collection.Fields.RemoveById("kkixhcs3")
 
-		return dao.SaveCollection(collection)
+		return app.Save(collection)
 	})
 }

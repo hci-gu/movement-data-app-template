@@ -3,89 +3,83 @@ package migrations
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/daos"
+	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/models"
 )
 
 func init() {
-	m.Register(func(db dbx.Builder) error {
+	m.Register(func(app core.App) error {
 		jsonData := `{
-			"id": "b2mshgf2i5wivh1",
-			"created": "2024-09-10 18:06:40.737Z",
-			"updated": "2024-09-10 18:06:40.737Z",
-			"name": "dataUploads",
-			"type": "base",
-			"system": false,
-			"schema": [
-				{
-					"system": false,
-					"id": "va43tsb2",
-					"name": "timestamp",
-					"type": "date",
-					"required": false,
-					"presentable": false,
-					"unique": false,
-					"options": {
-						"min": "",
-						"max": ""
-					}
-				},
-				{
-					"system": false,
-					"id": "zyfncesz",
-					"name": "filepath",
-					"type": "text",
-					"required": false,
-					"presentable": false,
-					"unique": false,
-					"options": {
-						"min": null,
-						"max": null,
-						"pattern": ""
-					}
-				},
-				{
-					"system": false,
-					"id": "kwvtw5gb",
-					"name": "user",
-					"type": "relation",
-					"required": false,
-					"presentable": false,
-					"unique": false,
-					"options": {
-						"collectionId": "_pb_users_auth_",
-						"cascadeDelete": false,
-						"minSelect": null,
-						"maxSelect": 1,
-						"displayFields": null
-					}
-				}
-			],
-			"indexes": [],
-			"listRule": null,
-			"viewRule": null,
-			"createRule": null,
-			"updateRule": null,
-			"deleteRule": null,
-			"options": {}
-		}`
+  "id": "b2mshgf2i5wivh1",
+  "created": "2024-09-10 18:06:40.737Z",
+  "updated": "2024-09-10 18:06:40.737Z",
+  "name": "dataUploads",
+  "type": "base",
+  "system": false,
+  "indexes": [],
+  "listRule": null,
+  "viewRule": null,
+  "createRule": null,
+  "updateRule": null,
+  "deleteRule": null,
+  "fields": [
+    {
+      "system": false,
+      "id": "va43tsb2",
+      "name": "timestamp",
+      "type": "date",
+      "required": false,
+      "presentable": false,
+      "min": "",
+      "max": ""
+    },
+    {
+      "system": false,
+      "id": "zyfncesz",
+      "name": "filepath",
+      "type": "text",
+      "required": false,
+      "presentable": false,
+      "pattern": ""
+    },
+    {
+      "system": false,
+      "id": "kwvtw5gb",
+      "name": "user",
+      "type": "relation",
+      "required": false,
+      "presentable": false,
+      "collectionId": "_pb_users_auth_",
+      "cascadeDelete": false,
+      "maxSelect": 1
+    },
+    {
+      "type": "autodate",
+      "name": "created",
+      "onCreate": true
+    },
+    {
+      "type": "autodate",
+      "name": "updated",
+      "onCreate": true,
+      "onUpdate": true
+    }
+  ]
+}`
 
-		collection := &models.Collection{}
+		collection := &core.Collection{}
 		if err := json.Unmarshal([]byte(jsonData), &collection); err != nil {
 			return err
 		}
 
-		return daos.New(db).SaveCollection(collection)
-	}, func(db dbx.Builder) error {
-		dao := daos.New(db);
+		return app.Save(collection)
+	}, func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("b2mshgf2i5wivh1")
+		collection, err := app.FindCollectionByNameOrId("b2mshgf2i5wivh1")
 		if err != nil {
 			return err
 		}
 
-		return dao.DeleteCollection(collection)
+		return app.Delete(collection)
 	})
 }

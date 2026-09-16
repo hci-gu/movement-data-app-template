@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:research_steps_template/pocketbase.dart';
 import 'package:research_steps_template/state/health.dart';
 
 class Api {
+  Future<void> Function()? onSessionInvalid;
   final Dio api = Dio(
     BaseOptions(
       headers: {'Content-Type': 'application/json'},
@@ -57,20 +59,20 @@ class Api {
     }
   }
 
-  Future<void> registerParticipant(
-    String participantId,
-    String password,
-    bool consentAccepted,
-  ) async {
-    await api.post(
-      '/users',
-      data: jsonEncode({
-        'participantId': participantId,
-        'password': password,
-        'consentAccepted': consentAccepted,
-      }),
-    );
+  Future<Map<String, dynamic>> currentParticipant() async =>
+      Map<String, dynamic>.from((await api.get('/api/study/me')).data as Map);
+  Future<void> logout() async {
+    await api.post('/api/study/logout');
   }
+
+  Future<void> withdrawConsent() async {
+    await api.post('/api/study/consent/withdraw');
+  }
+
+  Future<Map<String, dynamic>> consentReceipt() async =>
+      Map<String, dynamic>.from(
+        (await api.get('/api/study/consent/receipt')).data as Map,
+      );
 
   Future<void> uploadMetadata(
     String participantId,
@@ -102,5 +104,25 @@ class Api {
     return _instance;
   }
 
-  Api._internal();
+  Api._internal() {
+    api.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.extra['public'] != true &&
+              pb.authStore.token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer ${pb.authStore.token}';
+          }
+          handler.next(options);
+        },
+        onError: (error, handler) {
+          if (error.requestOptions.extra['public'] != true &&
+              (error.response?.statusCode == 401 ||
+                  error.response?.statusCode == 403)) {
+            onSessionInvalid?.call();
+          }
+          handler.next(error);
+        },
+      ),
+    );
+  }
 }

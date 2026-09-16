@@ -155,6 +155,10 @@ class UploadSummaryHome extends HookConsumerWidget {
               ),
               const SizedBox(height: 8),
               CupertinoButton(
+                onPressed: () => context.pushNamed('consentReceipt'),
+                child: const Text('View signed consent'),
+              ),
+              CupertinoButton(
                 onPressed: () async {
                   await ref.read(authProvider.notifier).logout();
                   ref.read(dataUploadedProvider.notifier).state = false;

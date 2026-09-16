@@ -1,3 +1,5 @@
+import 'package:research_steps_template/bankid/controller.dart';
+import 'package:research_steps_template/screens/consent_receipt.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
@@ -71,6 +73,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const UploadStepsScreen(),
       ),
       GoRoute(
+        path: '/consent-receipt',
+        name: 'consentReceipt',
+        builder: (context, state) => const ConsentReceiptScreen(),
+      ),
+      GoRoute(
         path: '/summary',
         name: 'summary',
         builder: (context, state) => const SummaryScreen(),
@@ -87,7 +94,8 @@ class LoadingScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     useEffect(() {
-      ref.read(authProvider.notifier).tryAutoLogin().then((_) {
+      ref.read(authProvider.notifier).tryAutoLogin().then((_) async {
+        await ref.read(bankIdProvider.notifier).restore();
         if (!context.mounted) {
           return;
         }
@@ -96,7 +104,9 @@ class LoadingScreen extends HookConsumerWidget {
         final hasUploadedData = ref.read(dataUploadedProvider);
 
         if (!loggedIn) {
-          context.goNamed('introduction');
+          context.goNamed(
+            ref.read(bankIdProvider).flow == null ? 'introduction' : 'login',
+          );
           return;
         }
 

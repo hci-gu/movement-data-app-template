@@ -4,6 +4,8 @@ metadata:
   name: research-steps-api
 spec:
   replicas: 1
+  strategy:
+    type: Recreate # PocketBase and the BankID worker require one process per database.
   selector:
     matchLabels:
       app: research-steps-api
@@ -16,15 +18,48 @@ spec:
       - name: research-steps-api-persistent-storage
         persistentVolumeClaim:
           claimName: research-steps-api-pv-claim
+      - name: bankid-secrets
+        secret:
+          secretName: research-steps-bankid
+          defaultMode: 0440
       containers:
         - name: research-steps-api
           image: 'registry.example.org/research/research-steps-api:latest'
           imagePullPolicy: Always
+          env:
+            - name: BANKID_ENVIRONMENT
+              value: production
+            - name: STUDY_ID
+              value: research-steps
+            - name: BANKID_APP_IDENTIFIER
+              value: org.example.researchSteps # Replace with the exact iOS bundle identifier.
+            - name: BANKID_IOS_APP_ID
+              value: APPLE_PREFIX.org.example.researchSteps
+            - name: BANKID_RETURN_URL
+              value: https://research-steps-api.example.org/bankid/return
+            - name: BANKID_CERT_FILE
+              value: /run/bankid/client.pem
+            - name: BANKID_KEY_FILE
+              value: /run/bankid/client-key.pem
+            - name: BANKID_CA_FILE
+              value: /run/bankid/bankid-server-ca.pem
+            - name: STUDY_SECRETS_FILE
+              value: /run/bankid/study-keys.json
+            - name: TRUSTED_PROXY_CIDRS
+              value: REPLACE_WITH_ACTUAL_INGRESS_CIDRS
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: web
+            initialDelaySeconds: 5
           ports:
             - containerPort: 8080
               name: web
               protocol: TCP
           volumeMounts:
+          - mountPath: /run/bankid
+            name: bankid-secrets
+            readOnly: true
           - mountPath: /pb/pb_data
             name: research-steps-api-persistent-storage
 ---

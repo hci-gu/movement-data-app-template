@@ -15,7 +15,10 @@ class AppConfig {
   static const studyTitle = 'Template Apple Health Step Study';
   static const supportEmail = 'research@example.org';
   static const privacyContact = 'privacy@example.org';
-  static const consentVersion = 'template-v1';
+  static const bankidReturnUrl = String.fromEnvironment(
+    'BANKID_RETURN_URL',
+    defaultValue: 'researchsteps://bankid/return',
+  );
   static const participantIdLabel = 'Participant ID';
   static const participantIdHint = 'Example: STUDY-001';
   static const participantIdHelp =
@@ -48,15 +51,9 @@ class AppConfig {
 
   static const onboardingHighlights = [
     'Review study information and update the placeholder copy before production use.',
-    'Enroll with a participant identifier instead of a personal identity number.',
+    'Use your study invitation and sign the consent with BankID.',
     'Request read access to Apple Health step data only.',
     'Preview the extracted dataset, then upload it to your study API.',
-  ];
-
-  static const consentStatements = [
-    'I have read the study information and understand how my Apple Health step data will be used for research.',
-    'I understand that this template uses placeholder text and must be adapted to my approved study protocol before deployment.',
-    'I consent to sharing my Apple Health step data with the research team identified in this app.',
   ];
 
   static const postUploadChecklist = [
@@ -89,8 +86,8 @@ class AppConfig {
     StudySection(
       title: 'Participant Identifier',
       paragraphs: [
-        'The template uses a generic participant identifier instead of a country-specific personal identity number.',
-        'If your study uses another identifier scheme, update both the validator in the app and the backend sanitization rules.',
+        'Your study invitation links your BankID identity to a study participant identifier. Step uploads use that study identifier.',
+        'The backend retains encrypted identity and signing evidence, including your personal identity number. Your study consent explains who can access this information and how long it is retained.',
       ],
     ),
     StudySection(

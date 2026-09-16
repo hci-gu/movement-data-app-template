@@ -3,49 +3,43 @@ package migrations
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/daos"
+	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/models/schema"
 )
 
 func init() {
-	m.Register(func(db dbx.Builder) error {
-		dao := daos.New(db)
+	m.Register(func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("_pb_users_auth_")
+		collection, err := app.FindCollectionByNameOrId("_pb_users_auth_")
 		if err != nil {
 			return err
 		}
 
 		// add
-		new_consent := &schema.SchemaField{}
+		new_consent := &core.BoolField{}
 		if err := json.Unmarshal([]byte(`{
-			"system": false,
-			"id": "consent01",
-			"name": "consent",
-			"type": "bool",
-			"required": false,
-			"presentable": false,
-			"unique": false,
-			"options": {}
-		}`), new_consent); err != nil {
+  "system": false,
+  "id": "consent01",
+  "name": "consent",
+  "type": "bool",
+  "required": false,
+  "presentable": false
+}`), new_consent); err != nil {
 			return err
 		}
-		collection.Schema.AddField(new_consent)
+		collection.Fields.Add(new_consent)
 
-		return dao.SaveCollection(collection)
-	}, func(db dbx.Builder) error {
-		dao := daos.New(db)
+		return app.Save(collection)
+	}, func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("_pb_users_auth_")
+		collection, err := app.FindCollectionByNameOrId("_pb_users_auth_")
 		if err != nil {
 			return err
 		}
 
 		// remove
-		collection.Schema.RemoveField("consent01")
+		collection.Fields.RemoveById("consent01")
 
-		return dao.SaveCollection(collection)
+		return app.Save(collection)
 	})
 }

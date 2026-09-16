@@ -3,83 +3,73 @@ package migrations
 import (
 	"encoding/json"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/daos"
+	"github.com/pocketbase/pocketbase/core"
 	m "github.com/pocketbase/pocketbase/migrations"
-	"github.com/pocketbase/pocketbase/models/schema"
 )
 
 func init() {
-	m.Register(func(db dbx.Builder) error {
-		dao := daos.New(db);
+	m.Register(func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("revsudry2wqi0dp")
+		collection, err := app.FindCollectionByNameOrId("revsudry2wqi0dp")
 		if err != nil {
 			return err
 		}
 
 		// update
-		edit_type := &schema.SchemaField{}
+		edit_type := &core.SelectField{}
 		if err := json.Unmarshal([]byte(`{
-			"system": false,
-			"id": "evuw4smv",
-			"name": "type",
-			"type": "select",
-			"required": false,
-			"presentable": false,
-			"unique": false,
-			"options": {
-				"maxSelect": 1,
-				"values": [
-					"text",
-					"singleChoice",
-					"segmentControl",
-					"painMedication",
-					"painScale",
-					"date",
-					"stepDataAccess"
-				]
-			}
-		}`), edit_type); err != nil {
+  "system": false,
+  "id": "evuw4smv",
+  "name": "type",
+  "type": "select",
+  "required": false,
+  "presentable": false,
+  "maxSelect": 1,
+  "values": [
+    "text",
+    "singleChoice",
+    "segmentControl",
+    "painMedication",
+    "painScale",
+    "date",
+    "stepDataAccess"
+  ]
+}`), edit_type); err != nil {
 			return err
 		}
-		collection.Schema.AddField(edit_type)
+		collection.Fields.Add(edit_type)
 
-		return dao.SaveCollection(collection)
-	}, func(db dbx.Builder) error {
-		dao := daos.New(db);
+		return app.Save(collection)
+	}, func(app core.App) error {
 
-		collection, err := dao.FindCollectionByNameOrId("revsudry2wqi0dp")
+		collection, err := app.FindCollectionByNameOrId("revsudry2wqi0dp")
 		if err != nil {
 			return err
 		}
 
 		// update
-		edit_type := &schema.SchemaField{}
+		edit_type := &core.SelectField{}
 		if err := json.Unmarshal([]byte(`{
-			"system": false,
-			"id": "evuw4smv",
-			"name": "type",
-			"type": "select",
-			"required": false,
-			"presentable": false,
-			"unique": false,
-			"options": {
-				"maxSelect": 1,
-				"values": [
-					"text",
-					"singleChoice",
-					"segmentControl",
-					"painMedication",
-					"painScale",
-					"date"
-				]
-			}
-		}`), edit_type); err != nil {
+  "system": false,
+  "id": "evuw4smv",
+  "name": "type",
+  "type": "select",
+  "required": false,
+  "presentable": false,
+  "maxSelect": 1,
+  "values": [
+    "text",
+    "singleChoice",
+    "segmentControl",
+    "painMedication",
+    "painScale",
+    "date"
+  ]
+}`), edit_type); err != nil {
 			return err
 		}
-		collection.Schema.AddField(edit_type)
+		collection.Fields.Add(edit_type)
 
-		return dao.SaveCollection(collection)
+		return app.Save(collection)
 	})
 }
