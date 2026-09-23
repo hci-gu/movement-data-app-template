@@ -46,12 +46,12 @@ class Auth extends StateNotifier<RecordAuth?> {
     }
     final auth = RecordAuth.fromJson(grant);
     final previousParticipant = Storage().getParticipantId();
-    if (previousParticipant != auth.record.get<String>('username')) {
+    if (previousParticipant != auth.record.id) {
       HealthManager().reset();
       await Storage().setHasUploadedData(false);
     }
     await Storage().writeAuthSession(grant);
-    await Storage().storeParticipantId(auth.record.get<String>('username'));
+    await Storage().storeParticipantId(auth.record.id);
     pb.authStore.save(auth.token, auth.record);
     state = auth;
     _expiry?.cancel();

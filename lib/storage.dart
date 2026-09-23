@@ -36,12 +36,12 @@ class Storage {
   }
 
   String? getParticipantId() {
-    return prefs.getString('participantId');
+    return prefs.getString('userId');
   }
 
-  Future<void> storeParticipantId(String participantId) async {
+  Future<void> storeParticipantId(String userId) async {
     await reloadPrefs();
-    await prefs.setString('participantId', participantId);
+    await prefs.setString('userId', userId);
   }
 
   bool getHasUploadedData() {
@@ -70,7 +70,7 @@ class Storage {
   Future<void> clearSession() async {
     await _secure.delete(key: _key('authSessionV2'));
     final sharedPrefs = await SharedPreferences.getInstance();
-    await sharedPrefs.remove('participantId');
+    await sharedPrefs.remove('userId');
     await sharedPrefs.remove('hasUploadedData');
     await sharedPrefs.remove('lastUploadAt');
   }

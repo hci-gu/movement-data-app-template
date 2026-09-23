@@ -21,7 +21,7 @@ class Api {
   }
 
   Future<void> uploadDataInChunks(
-    String participantId,
+    String userId,
     List<HealthDataPoint> data,
   ) async {
     final chunks = <Map<String, dynamic>>[];
@@ -35,7 +35,7 @@ class Api {
       }
 
       chunks.add({
-        'participantId': participantId,
+        'userId': userId,
         'chunkIndex': chunkIndex,
         'data': data
             .sublist(index, endIndex)
@@ -60,42 +60,26 @@ class Api {
   }
 
   Future<Map<String, dynamic>> currentParticipant() async =>
-      Map<String, dynamic>.from((await api.get('/api/study/me')).data as Map);
+      Map<String, dynamic>.from((await api.get('/api/me')).data as Map);
   Future<void> logout() async {
-    await api.post('/api/study/logout');
+    await api.post('/api/logout');
   }
 
   Future<void> withdrawConsent() async {
-    await api.post('/api/study/consent/withdraw');
+    await api.post('/api/consent/withdraw');
   }
 
   Future<Map<String, dynamic>> consentReceipt() async =>
       Map<String, dynamic>.from(
-        (await api.get('/api/study/consent/receipt')).data as Map,
+        (await api.get('/api/consent/receipt')).data as Map,
       );
 
-  Future<void> saveParticipantMetadata(
-    String participantId,
-    Map<String, dynamic> metadata,
-  ) async {
-    await api.post(
-      '/api/study/metadata',
-      options: Options(
-        headers: {'Content-Type': 'application/json; charset=UTF-8'},
-      ),
-      data: jsonEncode({'participantId': participantId, 'data': metadata}),
-    );
-  }
-
-  Future<void> uploadData(
-    String participantId,
-    List<HealthDataPoint> data,
-  ) async {
+  Future<void> uploadData(String userId, List<HealthDataPoint> data) async {
     if (data.isEmpty) {
       return;
     }
 
-    await uploadDataInChunks(participantId, data);
+    await uploadDataInChunks(userId, data);
   }
 
   static final Api _instance = Api._internal();

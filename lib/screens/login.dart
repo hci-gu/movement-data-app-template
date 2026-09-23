@@ -12,11 +12,12 @@ class LoginScreen extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final invitation = useTextEditingController();
     final state = ref.watch(bankIdProvider);
     final controller = ref.read(bankIdProvider.notifier);
     useEffect(() {
-      controller.restore();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controller.initialize();
+      });
       return null;
     }, const []);
     final order = state.attempt;
@@ -43,36 +44,15 @@ class LoginScreen extends HookConsumerWidget {
               child: CupertinoActivityIndicator(),
             ),
           if (!state.begun) ...[
-            const Text(
-              'Enroll with your study invitation',
-              style: AppTheme.sectionTitle,
-            ),
+            const Text('Review study consent', style: AppTheme.sectionTitle),
             const SizedBox(height: 12),
             const Text(
-              'Enter the invitation code from your study team. You will review the study consent and sign it using BankID.',
+              'Signing the consent with BankID also creates your account or signs you in.',
               style: AppTheme.body,
             ),
-            const SizedBox(height: 20),
-            CupertinoTextField(
-              controller: invitation,
-              placeholder: 'Invitation code',
-              autocorrect: false,
-              enableSuggestions: false,
-              padding: const EdgeInsets.all(16),
-            ),
-            const SizedBox(height: 16),
             CupertinoButton.filled(
-              onPressed: disabled
-                  ? null
-                  : () => controller.begin(invitationCode: invitation.text),
-              child: const Text('Review study consent'),
-            ),
-            const SizedBox(height: 12),
-            CupertinoButton(
-              onPressed: disabled
-                  ? null
-                  : () => controller.begin(returning: true),
-              child: const Text('Already enrolled? Sign in with BankID'),
+              onPressed: disabled ? null : controller.begin,
+              child: const Text('Load consent'),
             ),
           ] else if (order != null) ...[
             AppCard(
@@ -81,11 +61,7 @@ class LoginScreen extends HookConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    order.accepted
-                        ? (order.purpose == 'sign'
-                              ? 'Consent signed'
-                              : 'Identity confirmed')
-                        : 'Continue with BankID',
+                    order.accepted ? 'Consent signed' : 'Continue with BankID',
                     style: AppTheme.sectionTitle,
                   ),
                   const SizedBox(height: 12),
@@ -156,16 +132,8 @@ class LoginScreen extends HookConsumerWidget {
               ),
             if (!order.pending && !order.accepted)
               CupertinoButton.filled(
-                onPressed: disabled
-                    ? null
-                    : () => order.purpose == 'sign'
-                          ? controller.reviewAgain()
-                          : controller.start(order.mode),
-                child: Text(
-                  order.purpose == 'sign'
-                      ? 'Review consent and try again'
-                      : 'Try again',
-                ),
+                onPressed: disabled ? null : controller.reviewAgain,
+                child: const Text('Review consent and try again'),
               ),
             if (state.error != null)
               CupertinoButton(
@@ -207,26 +175,10 @@ class LoginScreen extends HookConsumerWidget {
                   : () => controller.start('qr'),
               child: const Text('Use BankID on another device'),
             ),
-          ] else if (!state.returning) ...[
+          ] else ...[
             CupertinoButton.filled(
               onPressed: disabled ? null : controller.reviewAgain,
               child: const Text('Load study consent'),
-            ),
-          ] else ...[
-            const Text('Sign in with BankID', style: AppTheme.sectionTitle),
-            const SizedBox(height: 12),
-            const Text(
-              'Use the BankID you used when enrolling in the study.',
-              style: AppTheme.body,
-            ),
-            const SizedBox(height: 20),
-            CupertinoButton.filled(
-              onPressed: disabled ? null : () => controller.start('sameDevice'),
-              child: const Text('Open BankID'),
-            ),
-            CupertinoButton(
-              onPressed: disabled ? null : () => controller.start('qr'),
-              child: const Text('Use BankID on another device'),
             ),
           ],
           if (state.begun && !state.busy && order?.accepted != true) ...[

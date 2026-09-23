@@ -27,7 +27,7 @@ class HttpBankIdGateway implements BankIdGateway {
   @override
   Future<ConsentDocument> currentConsent() async {
     final data = _json(
-      await client.get('/api/study/consent/current', options: _options()),
+      await client.get('/api/consent/current', options: _options()),
     );
     if (data['bankidAvailable'] != true) throw const BankIdUnavailable();
     return ConsentDocument.fromJson(
@@ -55,11 +55,7 @@ class HttpBankIdGateway implements BankIdGateway {
     try {
       return await _result(
         a,
-        client.post(
-          '/api/study/bankid/attempts',
-          data: input,
-          options: _options(),
-        ),
+        client.post('/api/bankid/attempts', data: input, options: _options()),
       );
     } on DioException catch (e) {
       if (e.response?.statusCode == 400 || e.response?.statusCode == 409) {
@@ -84,21 +80,18 @@ class HttpBankIdGateway implements BankIdGateway {
   @override
   Future<BankIdAttempt> status(BankIdAttempt a) => _result(
     a,
-    client.get('/api/study/bankid/attempts/${a.id}', options: _options(a)),
+    client.get('/api/bankid/attempts/${a.id}', options: _options(a)),
   );
   @override
   Future<BankIdAttempt> cancel(BankIdAttempt a) => _result(
     a,
-    client.post(
-      '/api/study/bankid/attempts/${a.id}/cancel',
-      options: _options(a),
-    ),
+    client.post('/api/bankid/attempts/${a.id}/cancel', options: _options(a)),
   );
   @override
   Future<BankIdAttempt> returned(BankIdAttempt a, String nonce) => _result(
     a,
     client.post(
-      '/api/study/bankid/attempts/${a.id}/return',
+      '/api/bankid/attempts/${a.id}/return',
       data: {'nonce': nonce},
       options: _options(a),
     ),

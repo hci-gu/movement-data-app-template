@@ -91,9 +91,7 @@ class BankIdAttempt {
 
 String bankIdMessage(BankIdAttempt order) {
   if (order.accepted) {
-    return order.purpose == 'sign'
-        ? 'Your consent has been signed and saved.'
-        : 'Your identity has been confirmed.';
+    return 'Your consent has been signed and saved.';
   }
   const messages = {
     'outstandingTransaction': 'Open your BankID app.',
@@ -115,11 +113,6 @@ String bankIdMessage(BankIdAttempt order) {
         'Another BankID request is in progress. Finish it before trying again.',
     'consentChanged':
         'The consent has changed. Read the new version before signing.',
-    'wrongSigner': 'The signer does not match this study invitation.',
-    'identityConflict':
-        'This identity is already linked to another participant. Contact the study team.',
-    'participantNotFound':
-        'No participant account was found. Use your study invitation to enroll.',
     'riskRejected':
         'This request could not be accepted. Contact the study team if it happens again.',
     'sessionExpired': 'Your BankID request expired. Start again.',

@@ -58,7 +58,7 @@ void main() {
         },
       };
       final result = await gateway.status(a);
-      expect(transport.request!.path, '/api/study/bankid/attempts/attempt');
+      expect(transport.request!.path, '/api/bankid/attempts/attempt');
       expect(
         transport.request!.headers['Authorization'],
         'Bearer attempt.private-secret',

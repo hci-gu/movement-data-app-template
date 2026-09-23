@@ -29,8 +29,6 @@ spec:
           env:
             - name: BANKID_ENVIRONMENT
               value: production
-            - name: STUDY_ID
-              value: research-steps
             - name: BANKID_APP_IDENTIFIER
               value: org.example.researchSteps # Replace with the exact iOS bundle identifier.
             - name: BANKID_IOS_APP_ID

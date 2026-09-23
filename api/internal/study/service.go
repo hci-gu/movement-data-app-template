@@ -17,7 +17,6 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-var participantPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{3,63}$`)
 var personalNumberPattern = regexp.MustCompile(`^[0-9]{12}$`)
 var secretPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
 
@@ -44,24 +43,18 @@ type Document struct {
 	Text         string `json:"text"`
 	DocumentHash string `json:"documentHash"`
 }
-type identity struct {
-	PersonalNumber string `json:"personalNumber"`
-	Name           string `json:"name"`
-}
 type StartInput struct {
-	ClientSecret   string `json:"clientSecret"`
-	InvitationCode string `json:"invitationCode"`
-	AuthAttempt    string `json:"authAttempt"`
-	Version        string `json:"consentTextId"`
-	DocumentHash   string `json:"documentHash"`
-	Mode           string `json:"mode"`
+	ClientSecret string `json:"clientSecret"`
+	Version      string `json:"consentTextId"`
+	DocumentHash string `json:"documentHash"`
+	Mode         string `json:"mode"`
 }
 
 // Attempt is transient. Only its terminal outcome and evidence enter the database.
 // Its mutex serializes collection, cancellation and response delivery.
 type Attempt struct {
 	mu                                                                  sync.Mutex
-	ID, SecretHash, InputHash, Purpose, Mode, UserID, InvitationHash    string
+	ID, SecretHash, InputHash, Purpose, Mode, UserID                    string
 	Nonce, IP, Status, Hint, SignatureID, TokenKey                      string
 	StartedAt, ReceivedAt, NextCollect, ExpiresAt, FinishedAt, ResultAt time.Time
 	Request                                                             bankid.Request
@@ -91,8 +84,8 @@ func Open(app core.App, cfg Config) (*Service, error) {
 func documentDTO(r *core.Record) Document {
 	return Document{r.Id, r.GetString("version"), r.GetString("title"), r.GetString("text"), r.GetString("documentHash")}
 }
-func currentDocument(app core.App, study string) (*core.Record, error) {
-	r, err := app.FindFirstRecordByFilter("consent_texts", "study={:study} && current=true", dbx.Params{"study": study})
+func currentDocument(app core.App) (*core.Record, error) {
+	r, err := app.FindFirstRecordByFilter("consent_texts", "current=true")
 	if err != nil {
 		return nil, err
 	}
@@ -154,78 +147,22 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 	if s.provider == nil || !s.Config.SigningEnabled {
 		return nil, problem(503, "signingUnavailable", "BankID is currently unavailable.")
 	}
-	a := &Attempt{ID: id, SecretHash: hash(in.ClientSecret), InputHash: fingerprint, Purpose: "auth", Mode: in.Mode, IP: ip, Nonce: randomSecret(), Status: "pending", StartedAt: s.now(), ExpiresAt: s.now().Add(AttemptLifetime)}
-	var user *core.Record
-	var expected identity
-	var err error
-	if in.InvitationCode != "" {
-		if in.AuthAttempt != "" {
-			return nil, problem(400, "invalidRequest", "Choose invitation enrollment or returning login.")
-		}
-		a.InvitationHash = s.Config.digest("invitation", in.InvitationCode)
-		user, err = s.App.FindFirstRecordByFilter("users", "study={:study} && environment={:env} && invitationHash={:hash} && active=false && invitationExpiresAt>{:now}", dbx.Params{"study": s.Config.StudyID, "env": s.Config.Environment, "hash": a.InvitationHash, "now": s.now().Unix()})
-		if err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				return nil, err
-			}
-			return nil, problem(400, "invitationUnavailable", "This invitation is invalid, expired, or already used.")
-		}
-		if user.GetString("expectedCipher") != "" {
-			if err := s.Config.Open("expected:"+user.Id, user.GetString("expectedCipher"), &expected); err != nil {
-				return nil, err
-			}
-		}
-	} else if in.AuthAttempt != "" {
-		parent, err := s.owned(in.AuthAttempt)
-		if err != nil {
-			return nil, err
-		}
-		parent.mu.Lock()
-		if !s.alive(parent) || parent.Status != "accepted" {
-			parent.mu.Unlock()
-			return nil, restartRequired()
-		}
-		user, err = s.App.FindRecordById("users", parent.UserID)
-		key := parent.TokenKey
-		parent.mu.Unlock()
-		if err != nil {
-			return nil, err
-		}
-		if !user.GetBool("active") || user.TokenKey() != key {
-			return nil, restartRequired()
-		}
-		if err := s.Config.Open("identity:"+user.Id, user.GetString("identityCipher"), &expected); err != nil {
-			return nil, err
-		}
+	a := &Attempt{ID: id, SecretHash: hash(in.ClientSecret), InputHash: fingerprint, Purpose: "sign", Mode: in.Mode, IP: ip, Nonce: randomSecret(), Status: "pending", StartedAt: s.now(), ExpiresAt: s.now().Add(AttemptLifetime)}
+	doc, err := currentDocument(s.App)
+	if err != nil {
+		return nil, problem(503, "consentUnavailable", "Study consent is not available yet.")
 	}
-	if user != nil {
-		a.Purpose = "sign"
-		a.UserID = user.Id
-		doc, err := currentDocument(s.App, s.Config.StudyID)
-		if err != nil {
-			return nil, problem(503, "consentUnavailable", "Study consent is not available yet.")
-		}
-		if in.Version != doc.Id || in.DocumentHash != doc.GetString("documentHash") {
-			return nil, problem(409, "consentChanged", "The consent has changed. Read the current version before signing.")
-		}
-		d := documentDTO(doc)
-		a.Document = &d
-	} else if in.Version != "" || in.DocumentHash != "" {
-		return nil, problem(400, "invalidPurpose", "Sign in before reviewing updated consent.")
+	if in.Version != doc.Id || in.DocumentHash != doc.GetString("documentHash") {
+		return nil, problem(409, "consentChanged", "The consent has changed. Read the current version before signing.")
 	}
+	d := documentDTO(doc)
+	a.Document = &d
 	a.Request = bankid.Request{EndUserIP: ip, ReturnRisk: true, App: &bankid.AppInfo{AppIdentifier: s.Config.AppID}}
 	if a.Mode == "sameDevice" {
 		a.Request.ReturnURL = s.Config.ReturnURL + "#nonce=" + url.QueryEscape(a.Nonce)
 	}
-	if expected.PersonalNumber != "" {
-		a.Request.Requirement = &bankid.Requirement{PersonalNumber: expected.PersonalNumber}
-	}
-	visible := "Sign in to " + s.Config.StudyID + " to access your research participation."
-	if a.Document != nil {
-		visible = a.Document.Text
-	}
-	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(visible))
-	manifest, _ := json.Marshal(map[string]any{"schemaVersion": 2, "purpose": a.Purpose, "studyId": s.Config.StudyID, "userId": a.UserID, "attemptId": id, "consentTextId": in.Version, "documentHash": in.DocumentHash, "nonce": a.Nonce})
+	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(a.Document.Text))
+	manifest, _ := json.Marshal(map[string]any{"schemaVersion": 2, "purpose": a.Purpose, "attemptId": id, "consentTextId": in.Version, "documentHash": in.DocumentHash, "nonce": a.Nonce})
 	a.Request.UserNonVisibleData = base64.StdEncoding.EncodeToString(manifest)
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -409,12 +346,6 @@ func (s *Service) finalize(a *Attempt) error {
 	err := s.App.RunInTransaction(func(tx core.App) error {
 		var user *core.Record
 		var err error
-		if a.UserID != "" {
-			user, err = tx.FindRecordById("users", a.UserID)
-			if err != nil {
-				return err
-			}
-		}
 		if outcome == "accepted" {
 			completion := a.Result.CompletionData
 			if completion == nil || !personalNumberPattern.MatchString(completion.User.PersonalNumber) || !validBase64(completion.Signature) || !validBase64(completion.OCSPResponse) {
@@ -423,52 +354,28 @@ func (s *Service) finalize(a *Attempt) error {
 				outcome, hint = "rejected", "riskRejected"
 			} else if !s.now().Before(a.ExpiresAt) {
 				outcome, hint = "rejected", "sessionExpired"
-			} else if a.Request.Requirement != nil && a.Request.Requirement.PersonalNumber != completion.User.PersonalNumber {
-				outcome, hint = "rejected", "wrongSigner"
 			}
 			if outcome == "accepted" {
-				identityHash := s.Config.digest("identity:"+s.Config.Environment, completion.User.PersonalNumber)
-				bound, err := tx.FindFirstRecordByFilter("users", "study={:study} && environment={:env} && identityHash={:hash}", dbx.Params{"study": s.Config.StudyID, "env": s.Config.Environment, "hash": identityHash})
-				if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				doc, err := currentDocument(tx)
+				if err != nil {
 					return err
 				}
-				if a.Purpose == "auth" {
-					if bound == nil || !bound.GetBool("active") {
-						outcome, hint = "rejected", "participantNotFound"
-					} else {
-						user = bound
-					}
+				if a.Document == nil || doc.Id != a.Document.ID || doc.GetString("documentHash") != a.Document.DocumentHash {
+					outcome, hint = "rejected", "consentChanged"
 				} else {
-					doc, err := currentDocument(tx, s.Config.StudyID)
-					if err != nil {
-						return err
-					}
-					switch {
-					case a.Document == nil || doc.Id != a.Document.ID || doc.GetString("documentHash") != a.Document.DocumentHash:
-						outcome, hint = "rejected", "consentChanged"
-					case user == nil:
-						outcome, hint = "rejected", "participantNotFound"
-					case bound != nil && bound.Id != user.Id:
-						outcome, hint = "rejected", "identityConflict"
-					case user.GetString("identityHash") != "" && (user.GetString("identityHash") != identityHash || user.GetString("environment") != s.Config.Environment):
-						outcome, hint = "rejected", "wrongSigner"
-					case a.InvitationHash != "" && (user.GetBool("active") || user.GetString("invitationHash") != a.InvitationHash || user.GetInt("invitationExpiresAt") <= int(s.now().Unix())):
-						outcome, hint = "rejected", "invitationUnavailable"
-					}
-					if outcome == "accepted" {
-						cipher, err := s.Config.Seal("identity:"+user.Id, identity{completion.User.PersonalNumber, completion.User.Name})
+					user, err = tx.FindFirstRecordByData("users", "personalNumber", completion.User.PersonalNumber)
+					if errors.Is(err, sql.ErrNoRows) {
+						user, err = newRecord(tx, "users")
 						if err != nil {
 							return err
 						}
-						user.Set("identityHash", identityHash)
-						user.Set("identityCipher", cipher)
-						user.Set("active", true)
-						user.Set("environment", s.Config.Environment)
-						user.Set("study", s.Config.StudyID)
-						user.Set("invitationHash", "")
-						user.Set("invitationCipher", "")
-						user.Set("expectedCipher", "")
-						user.Set("invitationExpiresAt", 0)
+						user.Set("personalNumber", completion.User.PersonalNumber)
+						user.SetPassword(randomSecret()) // PocketBase requires an internal password; password login stays disabled.
+						if err := tx.Save(user); err != nil {
+							return err
+						}
+					} else if err != nil {
+						return err
 					}
 				}
 			}
@@ -477,8 +384,6 @@ func (s *Service) finalize(a *Attempt) error {
 		if err != nil {
 			return err
 		}
-		r.Set("study", s.Config.StudyID)
-		r.Set("environment", s.Config.Environment)
 		r.Set("attemptId", a.ID)
 		r.Set("purpose", a.Purpose)
 		if a.Order.OrderRef != "" {
@@ -517,15 +422,6 @@ func (s *Service) finalize(a *Attempt) error {
 		if outcome == "accepted" {
 			userID = user.Id
 			tokenKey = user.TokenKey()
-			if a.Purpose == "sign" {
-				user.Set("consentVersion", a.Document.ID)
-				user.Set("consentSignature", r.Id)
-				user.Set("consentStatus", "accepted")
-				user.Set("withdrawnAt", 0)
-				if err := tx.Save(user); err != nil {
-					return err
-				}
-			}
 		}
 		signatureID = r.Id
 		return nil
@@ -545,16 +441,23 @@ func validBase64(value string) bool {
 	raw, err := base64.StdEncoding.DecodeString(value)
 	return err == nil && len(raw) > 0
 }
+func latestSignature(app core.App, userID string) (*core.Record, error) {
+	records, err := app.FindRecordsByFilter("signatures", "user={:user} && purpose='sign' && outcome='accepted'", "-created,-id", 1, 0, dbx.Params{"user": userID})
+	if err != nil {
+		return nil, err
+	}
+	if len(records) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return records[0], nil
+}
 func (s *Service) activeConsent(app core.App, user *core.Record) bool {
-	if !user.GetBool("active") || user.GetString("study") != s.Config.StudyID || user.GetString("environment") != s.Config.Environment || user.GetString("consentStatus") != "accepted" {
+	doc, err := currentDocument(app)
+	if err != nil {
 		return false
 	}
-	doc, err := currentDocument(app, s.Config.StudyID)
-	if err != nil || doc.Id != user.GetString("consentVersion") {
-		return false
-	}
-	r, err := app.FindRecordById("signatures", user.GetString("consentSignature"))
-	valid := err == nil && r.GetString("purpose") == "sign" && r.GetString("outcome") == "accepted" && r.GetString("user") == user.Id && r.GetString("version") == doc.Id && r.GetString("study") == s.Config.StudyID && r.GetString("environment") == s.Config.Environment && r.GetInt("withdrawnAt") == 0 && r.GetString("evidenceCipher") != ""
+	r, err := latestSignature(app, user.Id)
+	valid := err == nil && r.GetString("purpose") == "sign" && r.GetString("outcome") == "accepted" && r.GetString("user") == user.Id && r.GetString("version") == doc.Id && r.GetInt("withdrawnAt") == 0 && r.GetString("evidenceCipher") != ""
 	if !valid {
 		return false
 	}

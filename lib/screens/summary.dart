@@ -66,8 +66,7 @@ class UploadSummaryHome extends HookConsumerWidget {
           }
 
           final auth = ref.watch(authProvider);
-          final participantId =
-              auth?.record.getStringValue('username') ?? 'Unknown';
+          final userId = auth?.record.id ?? 'Unknown';
           final summary = HealthManager().summary;
           final lastUploadAt = Storage().getLastUploadAt();
 
@@ -86,10 +85,7 @@ class UploadSummaryHome extends HookConsumerWidget {
                       style: AppTheme.body,
                     ),
                     const SizedBox(height: 16),
-                    _SummaryLine(
-                      label: AppConfig.participantIdLabel,
-                      value: participantId,
-                    ),
+                    _SummaryLine(label: AppConfig.userIdLabel, value: userId),
                     _SummaryLine(
                       label: 'Last upload',
                       value: formatDateTime(lastUploadAt),

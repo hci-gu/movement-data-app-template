@@ -44,6 +44,9 @@ func CreateBase(app core.App) error {
 		}
 		c.Indexes = d.Indexes
 		if c.IsAuth() {
+			for _, name := range []string{"name", "avatar", "username", "created", "updated"} {
+				c.Fields.RemoveByName(name)
+			}
 			c.PasswordAuth.Enabled = false
 			c.OAuth2.Enabled = false
 			c.OTP.Enabled = false
@@ -76,22 +79,8 @@ func AddStudyFields(app core.App) error {
 	if err != nil {
 		return err
 	}
-	users.Fields.Add(Text("study", 100), Text("environment", 20), &core.BoolField{Name: "active"},
-		private("invitationHash", 64), private("invitationCipher", 3000), private("expectedCipher", 3000), &core.NumberField{Name: "invitationExpiresAt", Hidden: true},
-		private("identityHash", 64), private("identityCipher", 3000), Text("consentVersion", 15), Text("consentSignature", 15), Text("consentStatus", 30),
-		&core.JSONField{Name: "metadata", MaxSize: 2000000, Hidden: true}, &core.NumberField{Name: "withdrawnAt"},
-		Text("invitationCode", 100), Text("expectedPersonalNumber", 12), &core.NumberField{Name: "validityHours", OnlyInt: true})
-	users.Indexes = append(users.Indexes,
-		"CREATE UNIQUE INDEX idx_user_identity ON users (study, environment, identityHash) WHERE identityHash != ''",
-		"CREATE UNIQUE INDEX idx_user_invitation ON users (invitationHash) WHERE invitationHash != ''")
-	users.Fields.GetByName("username").(*core.TextField).Help = "Participant ID. Creating a record issues an invitation; using an existing inactive participant ID reissues it."
-	users.Fields.GetByName("password").(*core.PasswordField).Help = "The PocketBase form requires a value: use Generate and set random password. The backend ignores this input; participants sign in only with BankID."
-	users.Fields.GetByName("expectedPersonalNumber").(*core.TextField).Help = "Optional expected signer, 12 digits. Encrypted on save; this input is cleared."
-	users.Fields.GetByName("invitationCode").(*core.TextField).Help = "Generated on save. Reopen this record to copy the code while unused and unexpired."
-	users.Fields.GetByName("validityHours").(*core.NumberField).Help = "Invitation lifetime, 1–2160 hours. Blank or zero means 168 hours."
-	for index, name := range []string{"username", "validityHours", "expectedPersonalNumber", "invitationCode"} {
-		users.Fields.AddAt(index+1, users.Fields.GetByName(name))
-	}
+	users.Fields.Add(&core.TextField{Name: "personalNumber", Min: 12, Max: 12, Required: true})
+	users.Indexes = append(users.Indexes, "CREATE UNIQUE INDEX idx_user_personal_number ON users (personalNumber)")
 	users.PasswordAuth.Enabled = false
 	users.OAuth2.Enabled = false
 	users.OTP.Enabled = false
@@ -105,8 +94,8 @@ func AddStudyFields(app core.App) error {
 		fields  []core.Field
 		indexes []string
 	}{
-		{"consent_texts", []core.Field{Text("study", 100), Text("version", 100), Text("title", 200), Text("text", 30000), Text("documentHash", 64), &core.BoolField{Name: "current"}}, []string{"CREATE UNIQUE INDEX idx_consent_text_version ON consent_texts (study, version)", "CREATE UNIQUE INDEX idx_consent_text_current ON consent_texts (study) WHERE current = TRUE"}},
-		{"signatures", []core.Field{Text("study", 100), Text("environment", 20), Text("attemptId", 100), Text("orderHash", 64), Text("user", 15), Text("version", 15), Text("purpose", 10), Text("providerStatus", 30), Text("outcome", 30), Text("reason", 100), private("evidenceCipher", 4000000), &core.NumberField{Name: "startedAt"}, &core.NumberField{Name: "receivedAt"}, &core.NumberField{Name: "withdrawnAt"}}, []string{"CREATE UNIQUE INDEX idx_signature_attempt ON signatures (attemptId)", "CREATE UNIQUE INDEX idx_signatures_order ON signatures (environment, orderHash) WHERE orderHash != ''"}},
+		{"consent_texts", []core.Field{Text("version", 100), Text("title", 200), Text("text", 30000), Text("documentHash", 64), &core.BoolField{Name: "current"}}, []string{"CREATE UNIQUE INDEX idx_consent_text_version ON consent_texts (version)", "CREATE UNIQUE INDEX idx_consent_text_current ON consent_texts (current) WHERE current = TRUE"}},
+		{"signatures", []core.Field{Text("attemptId", 100), Text("orderHash", 64), &core.RelationField{Name: "user", CollectionId: users.Id, MaxSelect: 1}, Text("version", 15), Text("purpose", 10), Text("providerStatus", 30), Text("outcome", 30), Text("reason", 100), private("evidenceCipher", 4000000), &core.NumberField{Name: "startedAt"}, &core.NumberField{Name: "receivedAt"}, &core.NumberField{Name: "withdrawnAt"}}, []string{"CREATE UNIQUE INDEX idx_signature_attempt ON signatures (attemptId)", "CREATE UNIQUE INDEX idx_signatures_order ON signatures (orderHash) WHERE orderHash != ''"}},
 	}
 	for _, d := range defs {
 		c := core.NewBaseCollection(d.name)

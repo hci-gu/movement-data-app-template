@@ -22,8 +22,6 @@ void main() {
         launch: (_) async => true,
         onGrant: (_) async {},
       );
-      await controller.restore();
-      await controller.begin(invitationCode: 'invite');
       await tester.pumpWidget(
         ProviderScope(
           overrides: [bankIdProvider.overrideWith((_) => controller)],
@@ -32,6 +30,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text(document.text), findsOneWidget);
+      expect(gateway.starts, isEmpty);
       CupertinoButton button(String title) => tester.widget<CupertinoButton>(
         find.widgetWithText(CupertinoButton, title),
       );

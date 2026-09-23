@@ -33,7 +33,7 @@ void main() {
   tearDown(() => controller.dispose());
   test('review gates signing and callback never grants access', () async {
     await controller.restore();
-    await controller.begin(invitationCode: 'invite');
+    await controller.begin();
     await controller.start('sameDevice');
     expect(gateway.starts, isEmpty);
     controller.setReviewed(true);
@@ -58,7 +58,7 @@ void main() {
   test(
     'app restart recovers lost start response by status without another start',
     () async {
-      await controller.begin(invitationCode: 'invite');
+      await controller.begin();
       controller.setReviewed(true);
       gateway.loseStart = true;
       await controller.start('sameDevice');
@@ -73,7 +73,7 @@ void main() {
     },
   );
   test('backend restart discards attempt and offers clean start', () async {
-    await controller.begin(invitationCode: 'invite');
+    await controller.begin();
     controller.setReviewed(true);
     await controller.start('qr');
     gateway.expired = true;
@@ -85,15 +85,16 @@ void main() {
     expect(grants, isEmpty);
   });
   test(
-    'returning login requiring consent must review before signing',
+    'changed consent requires a fresh review and one new signature',
     () async {
-      await controller.begin(returning: true);
+      await controller.begin();
+      controller.setReviewed(true);
       gateway.result = const BankIdAttempt(
-        id: 'auth1',
+        id: 'sign1',
         secret: 'secret',
         expiresAt: 4102444800,
         status: 'accepted',
-        purpose: 'auth',
+        purpose: 'sign',
         mode: 'qr',
         consentRequired: true,
       );
@@ -107,35 +108,28 @@ void main() {
       controller.setReviewed(true);
       gateway.result = accepted;
       await controller.start('qr');
-      expect(gateway.starts.last['authAttempt'], 'auth1.secret');
+      expect(gateway.starts.last.containsKey('authAttempt'), false);
       expect(gateway.starts.last['consentTextId'], document.id);
       await controller.finish();
       expect(grants, hasLength(1));
     },
   );
-  test(
-    'review can resume after app restart from accepted authentication credential',
-    () async {
-      gateway.result = const BankIdAttempt(
-        id: 'auth1',
-        secret: 'secret',
-        expiresAt: 4102444800,
-        status: 'accepted',
-        purpose: 'auth',
-        consentRequired: true,
-      );
-      await controller.begin(returning: true);
-      await controller.start('sameDevice');
-      controller.dispose();
-      controller = make();
-      await controller.restore();
-      expect(controller.state.document!.id, document.id);
-      expect(controller.state.reviewed, false);
-      expect(controller.state.attempt, isNull);
-    },
-  );
+  test('accepted signature receipt can resume after app restart', () async {
+    gateway.result = accepted;
+    await controller.begin();
+    controller.setReviewed(true);
+    await controller.start('sameDevice');
+    controller.dispose();
+    controller = make();
+    await controller.restore();
+    expect(controller.state.document!.id, document.id);
+    expect(controller.state.attempt!.accepted, true);
+    expect(grants, isEmpty);
+    await controller.finish();
+    expect(grants, hasLength(1));
+  });
   test('late status cannot overwrite cancellation', () async {
-    await controller.begin(invitationCode: 'invite');
+    await controller.begin();
     controller.setReviewed(true);
     await controller.start('qr');
     gateway.delayedStatus = Completer<BankIdAttempt>();
@@ -147,13 +141,14 @@ void main() {
     expect(controller.state.attempt!.status, 'cancelled');
   });
   test('start over cancels live attempt and clears storage', () async {
-    await controller.begin(invitationCode: 'invite');
+    await controller.begin();
     controller.setReviewed(true);
     await controller.start('qr');
     await controller.reset();
     expect(gateway.cancels, 1);
     expect(store.value, isNull);
-    expect(controller.state.begun, false);
+    expect(controller.state.begun, true);
+    expect(controller.state.document!.id, document.id);
   });
   test('expired credential cannot restore an attempt', () async {
     store.value = {'id': 'old', 'secret': 'secret', 'expiresAt': 1};
@@ -165,12 +160,13 @@ void main() {
   test(
     'QR renewal creates one new attempt after cancelling the old one',
     () async {
-      await controller.begin(invitationCode: 'invite');
+      await controller.begin();
       controller.setReviewed(true);
       gateway.result = const BankIdAttempt(
         id: 'qr1',
         secret: 'secret',
         expiresAt: 4102444800,
+        purpose: 'sign',
         mode: 'qr',
         qrSecondsRemaining: 0,
       );
@@ -185,7 +181,7 @@ void main() {
     },
   );
   test('rejected initiation leaves no fictitious pending attempt', () async {
-    await controller.begin(invitationCode: 'invite');
+    await controller.begin();
     controller.setReviewed(true);
     gateway.startError = const BankIdStartRejected(
       'consentChanged',

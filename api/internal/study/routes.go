@@ -78,14 +78,14 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 	s.registerLinks(r)
 	s.registerQuestionnaireAccess()
-	g := r.Group("/api/study")
+	g := r.Group("/api")
 	g.BindFunc(s.throttle)
 	g.BindFunc(func(e *core.RequestEvent) error {
 		e.Request.Body = http.MaxBytesReader(e.Response, e.Request.Body, 16384)
 		return e.Next()
 	})
 	g.GET("/consent/current", func(e *core.RequestEvent) error {
-		doc, err := currentDocument(s.App, s.Config.StudyID)
+		doc, err := currentDocument(s.App)
 		if err != nil {
 			return problem(503, "consentUnavailable", "Study consent is not available yet.")
 		}
@@ -141,20 +141,18 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 			if err != nil {
 				return err
 			}
-			if user.GetString("consentStatus") == "withdrawn" {
-				return nil
-			}
-			sig, err := tx.FindRecordById("signatures", user.GetString("consentSignature"))
+			sig, err := latestSignature(tx, user.Id)
 			if err != nil {
 				return err
+			}
+			if sig.GetInt("withdrawnAt") != 0 {
+				return nil
 			}
 			sig.Set("withdrawnAt", s.now().Unix())
 			if err := tx.Save(sig); err != nil {
 				return err
 			}
-			user.Set("withdrawnAt", s.now().Unix())
-			user.Set("consentStatus", "withdrawn")
-			return tx.Save(user)
+			return nil
 		})
 		if err != nil {
 			return err
@@ -162,7 +160,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		return e.NoContent(204)
 	}).BindFunc(s.RequireSession)
 	g.GET("/consent/receipt", func(e *core.RequestEvent) error {
-		sig, err := s.App.FindRecordById("signatures", e.Auth.GetString("consentSignature"))
+		sig, err := latestSignature(s.App, e.Auth.Id)
 		if err != nil || sig.GetString("user") != e.Auth.Id {
 			return problem(404, "receiptUnavailable", "No signed consent receipt is available.")
 		}
@@ -170,7 +168,11 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return err
 		}
-		return e.JSON(200, map[string]any{"signatureId": sig.Id, "receivedAt": sig.GetInt("receivedAt"), "status": e.Auth.GetString("consentStatus"), "document": documentDTO(doc)})
+		status := "accepted"
+		if sig.GetInt("withdrawnAt") != 0 {
+			status = "withdrawn"
+		}
+		return e.JSON(200, map[string]any{"signatureId": sig.Id, "receivedAt": sig.GetInt("receivedAt"), "status": status, "document": documentDTO(doc)})
 	}).BindFunc(s.RequireSession)
 }
 func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) func(*core.RequestEvent) error {
@@ -221,7 +223,7 @@ func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 		if err != nil {
 			return err
 		}
-		if !user.GetBool("active") || user.TokenKey() != a.TokenKey {
+		if user.TokenKey() != a.TokenKey {
 			return restartRequired()
 		}
 		if !s.activeConsent(s.App, user) {
@@ -229,7 +231,7 @@ func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 		} else {
 			if a.Grant == nil {
 				expires := a.FinishedAt.Add(SessionLifetime)
-				token, err := security.NewJWT(jwt.MapClaims{core.TokenClaimType: core.TokenTypeAuth, core.TokenClaimId: user.Id, core.TokenClaimCollectionId: user.Collection().Id, core.TokenClaimRefreshable: false, "study": s.Config.StudyID, "environment": s.Config.Environment, "exp": expires.Unix()}, user.TokenKey()+user.Collection().AuthToken.Secret, expires.Sub(s.now()))
+				token, err := security.NewJWT(jwt.MapClaims{core.TokenClaimType: core.TokenTypeAuth, core.TokenClaimId: user.Id, core.TokenClaimCollectionId: user.Collection().Id, core.TokenClaimRefreshable: false, "exp": expires.Unix()}, user.TokenKey()+user.Collection().AuthToken.Secret, expires.Sub(s.now()))
 				if err != nil {
 					return err
 				}
@@ -251,17 +253,17 @@ type grant struct {
 }
 
 func (s *Service) userDTO(user *core.Record) map[string]any {
-	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "username": user.GetString("username"), "consentStatus": user.GetString("consentStatus"), "consentVersion": user.GetString("consentVersion"), "consentSignature": user.GetString("consentSignature"), "consentRequired": !s.activeConsent(s.App, user)}
+	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "consentRequired": !s.activeConsent(s.App, user)}
 }
 func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
 	user, err := s.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
-	if err != nil || user.Collection().Name != "users" || !user.GetBool("active") || user.GetString("study") != s.Config.StudyID || user.GetString("environment") != s.Config.Environment {
+	if err != nil || user.Collection().Name != "users" {
 		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
 	// The token was verified above; inspect the application scope claims.
 	claims, err := security.ParseUnverifiedJWT(token)
-	if err != nil || claims["study"] != s.Config.StudyID || claims["environment"] != s.Config.Environment || claims[core.TokenClaimRefreshable] != false {
+	if err != nil || claims[core.TokenClaimRefreshable] != false {
 		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
 	e.Auth = user

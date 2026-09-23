@@ -3,7 +3,6 @@ package study
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -24,14 +23,12 @@ const SessionLifetime = 2 * time.Hour
 
 type Config struct {
 	Environment               string
-	StudyID                   string
 	AppID                     string
 	IOSAppID                  string
 	ReturnURL                 string
 	CertFile, KeyFile, CAFile string
 	ActiveKey                 string
 	EncryptionKeys            map[string][]byte
-	IdentityKey               []byte
 	TrustedProxies            []netip.Prefix
 	SigningEnabled            bool
 }
@@ -39,7 +36,6 @@ type Config struct {
 func LoadConfig() (Config, error) {
 	c := Config{
 		Environment: env("BANKID_ENVIRONMENT", "disabled"),
-		StudyID:     env("STUDY_ID", "research-steps"),
 		AppID:       os.Getenv("BANKID_APP_IDENTIFIER"),
 		IOSAppID:    os.Getenv("BANKID_IOS_APP_ID"),
 		ReturnURL:   os.Getenv("BANKID_RETURN_URL"),
@@ -58,9 +54,8 @@ func LoadConfig() (Config, error) {
 			return c, fmt.Errorf("read study secrets file: %w", err)
 		}
 		var secretFile struct {
-			ActiveKey   string            `json:"activeKey"`
-			Keys        map[string]string `json:"encryptionKeys"`
-			IdentityKey string            `json:"identityHmacKey"`
+			ActiveKey string            `json:"activeKey"`
+			Keys      map[string]string `json:"encryptionKeys"`
 		}
 		if err := json.Unmarshal(raw, &secretFile); err != nil {
 			return c, errors.New("invalid study secrets JSON")
@@ -69,11 +64,6 @@ func LoadConfig() (Config, error) {
 		if c.ActiveKey == "" {
 			c.ActiveKey = secretFile.ActiveKey
 		}
-		key, err := base64.StdEncoding.DecodeString(secretFile.IdentityKey)
-		if err != nil || len(key) != 32 {
-			return c, errors.New("study secrets file identityHmacKey must contain 32 Base64-encoded bytes")
-		}
-		c.IdentityKey = key
 	}
 	if raw := os.Getenv("STUDY_ENCRYPTION_KEYS"); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &keys); err != nil {
@@ -86,13 +76,6 @@ func LoadConfig() (Config, error) {
 			return c, errors.New("each encryption key needs a nonempty ID without ':' and 32 Base64-encoded bytes")
 		}
 		c.EncryptionKeys[id] = key
-	}
-	if raw := os.Getenv("STUDY_IDENTITY_HMAC_KEY"); raw != "" {
-		key, err := base64.StdEncoding.DecodeString(raw)
-		if err != nil || len(key) != 32 {
-			return c, errors.New("STUDY_IDENTITY_HMAC_KEY must contain 32 Base64-encoded bytes")
-		}
-		c.IdentityKey = key
 	}
 	for _, raw := range strings.Split(os.Getenv("TRUSTED_PROXY_CIDRS"), ",") {
 		if strings.TrimSpace(raw) == "" {
@@ -132,8 +115,8 @@ func LoadConfig() (Config, error) {
 }
 
 func (c Config) ValidateSecrets() error {
-	if len(c.EncryptionKeys[c.ActiveKey]) != 32 || len(c.IdentityKey) != 32 {
-		return errors.New("configure STUDY_SECRETS_FILE or STUDY_ACTIVE_ENCRYPTION_KEY, STUDY_ENCRYPTION_KEYS and STUDY_IDENTITY_HMAC_KEY")
+	if len(c.EncryptionKeys[c.ActiveKey]) != 32 {
+		return errors.New("configure STUDY_SECRETS_FILE or STUDY_ACTIVE_ENCRYPTION_KEY and STUDY_ENCRYPTION_KEYS")
 	}
 	return nil
 }
@@ -152,11 +135,6 @@ func randomSecret() string {
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 func hash(value string) string { s := sha256.Sum256([]byte(value)); return hex.EncodeToString(s[:]) }
-func (c Config) digest(purpose, value string) string {
-	h := hmac.New(sha256.New, c.IdentityKey)
-	h.Write([]byte(c.StudyID + "\x00" + purpose + "\x00" + value))
-	return hex.EncodeToString(h.Sum(nil))
-}
 
 // Associated data prevents ciphertext from being moved to another record/purpose.
 func (c Config) Seal(purpose string, value any) (string, error) {
@@ -176,7 +154,7 @@ func (c Config) Seal(purpose string, value any) (string, error) {
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
 	}
-	sealed := aead.Seal(nonce, nonce, plain, []byte(c.StudyID+":"+purpose))
+	sealed := aead.Seal(nonce, nonce, plain, []byte(purpose))
 	return c.ActiveKey + ":" + base64.RawStdEncoding.EncodeToString(sealed), nil
 }
 
@@ -197,7 +175,7 @@ func (c Config) Open(purpose, value string, target any) error {
 	if err != nil || len(raw) < aead.NonceSize() {
 		return errors.New("invalid encrypted value")
 	}
-	plain, err := aead.Open(nil, raw[:aead.NonceSize()], raw[aead.NonceSize():], []byte(c.StudyID+":"+purpose))
+	plain, err := aead.Open(nil, raw[:aead.NonceSize()], raw[aead.NonceSize():], []byte(purpose))
 	if err != nil {
 		return errors.New("evidence authentication failed")
 	}

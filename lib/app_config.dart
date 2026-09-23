@@ -19,18 +19,13 @@ class AppConfig {
     'BANKID_RETURN_URL',
     defaultValue: 'researchsteps://bankid/return',
   );
-  static const participantIdLabel = 'Participant ID';
-  static const participantIdHint = 'Example: STUDY-001';
-  static const participantIdHelp =
-      'Use an alphanumeric study ID. Replace this rule if your protocol requires another identifier format.';
+  static const userIdLabel = 'User ID';
   static const requestedDataLabel = 'Apple Health step count';
   static const summaryLookbackDays = 14;
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'http://192.168.10.101:8090',
   );
-
-  static final participantIdPattern = RegExp(r'^[A-Z0-9][A-Z0-9_-]{3,31}$');
 
   static List<HealthDataType> get requestedTypes => [HealthDataType.STEPS];
 
@@ -41,17 +36,9 @@ class AppConfig {
   static DateTime get importStartDate =>
       DateTime(DateTime.now().year - 5, 1, 1);
 
-  static String normalizeParticipantId(String value) {
-    return value.trim().toUpperCase();
-  }
-
-  static bool isValidParticipantId(String value) {
-    return participantIdPattern.hasMatch(normalizeParticipantId(value));
-  }
-
   static const onboardingHighlights = [
     'Review study information and update the placeholder copy before production use.',
-    'Use your study invitation and sign the consent with BankID.',
+    'Review the consent and sign with BankID to create or access your account.',
     'Request read access to Apple Health step data only.',
     'Preview the extracted dataset, then upload it to your study API.',
   ];
@@ -86,7 +73,7 @@ class AppConfig {
     StudySection(
       title: 'Participant Identifier',
       paragraphs: [
-        'Your study invitation links your BankID identity to a study participant identifier. Step uploads use that study identifier.',
+        'Your BankID sign-in creates a user account. Step uploads are linked to that user ID.',
         'The backend retains encrypted identity and signing evidence, including your personal identity number. Your study consent explains who can access this information and how long it is retained.',
       ],
     ),

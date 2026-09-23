@@ -24,6 +24,7 @@ import (
 
 	_ "app/migrations"
 
+	"github.com/joho/godotenv"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -38,7 +39,7 @@ const uploadsDirectoryName = "_uploads"
 const uploadStateFileName = ".upload_state.json"
 
 var uploadLocks sync.Map
-var participantIDRegex = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var userIDRegex = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
 type Value struct {
 	NumericValue string `json:"numericValue"`
@@ -64,6 +65,10 @@ type UploadState struct {
 }
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
 	app := pocketbase.New()
 	isGoRun := strings.HasPrefix(os.Args[0], os.TempDir())
 
@@ -105,49 +110,17 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		return c.String(http.StatusOK, "Research steps template API is running")
 	})
 
-	r.POST("/api/study/metadata", func(c *core.RequestEvent) error {
-		reqBody := struct {
-			ParticipantID string                 `json:"participantId"`
-			Data          map[string]interface{} `json:"data"`
-		}{}
-		if err := c.BindBody(&reqBody); err != nil {
-			return httpError(http.StatusBadRequest, "Invalid request body")
-		}
-
-		participantID, err := authorizedParticipant(c, reqBody.ParticipantID)
-		if err != nil {
-			return err
-		}
-
-		user, err := getUserForParticipantID(app, participantID)
-		if err != nil {
-			return httpError(http.StatusNotFound, "Participant not found")
-		}
-
-		var metadata []map[string]any
-		if err := user.UnmarshalJSONField("metadata", &metadata); err != nil {
-			return httpError(500, "Failed to read participant metadata")
-		}
-		metadata = append(metadata, map[string]any{"data": reqBody.Data, "created": time.Now().UTC().Format(time.RFC3339Nano)})
-		user.Set("metadata", metadata)
-		if err := app.Save(user); err != nil {
-			return httpError(500, "Failed to save participant metadata")
-		}
-
-		return c.NoContent(http.StatusCreated)
-	}).BindFunc(requireSession, requireConsent)
-
 	r.POST("/data", func(c *core.RequestEvent) error {
 		reqBody := struct {
-			ParticipantID string     `json:"participantId"`
-			ChunkIndex    int        `json:"chunkIndex"`
-			Data          []DataItem `json:"data"`
+			UserID     string     `json:"userId"`
+			ChunkIndex int        `json:"chunkIndex"`
+			Data       []DataItem `json:"data"`
 		}{}
 		if err := c.BindBody(&reqBody); err != nil {
 			return httpError(http.StatusBadRequest, "Invalid request body")
 		}
 
-		participantID, err := authorizedParticipant(c, reqBody.ParticipantID)
+		userID, err := authorizedUser(c, reqBody.UserID)
 		if err != nil {
 			return err
 		}
@@ -166,11 +139,11 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		}
 
 		now := time.Now().UTC()
-		lock := getUploadLock(participantID)
+		lock := getUploadLock(userID)
 		lock.Lock()
 		defer lock.Unlock()
 
-		state, err := loadUploadState(participantID)
+		state, err := loadUploadState(userID)
 		if err != nil {
 			return httpError(http.StatusInternalServerError, "Failed to read upload state")
 		}
@@ -178,17 +151,17 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		switch {
 		case reqBody.ChunkIndex == 0:
 			if state == nil || isUploadStateExpired(state, now) {
-				state, err = createNewUploadState(participantID, now)
+				state, err = createNewUploadState(userID, now)
 				if err != nil {
 					return httpError(http.StatusInternalServerError, "Failed to start upload")
 				}
 			} else if state.ExpectedChunk > 0 {
-				duplicateFirstChunk, err := isDuplicateChunk(participantID, state, 0, dataHash)
+				duplicateFirstChunk, err := isDuplicateChunk(userID, state, 0, dataHash)
 				if err != nil {
 					return httpError(http.StatusInternalServerError, "Failed to process upload")
 				}
 				if !duplicateFirstChunk {
-					state, err = createNewUploadState(participantID, now)
+					state, err = createNewUploadState(userID, now)
 					if err != nil {
 						return httpError(http.StatusInternalServerError, "Failed to restart upload")
 					}
@@ -206,7 +179,7 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		}
 
 		if reqBody.ChunkIndex < state.ExpectedChunk {
-			isDuplicate, err := isDuplicateChunk(participantID, state, reqBody.ChunkIndex, dataHash)
+			isDuplicate, err := isDuplicateChunk(userID, state, reqBody.ChunkIndex, dataHash)
 			if err != nil {
 				return httpError(http.StatusInternalServerError, "Failed to process upload")
 			}
@@ -214,7 +187,7 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 				return httpError(http.StatusConflict, "Chunk already received with different content.")
 			}
 
-			filePath := chunkFilePath(participantID, state.SessionID, reqBody.ChunkIndex)
+			filePath := chunkFilePath(userID, state.SessionID, reqBody.ChunkIndex)
 			return c.JSON(http.StatusOK, map[string]any{
 				"message":    "Chunk already received",
 				"filePath":   filePath,
@@ -223,7 +196,7 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 			})
 		}
 
-		filePath := chunkFilePath(participantID, state.SessionID, reqBody.ChunkIndex)
+		filePath := chunkFilePath(userID, state.SessionID, reqBody.ChunkIndex)
 		if err := os.MkdirAll(filepath.Dir(filePath), 0o700); err != nil {
 			return httpError(http.StatusInternalServerError, "Failed to prepare storage directory")
 		}
@@ -231,13 +204,13 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		if err := writeCompressedFile(filePath, reqBody.Data); err != nil {
 			return httpError(http.StatusInternalServerError, "Failed to persist upload chunk")
 		}
-		if err := saveChunkHash(participantID, state, reqBody.ChunkIndex, dataHash); err != nil {
+		if err := saveChunkHash(userID, state, reqBody.ChunkIndex, dataHash); err != nil {
 			return httpError(http.StatusInternalServerError, "Failed to persist chunk metadata")
 		}
 
 		state.ExpectedChunk++
 		state.UpdatedAt = now
-		if err := saveUploadState(participantID, state); err != nil {
+		if err := saveUploadState(userID, state); err != nil {
 			return httpError(http.StatusInternalServerError, "Failed to persist upload state")
 		}
 
@@ -251,7 +224,7 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 			return httpError(http.StatusInternalServerError, "Failed to find uploads collection")
 		}
 
-		user, err := getUserForParticipantID(app, participantID)
+		user, err := getUserForID(app, userID)
 		if err != nil {
 			return httpError(http.StatusNotFound, "Participant not found")
 		}
@@ -274,23 +247,23 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		})
 	}).Bind(apis.BodyLimit(200*1024*1024)).BindFunc(requireSession, requireConsent, decompressUpload)
 
-	r.GET("/data/{participantId}", requireAPIKey(func(c *core.RequestEvent) error {
-		participantID, err := sanitizeParticipantID(c.Request.PathValue("participantId"))
+	r.GET("/data/{userId}", requireAPIKey(func(c *core.RequestEvent) error {
+		userID, err := sanitizeUserID(c.Request.PathValue("userId"))
 		if err != nil {
-			return httpError(http.StatusBadRequest, "Invalid participantId")
+			return httpError(http.StatusBadRequest, "Invalid userId")
 		}
 
-		lock := getUploadLock(participantID)
+		lock := getUploadLock(userID)
 		lock.Lock()
 		defer lock.Unlock()
 
-		sessionDirs, err := listSessionDirectories(participantID)
+		sessionDirs, err := listSessionDirectories(userID)
 		if err != nil {
 			return httpError(http.StatusInternalServerError, "Failed to list upload sessions")
 		}
 
 		for index := len(sessionDirs) - 1; index >= 0; index-- {
-			allData, err := readDataFromSession(participantID, sessionDirs[index])
+			allData, err := readDataFromSession(userID, sessionDirs[index])
 			if err != nil {
 				return httpError(http.StatusInternalServerError, "Failed to read upload session")
 			}
@@ -321,44 +294,44 @@ func requireAPIKey(next func(*core.RequestEvent) error) func(*core.RequestEvent)
 	}
 }
 
-func sanitizeParticipantID(value string) (string, error) {
-	if value == "" || !participantIDRegex.MatchString(value) {
-		return "", fmt.Errorf("invalid participantId: %q", value)
+func sanitizeUserID(value string) (string, error) {
+	if value == "" || !userIDRegex.MatchString(value) {
+		return "", fmt.Errorf("invalid userId: %q", value)
 	}
 	return value, nil
 }
 
-func getUploadLock(participantID string) *sync.Mutex {
-	lock, _ := uploadLocks.LoadOrStore(participantID, &sync.Mutex{})
+func getUploadLock(userID string) *sync.Mutex {
+	lock, _ := uploadLocks.LoadOrStore(userID, &sync.Mutex{})
 	return lock.(*sync.Mutex)
 }
 
-func participantFolderPath(participantID string) string {
-	return filepath.Join(storagePath, participantID)
+func participantFolderPath(userID string) string {
+	return filepath.Join(storagePath, userID)
 }
 
-func uploadsRootPath(participantID string) string {
-	return filepath.Join(participantFolderPath(participantID), uploadsDirectoryName)
+func uploadsRootPath(userID string) string {
+	return filepath.Join(participantFolderPath(userID), uploadsDirectoryName)
 }
 
-func uploadSessionPath(participantID, sessionID string) string {
-	return filepath.Join(uploadsRootPath(participantID), sessionID)
+func uploadSessionPath(userID, sessionID string) string {
+	return filepath.Join(uploadsRootPath(userID), sessionID)
 }
 
-func uploadStatePath(participantID string) string {
-	return filepath.Join(participantFolderPath(participantID), uploadStateFileName)
+func uploadStatePath(userID string) string {
+	return filepath.Join(participantFolderPath(userID), uploadStateFileName)
 }
 
-func chunkFilePath(participantID, sessionID string, chunkIndex int) string {
+func chunkFilePath(userID, sessionID string, chunkIndex int) string {
 	return filepath.Join(
-		uploadSessionPath(participantID, sessionID),
+		uploadSessionPath(userID, sessionID),
 		fmt.Sprintf("chunk-%05d.json.gz", chunkIndex),
 	)
 }
 
-func chunkHashPath(participantID, sessionID string, chunkIndex int) string {
+func chunkHashPath(userID, sessionID string, chunkIndex int) string {
 	return filepath.Join(
-		uploadSessionPath(participantID, sessionID),
+		uploadSessionPath(userID, sessionID),
 		fmt.Sprintf("chunk-%05d.sha256", chunkIndex),
 	)
 }
@@ -384,8 +357,8 @@ func hashDataItems(data []DataItem) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func loadUploadState(participantID string) (*UploadState, error) {
-	raw, err := os.ReadFile(uploadStatePath(participantID))
+func loadUploadState(userID string) (*UploadState, error) {
+	raw, err := os.ReadFile(uploadStatePath(userID))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -404,8 +377,8 @@ func loadUploadState(participantID string) (*UploadState, error) {
 	return &state, nil
 }
 
-func saveUploadState(participantID string, state *UploadState) error {
-	stateDir := participantFolderPath(participantID)
+func saveUploadState(userID string, state *UploadState) error {
+	stateDir := participantFolderPath(userID)
 	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return err
 	}
@@ -415,7 +388,7 @@ func saveUploadState(participantID string, state *UploadState) error {
 		return err
 	}
 
-	return os.WriteFile(uploadStatePath(participantID), raw, 0o600)
+	return os.WriteFile(uploadStatePath(userID), raw, 0o600)
 }
 
 func isUploadStateExpired(state *UploadState, now time.Time) bool {
@@ -425,13 +398,13 @@ func isUploadStateExpired(state *UploadState, now time.Time) bool {
 	return now.Sub(state.UpdatedAt) > uploadStateTimeout
 }
 
-func createNewUploadState(participantID string, now time.Time) (*UploadState, error) {
+func createNewUploadState(userID string, now time.Time) (*UploadState, error) {
 	sessionID, err := newSessionID(now)
 	if err != nil {
 		return nil, err
 	}
 
-	sessionDir := uploadSessionPath(participantID, sessionID)
+	sessionDir := uploadSessionPath(userID, sessionID)
 	if err := os.MkdirAll(sessionDir, 0o700); err != nil {
 		return nil, err
 	}
@@ -442,15 +415,15 @@ func createNewUploadState(participantID string, now time.Time) (*UploadState, er
 		StartedAt:     now,
 		UpdatedAt:     now,
 	}
-	if err := saveUploadState(participantID, state); err != nil {
+	if err := saveUploadState(userID, state); err != nil {
 		return nil, err
 	}
 
 	return state, nil
 }
 
-func isDuplicateChunk(participantID string, state *UploadState, chunkIndex int, incomingHash string) (bool, error) {
-	existingHashBytes, err := os.ReadFile(chunkHashPath(participantID, state.SessionID, chunkIndex))
+func isDuplicateChunk(userID string, state *UploadState, chunkIndex int, incomingHash string) (bool, error) {
+	existingHashBytes, err := os.ReadFile(chunkHashPath(userID, state.SessionID, chunkIndex))
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
@@ -462,16 +435,16 @@ func isDuplicateChunk(participantID string, state *UploadState, chunkIndex int, 
 	return existingHash == incomingHash, nil
 }
 
-func saveChunkHash(participantID string, state *UploadState, chunkIndex int, hash string) error {
+func saveChunkHash(userID string, state *UploadState, chunkIndex int, hash string) error {
 	return os.WriteFile(
-		chunkHashPath(participantID, state.SessionID, chunkIndex),
+		chunkHashPath(userID, state.SessionID, chunkIndex),
 		[]byte(hash),
 		0o600,
 	)
 }
 
-func listSessionDirectories(participantID string) ([]string, error) {
-	entries, err := os.ReadDir(uploadsRootPath(participantID))
+func listSessionDirectories(userID string) ([]string, error) {
+	entries, err := os.ReadDir(uploadsRootPath(userID))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
@@ -490,8 +463,8 @@ func listSessionDirectories(participantID string) ([]string, error) {
 	return directories, nil
 }
 
-func readDataFromSession(participantID, sessionID string) ([]DataItem, error) {
-	sessionDir := uploadSessionPath(participantID, sessionID)
+func readDataFromSession(userID, sessionID string) ([]DataItem, error) {
+	sessionDir := uploadSessionPath(userID, sessionID)
 	files, err := os.ReadDir(sessionDir)
 	if err != nil {
 		return nil, err
@@ -588,18 +561,18 @@ func readCompressedFile(filePath string) ([]DataItem, error) {
 	return dataItems, nil
 }
 
-func getUserForParticipantID(app core.App, participantID string) (*core.Record, error) {
-	return app.FindFirstRecordByData("users", "username", participantID)
+func getUserForID(app core.App, userID string) (*core.Record, error) {
+	return app.FindRecordById("users", userID)
 }
 
 func httpError(status int, message string) error { return apis.NewApiError(status, message, nil) }
 
 // Every upload identifies its participant and must match the authenticated user.
-func authorizedParticipant(e *core.RequestEvent, supplied string) (string, error) {
+func authorizedUser(e *core.RequestEvent, supplied string) (string, error) {
 	if e.Auth == nil {
 		return "", httpError(401, "Participant authentication required")
 	}
-	id, err := sanitizeParticipantID(e.Auth.GetString("username"))
+	id, err := sanitizeUserID(e.Auth.Id)
 	if err != nil || supplied != id {
 		return "", httpError(403, "Participant does not match authenticated session")
 	}

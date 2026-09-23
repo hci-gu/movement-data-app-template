@@ -29,13 +29,12 @@ class SecureBankIdAttemptStore implements BankIdAttemptStore {
 class SigningState {
   final BankIdAttempt? attempt;
   final ConsentDocument? document;
-  final bool begun, returning, busy, reviewed;
+  final bool begun, busy, reviewed;
   final String? error;
   const SigningState({
     this.attempt,
     this.document,
     this.begun = false,
-    this.returning = false,
     this.busy = false,
     this.reviewed = false,
     this.error,
@@ -44,7 +43,6 @@ class SigningState {
     BankIdAttempt? attempt,
     ConsentDocument? document,
     bool? begun,
-    bool? returning,
     bool? busy,
     bool? reviewed,
     String? error,
@@ -54,7 +52,6 @@ class SigningState {
     attempt: clearAttempt ? null : attempt ?? this.attempt,
     document: document ?? this.document,
     begun: begun ?? this.begun,
-    returning: returning ?? this.returning,
     busy: busy ?? this.busy,
     reviewed: reviewed ?? this.reviewed,
     error: clearError ? null : error ?? this.error,
@@ -69,7 +66,6 @@ class BankIdController extends StateNotifier<SigningState> {
   final DateTime Function() now;
   Timer? _timer;
   Future<void>? _refreshing, _restoration;
-  String _invitation = '', _authAttempt = '';
   BankIdController({
     required this.gateway,
     required this.store,
@@ -84,8 +80,6 @@ class BankIdController extends StateNotifier<SigningState> {
       _timer?.cancel();
       _timer = null;
       await store.clear();
-      _invitation = '';
-      _authAttempt = '';
       if (mounted) state = SigningState(error: bankIdError(error));
     } else if (mounted) {
       state = state.copyWith(error: bankIdError(error));
@@ -113,22 +107,19 @@ class BankIdController extends StateNotifier<SigningState> {
     state = state.copyWith(attempt: a, begun: true);
     await _update(await gateway.status(a));
   });
+  Future<void> initialize() async {
+    await restore();
+    if (mounted && !state.begun) await begin();
+  }
+
   void setReviewed(bool value) => state = state.copyWith(reviewed: value);
-  Future<void> begin({String invitationCode = '', bool returning = false}) =>
-      _run(() async {
-        _invitation = invitationCode.trim();
-        _authAttempt = '';
-        final doc = returning ? null : await gateway.currentConsent();
-        state = SigningState(
-          begun: true,
-          returning: returning,
-          document: doc,
-          busy: true,
-        );
-      });
+  Future<void> begin() => _run(() async {
+    final doc = await gateway.currentConsent();
+    state = SigningState(begun: true, document: doc, busy: true);
+  });
   Future<void> start(String mode) => _run(() => _start(mode));
   Future<void> _start(String mode) async {
-    if (state.document != null && !state.reviewed) return;
+    if (state.document == null || !state.reviewed) return;
     if (state.attempt?.pending == true) {
       await _update(await gateway.status(state.attempt!));
       return;
@@ -140,7 +131,7 @@ class BankIdController extends StateNotifier<SigningState> {
       id: sha256.convert(utf8.encode(secret)).toString().substring(0, 32),
       secret: secret,
       mode: mode,
-      purpose: state.document == null ? 'auth' : 'sign',
+      purpose: 'sign',
       expiresAt:
           now().add(const Duration(minutes: 30)).millisecondsSinceEpoch ~/ 1000,
     );
@@ -148,10 +139,8 @@ class BankIdController extends StateNotifier<SigningState> {
     state = state.copyWith(attempt: a);
     final input = <String, dynamic>{
       'clientSecret': secret,
-      'invitationCode': _invitation,
-      'authAttempt': _authAttempt,
-      'consentTextId': state.document?.id ?? '',
-      'documentHash': state.document?.documentHash ?? '',
+      'consentTextId': state.document!.id,
+      'documentHash': state.document!.documentHash,
       'mode': mode,
     };
     BankIdAttempt result;
@@ -162,9 +151,6 @@ class BankIdController extends StateNotifier<SigningState> {
       state = state.copyWith(clearAttempt: true, reviewed: false);
       if (error.reason == 'consentChanged') {
         state = state.copyWith(document: await gateway.currentConsent());
-      } else if (error.reason == 'invitationUnavailable') {
-        _invitation = '';
-        state = const SigningState(busy: true);
       }
       rethrow;
     }
@@ -226,18 +212,12 @@ class BankIdController extends StateNotifier<SigningState> {
     _timer?.cancel();
     _timer = null;
     if (a.accepted && a.consentRequired) {
-      // Keep the accepted attempt credential in secure storage until the next start.
-      _authAttempt = a.authorization;
-      _invitation = '';
       final doc = await gateway.currentConsent();
       state = state.copyWith(
         document: doc,
         clearAttempt: true,
         reviewed: false,
-        returning: true,
       );
-    } else if (a.accepted && a.purpose == 'auth') {
-      await _finish();
     }
   }
 
@@ -247,11 +227,6 @@ class BankIdController extends StateNotifier<SigningState> {
     }
   });
   Future<void> reviewAgain() => _run(() async {
-    if (_invitation.isEmpty && _authAttempt.isEmpty) {
-      await store.clear();
-      state = const SigningState(busy: true);
-      return;
-    }
     final doc = await gateway.currentConsent();
     await store.clear();
     state = state.copyWith(document: doc, clearAttempt: true, reviewed: false);
@@ -262,11 +237,6 @@ class BankIdController extends StateNotifier<SigningState> {
     final result = await gateway.cancel(a);
     await _update(result);
     if (!result.pending && !result.accepted) {
-      if (a.purpose == 'sign' && _invitation.isEmpty && _authAttempt.isEmpty) {
-        await store.clear();
-        state = const SigningState(busy: true);
-        return;
-      }
       state = state.copyWith(clearAttempt: true);
       await _start('qr');
     }
@@ -330,9 +300,8 @@ class BankIdController extends StateNotifier<SigningState> {
     _timer?.cancel();
     _timer = null;
     await store.clear();
-    _invitation = '';
-    _authAttempt = '';
-    state = const SigningState(busy: true);
+    final doc = await gateway.currentConsent();
+    state = SigningState(begun: true, document: doc, busy: true);
   });
   @override
   void dispose() {
