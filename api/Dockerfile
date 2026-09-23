@@ -1,30 +1,16 @@
-FROM alpine:latest
+FROM golang:1.27.1-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -o /out/app .
 
-ARG GOLANG_VERSION=1.22.0
-
-RUN apk update && apk add go gcc bash musl-dev openssl-dev ca-certificates && update-ca-certificates
-
-RUN wget https://dl.google.com/go/go$GOLANG_VERSION.src.tar.gz && tar -C /usr/local -xzf go$GOLANG_VERSION.src.tar.gz
-RUN cd /usr/local/go/src && ./make.bash
-ENV PATH=$PATH:/usr/local/go/bin
-RUN rm go$GOLANG_VERSION.src.tar.gz
-
-#we delete the apk installed version to avoid conflict
-RUN apk del go
-
-# add go files
-ADD main.go /pb/main.go
-ADD go.mod /pb/go.mod
-ADD go.sum /pb/go.sum
-COPY ./migrations /pb/migrations
-
-# build binary
-RUN cd /pb && go build -o app
-
-# uncomment to copy the local pb_hooks dir into the image
-# COPY ./pb_hooks /pb/pb_hooks
-
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /pb/pb_data && chown 10001:0 /pb /pb/pb_data && chmod 0770 /pb /pb/pb_data
+WORKDIR /pb
+COPY --from=build /out/app /pb/app
+USER 10001:0
 EXPOSE 8080
-
-# start PocketBase
-CMD ["/pb/app", "serve", "--http=0.0.0.0:8080"]
+CMD ["/pb/app", "serve", "--http=0.0.0.0:8080", "--dir=/pb/pb_data"]

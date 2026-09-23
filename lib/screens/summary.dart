@@ -66,8 +66,7 @@ class UploadSummaryHome extends HookConsumerWidget {
           }
 
           final auth = ref.watch(authProvider);
-          final participantId =
-              auth?.record.getStringValue('username') ?? 'Unknown';
+          final userId = auth?.record.id ?? 'Unknown';
           final summary = HealthManager().summary;
           final lastUploadAt = Storage().getLastUploadAt();
 
@@ -86,10 +85,7 @@ class UploadSummaryHome extends HookConsumerWidget {
                       style: AppTheme.body,
                     ),
                     const SizedBox(height: 16),
-                    _SummaryLine(
-                      label: AppConfig.participantIdLabel,
-                      value: participantId,
-                    ),
+                    _SummaryLine(label: AppConfig.userIdLabel, value: userId),
                     _SummaryLine(
                       label: 'Last upload',
                       value: formatDateTime(lastUploadAt),
@@ -154,6 +150,10 @@ class UploadSummaryHome extends HookConsumerWidget {
                 child: const Text('Upload Again'),
               ),
               const SizedBox(height: 8),
+              CupertinoButton(
+                onPressed: () => context.pushNamed('consentReceipt'),
+                child: const Text('View signed consent'),
+              ),
               CupertinoButton(
                 onPressed: () async {
                   await ref.read(authProvider.notifier).logout();

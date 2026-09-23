@@ -1,45 +1,28 @@
 # Research Steps Template
 
-Reusable Flutter + PocketBase template for research studies that need to:
+Flutter iOS app and PocketBase backend for one-step BankID consent signing and account creation, Apple Health step-data preview, and authenticated chunked uploads.
 
-- enroll a participant with a study-specific identifier
-- request read access to Apple Health step data
-- preview the extracted dataset on-device
-- upload the data to an API in resumable compressed chunks
+The backend serves one study. The application has nine collections: `users`, `answers`, `dataUploads`, `signatures`, `signingRequests`, `consent_texts`, `questionnaires`, `questions`, and `questionOptions`. The app shows consent first; one successful BankID signature creates or finds a user by `personalNumber` and grants a session. Participants under 18 must collect one or two guardian signatures before uploading. Each terminal BankID attempt is saved in `signatures`; its `user` field is a relation to the participant. Consent state is derived from accepted signature records.
 
-## What This Repository Contains
-
-- `lib/`: Flutter client for consent, HealthKit authorization, dataset preview, and upload
-- `api/`: PocketBase-backed API for participant creation and chunked upload storage
-- `health/`: local Health plugin package used by the Flutter app
-
-## Template Defaults
-
-- app name: `Research Steps Template`
-- identifier model: generic `participantId`
-- requested health data: Apple Health `STEPS`
-- API base URL: configured in [`lib/app_config.dart`](/Users/sebastianandreasson/Documents/code/work/gu/swede_heart/lib/app_config.dart) or via `--dart-define=API_BASE_URL=...`
-
-## Before Using With Real Participants
-
-1. Replace the placeholder study description, consent copy, and contact details in [`lib/app_config.dart`](/Users/sebastianandreasson/Documents/code/work/gu/swede_heart/lib/app_config.dart).
-2. Update iOS display names and HealthKit permission strings in [`ios/Runner/Info.plist`](/Users/sebastianandreasson/Documents/code/work/gu/swede_heart/ios/Runner/Info.plist).
-3. Replace deployment image names and hostnames in [`api/deploy/api.yaml`](/Users/sebastianandreasson/Documents/code/work/gu/swede_heart/api/deploy/api.yaml).
-4. Review PocketBase migrations and collections for your own study governance requirements.
-5. Configure the real backend base URL before building the app.
-
-## Local Development
-
-Flutter app:
+- `lib/`: consent review, BankID attempts/login, receipts, HealthKit, and uploads.
+- `api/`: Go/PocketBase backend, BankID client, study administration, and uploads.
+- `health/`: local Health plugin.
+- [Setup and testing](docs/bankid-testing.md)
+- [Architecture](docs/bankid-signing-plan.md)
 
 ```bash
 flutter pub get
-flutter run --dart-define=API_BASE_URL=https://your-api.example.org
+flutter run --dart-define=API_BASE_URL=https://your-api.example.org \
+  --dart-define=BANKID_RETURN_URL=researchsteps://bankid/return
 ```
-
-Backend:
 
 ```bash
 cd api
-go run .
+go build -o app .
+# Load certificates and study keys as described in the setup guide.
+./app serve --http=0.0.0.0:8080 --dir=./pb_data
 ```
+
+Existing databases migrate on startup with the same encryption keys used to save identity and signing evidence. Back up the database, raw upload directory, and keyring before upgrading. The migration moves upload directories from old participant IDs to user IDs and removes unused invitation records. Use the matching Flutter app; older invitation-based clients are unsupported.
+
+Before use with participants, replace study information and contacts in `lib/app_config.dart`, publish approved consent, configure the final bundle identifier and HealthKit permission copy, and fill the deployment template. Run one backend replica. A restart interrupts pending BankID requests; saved signatures and enrolled users survive.

@@ -53,6 +53,7 @@ class AppScaffold extends StatelessWidget {
   final String? title;
   final bool noBackButton;
   final bool withHorizontalPadding;
+  final Widget? trailing;
 
   const AppScaffold({
     super.key,
@@ -60,6 +61,7 @@ class AppScaffold extends StatelessWidget {
     this.title,
     this.noBackButton = false,
     this.withHorizontalPadding = true,
+    this.trailing,
   });
 
   @override
@@ -77,6 +79,7 @@ class AppScaffold extends StatelessWidget {
       navigationBar: CupertinoNavigationBar(
         middle: title == null ? null : Text(title!, style: AppTheme.cardTitle),
         leading: noBackButton ? const SizedBox.shrink() : null,
+        trailing: trailing,
       ),
       child: DecoratedBox(
         decoration: const BoxDecoration(

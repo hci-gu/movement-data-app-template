@@ -1,117 +1,195 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' show Colors;
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:research_steps_template/app_config.dart';
-import 'package:research_steps_template/state/auth.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:research_steps_template/bankid/controller.dart';
+import 'package:research_steps_template/bankid/models.dart';
 import 'package:research_steps_template/theme.dart';
-import 'package:research_steps_template/widgets/consent_modal.dart';
-import 'package:research_steps_template/widgets/participant_id_input.dart';
 
 class LoginScreen extends HookConsumerWidget {
   const LoginScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final controller = useTextEditingController();
-    final canContinue = useState(false);
-
+    final state = ref.watch(bankIdProvider);
+    final controller = ref.read(bankIdProvider.notifier);
     useEffect(() {
-      void updateState() {
-        canContinue.value = AppConfig.isValidParticipantId(controller.text);
-      }
-
-      controller.addListener(updateState);
-      return () => controller.removeListener(updateState);
-    }, [controller]);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        controller.initialize();
+      });
+      return null;
+    }, const []);
+    final order = state.attempt;
+    final document = state.document;
+    final disabled = state.busy;
 
     return AppScaffold(
-      title: AppConfig.participantIdLabel,
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              AppCard(
-                backgroundColor: AppTheme.foam,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const [
-                    Text('Enroll participant', style: AppTheme.sectionTitle),
-                    SizedBox(height: 12),
+      title: document != null ? 'Study consent' : 'Join the study',
+      child: ListView(
+        children: [
+          if (state.error != null) ...[
+            AppCard(
+              backgroundColor: AppTheme.sand,
+              child: Semantics(
+                liveRegion: true,
+                child: Text(state.error!, style: AppTheme.body),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (state.busy)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: CupertinoActivityIndicator(),
+            ),
+          if (!state.begun) ...[
+            const Text('Review study consent', style: AppTheme.sectionTitle),
+            const SizedBox(height: 12),
+            const Text(
+              'Signing the consent with BankID also creates your account or signs you in.',
+              style: AppTheme.body,
+            ),
+            CupertinoButton.filled(
+              onPressed: disabled ? null : controller.begin,
+              child: const Text('Load consent'),
+            ),
+          ] else if (order != null) ...[
+            AppCard(
+              backgroundColor: order.accepted ? AppTheme.foam : Colors.white,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    order.accepted ? 'Consent signed' : 'Continue with BankID',
+                    style: AppTheme.sectionTitle,
+                  ),
+                  const SizedBox(height: 12),
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(bankIdMessage(order), style: AppTheme.body),
+                  ),
+                  if (order.accepted && document != null) ...[
+                    const SizedBox(height: 16),
+                    Text(document.title, style: AppTheme.cardTitle),
                     Text(
-                      'This template creates or reuses a study participant account using a generic identifier. Replace this flow if your study needs invitation codes, SSO, or a different enrollment model.',
-                      style: AppTheme.body,
+                      'Consent version ${document.version}',
+                      style: AppTheme.bodyMuted,
                     ),
                   ],
-                ),
+                  if (order.qrData != null) ...[
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Scan this code with BankID on your other device.',
+                      style: AppTheme.body,
+                    ),
+                    const SizedBox(height: 12),
+                    Center(
+                      child: Semantics(
+                        label:
+                            'BankID QR code. Scan with the BankID app on your other device.',
+                        child: ExcludeSemantics(
+                          child: QrImageView(
+                            data: order.qrData!,
+                            size: 240,
+                            backgroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    ExcludeSemantics(
+                      child: Center(
+                        child: Text(
+                          'Scan within ${order.qrSecondsRemaining} seconds',
+                          style: AppTheme.bodyMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 16),
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [ParticipantIdInput(controller: controller)],
-                ),
+            ),
+            const SizedBox(height: 16),
+            if (order.accepted)
+              CupertinoButton.filled(
+                onPressed: disabled ? null : controller.finish,
+                child: const Text('Continue'),
               ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: CupertinoButton.filled(
-                  onPressed: canContinue.value
-                      ? () async {
-                          final consentAccepted =
-                              await showCupertinoModalPopup<bool>(
-                                context: context,
-                                builder: (context) => const ConsentModal(),
-                              ) ??
-                              false;
-
-                          if (!consentAccepted || !context.mounted) {
-                            return;
-                          }
-
-                          final participantId =
-                              AppConfig.normalizeParticipantId(controller.text);
-
-                          try {
-                            await ref
-                                .read(authProvider.notifier)
-                                .signup(
-                                  participantId,
-                                  consentAccepted: consentAccepted,
-                                );
-                          } catch (_) {
-                            if (!context.mounted) {
-                              return;
-                            }
-
-                            await showCupertinoDialog<void>(
-                              context: context,
-                              builder: (context) => CupertinoAlertDialog(
-                                title: const Text('Enrollment failed'),
-                                content: const Text(
-                                  'The participant account could not be created or restored. Check the API base URL and backend availability.',
-                                ),
-                                actions: [
-                                  CupertinoDialogAction(
-                                    isDefaultAction: true,
-                                    onPressed: () {
-                                      Navigator.of(context).pop();
-                                    },
-                                    child: const Text('OK'),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                        }
-                      : null,
-                  child: const Text('Continue'),
-                ),
+            if (order.pending && order.mode == 'sameDevice')
+              CupertinoButton.filled(
+                onPressed: disabled ? null : controller.openBankId,
+                child: const Text('Open BankID'),
               ),
-            ],
-          ),
-        ),
+            if (order.canExtendQR)
+              CupertinoButton.filled(
+                onPressed: disabled ? null : controller.extendQR,
+                child: const Text('Show a new QR code'),
+              ),
+            if (order.pending)
+              CupertinoButton(
+                onPressed: disabled ? null : controller.cancel,
+                child: const Text('Cancel request'),
+              ),
+            if (!order.pending && !order.accepted)
+              CupertinoButton.filled(
+                onPressed: disabled ? null : controller.reviewAgain,
+                child: const Text('Review consent and try again'),
+              ),
+            if (state.error != null)
+              CupertinoButton(
+                onPressed: disabled ? null : controller.refresh,
+                child: const Text('Check request status'),
+              ),
+          ] else if (document != null) ...[
+            Text(document.title, style: AppTheme.sectionTitle),
+            const SizedBox(height: 8),
+            Text('Version ${document.version}', style: AppTheme.bodyMuted),
+            const SizedBox(height: 16),
+            AppCard(child: Text(document.text, style: AppTheme.body)),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                CupertinoSwitch(
+                  value: state.reviewed,
+                  onChanged: disabled ? null : controller.setReviewed,
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'I have read the consent above and want to sign it.',
+                    style: AppTheme.body,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            CupertinoButton.filled(
+              onPressed: disabled || !state.reviewed
+                  ? null
+                  : () => controller.start('sameDevice'),
+              child: const Text('Sign with BankID'),
+            ),
+            CupertinoButton(
+              onPressed: disabled || !state.reviewed
+                  ? null
+                  : () => controller.start('qr'),
+              child: const Text('Use BankID on another device'),
+            ),
+          ] else ...[
+            CupertinoButton.filled(
+              onPressed: disabled ? null : controller.reviewAgain,
+              child: const Text('Load study consent'),
+            ),
+          ],
+          if (state.begun && !state.busy && order?.accepted != true) ...[
+            const SizedBox(height: 24),
+            CupertinoButton(
+              onPressed: controller.reset,
+              child: const Text('Start over'),
+            ),
+          ],
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }
