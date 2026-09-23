@@ -21,15 +21,11 @@ func RegisterCommands(app *pocketbase.PocketBase) {
 	root.PersistentPreRunE = prepare
 	var file, version, title string
 	publish := &cobra.Command{Use: "publish-consent", Short: "Publish an immutable UTF-8 consent version", RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
 		text, err := os.ReadFile(file)
 		if err != nil {
 			return err
 		}
-		record, err := PublishConsent(app, cfg, version, title, string(text))
+		record, err := PublishConsent(app, version, title, string(text))
 		if err != nil {
 			return err
 		}

@@ -13,7 +13,7 @@ func (s *Service) RegisterAdmin() {
 			if !e.HasSuperuserAuth() {
 				return e.ForbiddenError("Only superusers can publish consent.", nil)
 			}
-			record, err := PublishConsent(e.App, s.Config, e.Record.GetString("version"), e.Record.GetString("title"), e.Record.GetString("text"))
+			record, err := PublishConsent(e.App, e.Record.GetString("version"), e.Record.GetString("title"), e.Record.GetString("text"))
 			if err != nil {
 				return err
 			}

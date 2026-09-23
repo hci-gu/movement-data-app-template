@@ -58,7 +58,7 @@ func TestBankIDCreatesUserAndRelatesSignature(t *testing.T) {
 		}
 	}
 	cfg := Config{Environment: "test", AppID: "example.app", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}}
-	if _, err := PublishConsent(app, cfg, "v1", "Consent", "I consent."); err != nil {
+	if _, err := PublishConsent(app, "v1", "Consent", "I consent."); err != nil {
 		t.Fatal(err)
 	}
 	f := &fakeProvider{result: bankid.Result{Status: "complete", CompletionData: &bankid.Completion{User: bankid.User{PersonalNumber: "200001012384"}, Signature: base64.StdEncoding.EncodeToString([]byte("signature")), OCSPResponse: base64.StdEncoding.EncodeToString([]byte("ocsp")), Risk: "low"}}}
@@ -142,7 +142,7 @@ func TestChangedConsentDoesNotCreateUser(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Config{Environment: "test", AppID: "example.app", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}}
-	doc, err := PublishConsent(app, cfg, "v1", "Consent", "First version")
+	doc, err := PublishConsent(app, "v1", "Consent", "First version")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestChangedConsentDoesNotCreateUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := PublishConsent(app, cfg, "v2", "Consent", "Updated version"); err != nil {
+	if _, err := PublishConsent(app, "v2", "Consent", "Updated version"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.advance(context.Background(), a); err != nil {

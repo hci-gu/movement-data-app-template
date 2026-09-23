@@ -33,7 +33,7 @@ func TestGuardianSignaturesGateParticipant(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Config{Environment: "test", AppID: "example.app", PublicURL: "https://study.example", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}}
-	doc, err := PublishConsent(app, cfg, "v1", "Study consent", "I consent.")
+	doc, err := PublishConsent(app, "v1", "Study consent", "I consent.")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestGuardianSignaturesGateParticipant(t *testing.T) {
 	if second.Status != "accepted" || !s.guardianEligible(app, user) {
 		t.Fatalf("two valid guardians did not unlock upload: status=%s hint=%s count=%d", second.Status, second.Hint, user.GetInt("guardianCount"))
 	}
-	newDoc, err := PublishConsent(app, cfg, "v2", "Updated consent", "I consent to the update.")
+	newDoc, err := PublishConsent(app, "v2", "Updated consent", "I consent to the update.")
 	if err != nil {
 		t.Fatal(err)
 	}

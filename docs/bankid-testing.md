@@ -6,7 +6,7 @@ Generate the evidence keyring from the repository root:
 python3 scripts/create-study-secrets.py --out api/secrets/study-keys.json
 ```
 
-Set BankID certificate, return URL, and keyring paths using [api/.env.example](../api/.env.example). The backend does not load `.env` automatically. Use one backend replica because pending BankID attempts live in process memory.
+Set BankID certificate, return URL, and keyring paths using [api/.env.example](../api/.env.example). The backend loads `.env` when present and also accepts deployment environment variables. Use one backend replica because pending BankID attempts live in process memory.
 
 Publish approved consent in the PocketBase `consent_texts` collection or with:
 

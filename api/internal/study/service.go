@@ -1,7 +1,6 @@
 package study
 
 import (
-	"app/internal/bankid"
 	"context"
 	"crypto/subtle"
 	"database/sql"
@@ -13,7 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/dbx"
+	"app/internal/bankid"
+
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -25,8 +25,9 @@ const ResultLifetime = 10 * time.Minute
 const MaxAttempts = 1024
 
 type Service struct {
-	App      core.App
-	Config   Config
+	App    core.App
+	Config Config
+
 	provider bankid.Provider
 	startMu  sync.Mutex
 	mu       sync.Mutex
@@ -53,20 +54,26 @@ type StartInput struct {
 // Attempt is transient. Only its terminal outcome and evidence enter the database.
 // Its mutex serializes collection, cancellation and response delivery.
 type Attempt struct {
-	mu                                                                  sync.Mutex
-	ID, SecretHash, InputHash, Purpose, Mode, UserID                    string
-	Nonce, IP, Status, Hint, SignatureID, TokenKey                      string
-	GuardianRequestID                                                   string
-	StartedAt, ReceivedAt, NextCollect, ExpiresAt, FinishedAt, ResultAt time.Time
-	Request                                                             bankid.Request
-	Order                                                               bankid.Order
-	Document                                                            *Document
-	Result                                                              *bankid.Result
-	ErrorResponse                                                       json.RawMessage
-	LocalError                                                          string
-	Terminal                                                            string
-	PickedUp                                                            bool
-	Grant                                                               *grant
+	mu sync.Mutex
+
+	ID, SecretHash, InputHash string
+	Purpose, Mode, UserID     string
+	GuardianRequestID         string
+	Nonce, IP                 string
+	Status, Hint, Terminal    string
+	SignatureID, TokenKey     string
+
+	StartedAt, ReceivedAt, NextCollect time.Time
+	ExpiresAt, FinishedAt, ResultAt    time.Time
+
+	Request       bankid.Request
+	Order         bankid.Order
+	Document      *Document
+	Result        *bankid.Result
+	ErrorResponse json.RawMessage
+	LocalError    string
+	PickedUp      bool
+	Grant         *grant
 }
 
 func Open(app core.App, cfg Config) (*Service, error) {
@@ -104,6 +111,17 @@ func newRecord(app core.App, collection string) (*core.Record, error) {
 }
 func (s *Service) lookup(id string) *Attempt { s.mu.Lock(); defer s.mu.Unlock(); return s.attempts[id] }
 func attemptID(secret string) string         { return hash(secret)[:32] }
+
+func (s *Service) snapshotAttempts() []*Attempt {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	attempts := make([]*Attempt, 0, len(s.attempts))
+	for _, attempt := range s.attempts {
+		attempts = append(attempts, attempt)
+	}
+	return attempts
+}
+
 func (s *Service) owned(credential string) (*Attempt, error) {
 	id, secret, ok := splitCredential(credential)
 	if !ok {
@@ -124,7 +142,10 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 	id := attemptID(in.ClientSecret)
-	encoded, _ := json.Marshal(in)
+	encoded, err := json.Marshal(in)
+	if err != nil {
+		return nil, err
+	}
 	fingerprint := hash(string(encoded))
 	if a := s.lookup(id); a != nil {
 		a.mu.Lock()
@@ -163,7 +184,10 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 		a.Request.ReturnURL = s.Config.ReturnURL + "#nonce=" + url.QueryEscape(a.Nonce)
 	}
 	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(a.Document.Text))
-	manifest, _ := json.Marshal(map[string]any{"schemaVersion": 2, "purpose": a.Purpose, "attemptId": id, "consentTextId": in.Version, "documentHash": in.DocumentHash, "nonce": a.Nonce})
+	manifest, err := json.Marshal(map[string]any{"schemaVersion": 2, "purpose": a.Purpose, "attemptId": id, "consentTextId": in.Version, "documentHash": in.DocumentHash, "nonce": a.Nonce})
+	if err != nil {
+		return nil, err
+	}
 	a.Request.UserNonVisibleData = base64.StdEncoding.EncodeToString(manifest)
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -212,12 +236,7 @@ func (s *Service) Run(ctx context.Context) {
 	}
 }
 func (s *Service) tick(ctx context.Context) {
-	s.mu.Lock()
-	all := make([]*Attempt, 0, len(s.attempts))
-	for _, a := range s.attempts {
-		all = append(all, a)
-	}
-	s.mu.Unlock()
+	all := s.snapshotAttempts()
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, 8)
 	for _, a := range all {
@@ -326,164 +345,4 @@ func (s *Service) cancel(ctx context.Context, a *Attempt) error {
 		a.Hint = "userCancel"
 	}
 	return s.finalize(a)
-}
-
-type Evidence struct {
-	Request       bankid.Request  `json:"request"`
-	Document      *Document       `json:"document,omitempty"`
-	Completion    json.RawMessage `json:"completion,omitempty"`
-	ErrorResponse json.RawMessage `json:"errorResponse,omitempty"`
-	LocalError    string          `json:"localError,omitempty"`
-	ReceivedAt    string          `json:"receivedAt"`
-}
-
-func (s *Service) finalize(a *Attempt) error {
-	outcome, hint := a.Terminal, a.Hint
-	userID, tokenKey, signatureID := a.UserID, "", ""
-	if a.ResultAt.IsZero() {
-		a.ResultAt = s.now()
-	}
-	finished := a.ResultAt
-	err := s.App.RunInTransaction(func(tx core.App) error {
-		var user *core.Record
-		var err error
-		if outcome == "accepted" {
-			completion := a.Result.CompletionData
-			if completion == nil || !personalNumberPattern.MatchString(completion.User.PersonalNumber) || !validBase64(completion.Signature) || !validBase64(completion.OCSPResponse) {
-				outcome, hint = "rejected", "invalidEvidence"
-			} else if completion.Risk != "low" {
-				outcome, hint = "rejected", "riskRejected"
-			} else if !s.now().Before(a.ExpiresAt) {
-				outcome, hint = "rejected", "sessionExpired"
-			}
-			if outcome == "accepted" && a.Purpose == "guardian" {
-				outcome, hint, user, err = s.guardianCompletion(tx, a, completion)
-				if err != nil {
-					return err
-				}
-			} else if outcome == "accepted" {
-				doc, err := currentDocument(tx)
-				if err != nil {
-					return err
-				}
-				if a.Document == nil || doc.Id != a.Document.ID || doc.GetString("documentHash") != a.Document.DocumentHash {
-					outcome, hint = "rejected", "consentChanged"
-				} else {
-					user, err = tx.FindFirstRecordByData("users", "personalNumber", completion.User.PersonalNumber)
-					if errors.Is(err, sql.ErrNoRows) {
-						user, err = newRecord(tx, "users")
-						if err != nil {
-							return err
-						}
-						user.Set("personalNumber", completion.User.PersonalNumber)
-						user.SetPassword(randomSecret()) // PocketBase requires an internal password; password login stays disabled.
-						if err := tx.Save(user); err != nil {
-							return err
-						}
-					} else if err != nil {
-						return err
-					}
-				}
-			}
-		}
-		r, err := newRecord(tx, "signatures")
-		if err != nil {
-			return err
-		}
-		r.Set("attemptId", a.ID)
-		r.Set("purpose", a.Purpose)
-		if a.Order.OrderRef != "" {
-			r.Set("orderHash", hash(a.Order.OrderRef))
-		}
-		r.Set("outcome", outcome)
-		r.Set("reason", hint)
-		r.Set("startedAt", a.StartedAt.Unix())
-		r.Set("receivedAt", finished.Unix())
-		if a.Document != nil {
-			r.Set("version", a.Document.ID)
-		}
-		if user != nil {
-			r.Set("user", user.Id)
-		}
-		evidence := Evidence{Request: a.Request, Document: a.Document, ErrorResponse: a.ErrorResponse, LocalError: a.LocalError, ReceivedAt: finished.UTC().Format(time.RFC3339Nano)}
-		if a.Result != nil {
-			r.Set("providerStatus", a.Result.Status)
-			evidence.Completion = a.Result.Raw
-			if len(evidence.Completion) == 0 {
-				evidence.Completion, _ = json.Marshal(a.Result)
-			}
-		}
-		// Allocate the evidence record's ID inside the same transaction.
-		if err := tx.Save(r); err != nil {
-			return err
-		}
-		cipher, err := s.Config.Seal("signature:"+r.Id, evidence)
-		if err != nil {
-			return err
-		}
-		r.Set("evidenceCipher", cipher)
-		if err := tx.Save(r); err != nil {
-			return err
-		}
-		if outcome == "accepted" {
-			if a.Purpose == "guardian" {
-				request, err := tx.FindRecordById("signingRequests", a.GuardianRequestID)
-				if err != nil {
-					return err
-				}
-				request.Set("signature", r.Id)
-				if err := tx.Save(request); err != nil {
-					return err
-				}
-			}
-			userID = user.Id
-			tokenKey = user.TokenKey()
-		}
-		signatureID = r.Id
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	a.Status = outcome
-	a.Hint = hint
-	a.UserID = userID
-	a.SignatureID = signatureID
-	a.TokenKey = tokenKey
-	a.FinishedAt = finished
-	return nil
-}
-func validBase64(value string) bool {
-	raw, err := base64.StdEncoding.DecodeString(value)
-	return err == nil && len(raw) > 0
-}
-func latestSignature(app core.App, userID string) (*core.Record, error) {
-	records, err := app.FindRecordsByFilter("signatures", "user={:user} && purpose='sign' && outcome='accepted'", "-created,-id", 1, 0, dbx.Params{"user": userID})
-	if err != nil {
-		return nil, err
-	}
-	if len(records) == 0 {
-		return nil, sql.ErrNoRows
-	}
-	return records[0], nil
-}
-func (s *Service) activeConsent(app core.App, user *core.Record) bool {
-	doc, err := currentDocument(app)
-	if err != nil {
-		return false
-	}
-	r, err := latestSignature(app, user.Id)
-	valid := err == nil && r.GetString("purpose") == "sign" && r.GetString("outcome") == "accepted" && r.GetString("user") == user.Id && r.GetString("version") == doc.Id && r.GetInt("withdrawnAt") == 0 && r.GetString("evidenceCipher") != ""
-	if !valid {
-		return false
-	}
-	var evidence Evidence
-	if err := s.Config.Open("signature:"+r.Id, r.GetString("evidenceCipher"), &evidence); err != nil {
-		return false
-	}
-	var result bankid.Result
-	if json.Unmarshal(evidence.Completion, &result) != nil || result.CompletionData == nil || evidence.Document == nil {
-		return false
-	}
-	return evidence.Document.ID == doc.Id && evidence.Document.DocumentHash == doc.GetString("documentHash") && evidence.Document.Text == doc.GetString("text") && evidence.Request.UserVisibleData == base64.StdEncoding.EncodeToString([]byte(doc.GetString("text"))) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
 }

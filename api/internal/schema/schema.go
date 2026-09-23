@@ -2,9 +2,12 @@
 package schema
 
 import (
+	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
@@ -12,8 +15,15 @@ import (
 //go:embed base.json
 var base []byte
 
-func Text(name string, max int) *core.TextField    { return &core.TextField{Name: name, Max: max} }
-func private(name string, max int) *core.TextField { f := Text(name, max); f.Hidden = true; return f }
+func textField(name string, max int) *core.TextField {
+	return &core.TextField{Name: name, Max: max}
+}
+
+func privateTextField(name string, max int) *core.TextField {
+	field := textField(name, max)
+	field.Hidden = true
+	return field
+}
 
 // CreateBase creates the retained collections directly, resolving cyclic question relations in a second pass.
 func CreateBase(app core.App) error {
@@ -36,6 +46,8 @@ func CreateBase(app core.App) error {
 		}
 		if existing, err := app.FindCollectionByNameOrId(d.Name); err == nil {
 			c = existing
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
 		}
 		for _, f := range d.Fields {
 			if f.Type() != core.FieldTypeRelation {
@@ -94,8 +106,33 @@ func AddStudyFields(app core.App) error {
 		fields  []core.Field
 		indexes []string
 	}{
-		{"consent_texts", []core.Field{Text("version", 100), Text("title", 200), Text("text", 30000), Text("documentHash", 64), &core.BoolField{Name: "current"}}, []string{"CREATE UNIQUE INDEX idx_consent_text_version ON consent_texts (version)", "CREATE UNIQUE INDEX idx_consent_text_current ON consent_texts (current) WHERE current = TRUE"}},
-		{"signatures", []core.Field{Text("attemptId", 100), Text("orderHash", 64), &core.RelationField{Name: "user", CollectionId: users.Id, MaxSelect: 1}, Text("version", 15), Text("purpose", 10), Text("providerStatus", 30), Text("outcome", 30), Text("reason", 100), private("evidenceCipher", 4000000), &core.NumberField{Name: "startedAt"}, &core.NumberField{Name: "receivedAt"}, &core.NumberField{Name: "withdrawnAt"}}, []string{"CREATE UNIQUE INDEX idx_signature_attempt ON signatures (attemptId)", "CREATE UNIQUE INDEX idx_signatures_order ON signatures (orderHash) WHERE orderHash != ''"}},
+		{
+			name: "consent_texts",
+			fields: []core.Field{
+				textField("version", 100), textField("title", 200), textField("text", 30000),
+				textField("documentHash", 64), &core.BoolField{Name: "current"},
+			},
+			indexes: []string{
+				"CREATE UNIQUE INDEX idx_consent_text_version ON consent_texts (version)",
+				"CREATE UNIQUE INDEX idx_consent_text_current ON consent_texts (current) WHERE current = TRUE",
+			},
+		},
+		{
+			name: "signatures",
+			fields: []core.Field{
+				textField("attemptId", 100), textField("orderHash", 64),
+				&core.RelationField{Name: "user", CollectionId: users.Id, MaxSelect: 1},
+				textField("version", 15), textField("purpose", 10), textField("providerStatus", 30),
+				textField("outcome", 30), textField("reason", 100),
+				privateTextField("evidenceCipher", 4000000),
+				&core.NumberField{Name: "startedAt"}, &core.NumberField{Name: "receivedAt"},
+				&core.NumberField{Name: "withdrawnAt"},
+			},
+			indexes: []string{
+				"CREATE UNIQUE INDEX idx_signature_attempt ON signatures (attemptId)",
+				"CREATE UNIQUE INDEX idx_signatures_order ON signatures (orderHash) WHERE orderHash != ''",
+			},
+		},
 	}
 	for _, d := range defs {
 		c := core.NewBaseCollection(d.name)

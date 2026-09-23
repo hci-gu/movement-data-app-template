@@ -36,7 +36,10 @@ func migrateSingleStudy(app core.App) error {
 		return err
 	}
 	return app.RunInTransaction(func(tx core.App) error {
-		users, _ := tx.FindCollectionByNameOrId("users")
+		users, err := tx.FindCollectionByNameOrId("users")
+		if err != nil {
+			return err
+		}
 		users.Fields.Add(&core.TextField{Name: "personalNumber", Min: 12, Max: 12})
 		if err := tx.Save(users); err != nil {
 			return err
@@ -94,7 +97,10 @@ func migrateSingleStudy(app core.App) error {
 				return err
 			}
 		}
-		users, _ = tx.FindCollectionByNameOrId("users")
+		users, err = tx.FindCollectionByNameOrId("users")
+		if err != nil {
+			return err
+		}
 		for _, name := range []string{"study", "environment", "active", "invitationHash", "invitationCipher", "expectedCipher", "invitationExpiresAt", "identityHash", "identityCipher", "consentVersion", "consentSignature", "consentStatus", "metadata", "withdrawnAt", "invitationCode", "expectedPersonalNumber", "validityHours", "username", "name", "avatar", "event_date", "app_type", "device_token", "created", "updated"} {
 			users.Fields.RemoveByName(name)
 		}
@@ -104,13 +110,19 @@ func migrateSingleStudy(app core.App) error {
 		if err := tx.Save(users); err != nil {
 			return err
 		}
-		consent, _ := tx.FindCollectionByNameOrId("consent_texts")
+		consent, err := tx.FindCollectionByNameOrId("consent_texts")
+		if err != nil {
+			return err
+		}
 		consent.Fields.RemoveByName("study")
 		consent.Indexes = []string{"CREATE UNIQUE INDEX idx_consent_text_version ON consent_texts (version)", "CREATE UNIQUE INDEX idx_consent_text_current ON consent_texts (current) WHERE current = TRUE"}
 		if err := tx.Save(consent); err != nil {
 			return err
 		}
-		sigs, _ := tx.FindCollectionByNameOrId("signatures")
+		sigs, err := tx.FindCollectionByNameOrId("signatures")
+		if err != nil {
+			return err
+		}
 		sigs.Fields.RemoveByName("study")
 		sigs.Fields.RemoveByName("environment")
 		sigs.Fields.RemoveByName("user")

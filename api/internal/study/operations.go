@@ -13,7 +13,7 @@ import (
 
 // PublishConsent is shared by the dashboard and optional operator commands.
 // The immutable document and its publication pointer commit together.
-func PublishConsent(app core.App, _ Config, version, title, text string) (*core.Record, error) {
+func PublishConsent(app core.App, version, title, text string) (*core.Record, error) {
 	if !utf8.ValidString(text) || len(text) == 0 || len(text) > 30000 || strings.TrimSpace(version) == "" || strings.TrimSpace(title) == "" {
 		return nil, problem(400, "invalidConsent", "Provide a version, title and nonempty UTF-8 consent text of at most 30000 bytes.")
 	}
