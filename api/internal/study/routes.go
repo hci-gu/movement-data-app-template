@@ -44,7 +44,15 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 	}
 	s.rateMu.Lock()
 
-	key := hash(ip + ":" + e.Request.Method)
+	guardianLink := e.Request.Method == http.MethodGet && strings.HasPrefix(e.Request.URL.Path, "/guardian/")
+	category := "api"
+	if guardianLink {
+		category = "guardian-link"
+		if strings.HasSuffix(e.Request.URL.Path, "/state") || strings.HasSuffix(e.Request.URL.Path, "/qr") {
+			category = "guardian-poll"
+		}
+	}
+	key := hash(ip + ":" + e.Request.Method + ":" + category)
 	now := s.now()
 	if len(s.rates) > 2048 {
 		for k, v := range s.rates {
@@ -68,6 +76,12 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 	if e.Request.Method == http.MethodPost {
 		limit = 20
 	}
+	if guardianLink {
+		limit = 10
+		if strings.HasSuffix(e.Request.URL.Path, "/state") || strings.HasSuffix(e.Request.URL.Path, "/qr") {
+			limit = 180
+		}
+	}
 	if v.count > limit {
 		e.Response.Header().Set("Retry-After", "60")
 		return problem(429, "rateLimited", "Please wait and try again.")
@@ -84,12 +98,13 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		e.Request.Body = http.MaxBytesReader(e.Response, e.Request.Body, 16384)
 		return e.Next()
 	})
+	s.registerGuardianRoutes(r, g)
 	g.GET("/consent/current", func(e *core.RequestEvent) error {
 		doc, err := currentDocument(s.App)
 		if err != nil {
 			return problem(503, "consentUnavailable", "Study consent is not available yet.")
 		}
-		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil && s.Config.SigningEnabled})
+		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil})
 	})
 	g.POST("/bankid/attempts", func(e *core.RequestEvent) error {
 		var in StartInput
@@ -253,7 +268,7 @@ type grant struct {
 }
 
 func (s *Service) userDTO(user *core.Record) map[string]any {
-	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "consentRequired": !s.activeConsent(s.App, user)}
+	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user)}
 }
 func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
@@ -279,10 +294,13 @@ func (s *Service) RequireConsent(e *core.RequestEvent) error {
 	if e.Auth == nil || !s.activeConsent(s.App, e.Auth) {
 		return problem(403, "consentRequired", "Sign the current study consent before continuing.")
 	}
+	if !s.guardianEligible(s.App, e.Auth) {
+		return problem(403, "guardianRequired", "Guardian signatures are required before continuing.")
+	}
 	return e.Next()
 }
 func ProtectRecords(app core.App) {
-	managed := []string{"consent_texts", "signatures", "users"}
+	managed := []string{"consent_texts", "signatures", "signingRequests", "users"}
 	app.OnRecordCreateRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
 		return problem(403, "managedRecord", "Use the study administration or BankID flow.")
 	})
@@ -307,6 +325,9 @@ func (s *Service) registerQuestionnaireAccess() {
 		}
 		if !s.activeConsent(s.App, e.Auth) {
 			return problem(403, "consentRequired", "Sign the current study consent before continuing.")
+		}
+		if !s.guardianEligible(s.App, e.Auth) {
+			return problem(403, "guardianRequired", "Guardian signatures are required before continuing.")
 		}
 		return nil
 	}

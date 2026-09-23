@@ -8,8 +8,9 @@ import 'package:research_steps_template/state/health.dart';
 import 'package:research_steps_template/storage.dart';
 
 class Auth extends StateNotifier<RecordAuth?> {
+  final Ref ref;
   Timer? _expiry;
-  Auth() : super(null) {
+  Auth(this.ref) : super(null) {
     Api().onSessionInvalid = invalidate;
   }
 
@@ -53,6 +54,9 @@ class Auth extends StateNotifier<RecordAuth?> {
     await Storage().writeAuthSession(grant);
     await Storage().storeParticipantId(auth.record.id);
     pb.authStore.save(auth.token, auth.record);
+    ref.read(guardianRequiredProvider.notifier).state =
+        grant['record'] is Map &&
+        (grant['record'] as Map)['guardianRequired'] == true;
     state = auth;
     _expiry?.cancel();
     _expiry = Timer(
@@ -68,6 +72,10 @@ class Auth extends StateNotifier<RecordAuth?> {
     try {
       final user = await Api().currentParticipant();
       if (user['consentRequired'] == true) await invalidate();
+      if (state != null) {
+        ref.read(guardianRequiredProvider.notifier).state =
+            user['guardianRequired'] == true;
+      }
     } catch (_) {
       await invalidate();
     }
@@ -77,6 +85,7 @@ class Auth extends StateNotifier<RecordAuth?> {
     _expiry?.cancel();
     pb.authStore.clear();
     state = null;
+    ref.read(guardianRequiredProvider.notifier).state = null;
     HealthManager().reset();
     await Storage().clearSession();
   }
@@ -97,7 +106,10 @@ class Auth extends StateNotifier<RecordAuth?> {
   }
 }
 
-final authProvider = StateNotifierProvider<Auth, RecordAuth?>((ref) => Auth());
+final guardianRequiredProvider = StateProvider<bool?>((ref) => null);
+final authProvider = StateNotifierProvider<Auth, RecordAuth?>(
+  (ref) => Auth(ref),
+);
 final dataUploadedProvider = StateProvider<bool>(
   (ref) => Storage().getHasUploadedData(),
 );

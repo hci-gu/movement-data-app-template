@@ -16,17 +16,21 @@ import (
 )
 
 type fakeProvider struct {
-	result  bankid.Result
-	calls   int
-	purpose string
-	request bankid.Request
+	result   bankid.Result
+	calls    int
+	purpose  string
+	request  bankid.Request
+	startErr error
 }
 
 func (f *fakeProvider) Start(_ context.Context, purpose string, request bankid.Request) (bankid.Order, error) {
 	f.calls++
 	f.purpose = purpose
 	f.request = request
-	return bankid.Order{OrderRef: randomSecret(), AutoStartToken: "auto"}, nil
+	if f.startErr != nil {
+		return bankid.Order{}, f.startErr
+	}
+	return bankid.Order{OrderRef: randomSecret(), AutoStartToken: "auto", QRStartToken: "qr-token", QRStartSecret: "qr-secret"}, nil
 }
 func (f *fakeProvider) Collect(_ context.Context, ref string) (bankid.Result, error) {
 	r := f.result
@@ -53,7 +57,7 @@ func TestBankIDCreatesUserAndRelatesSignature(t *testing.T) {
 			t.Fatalf("unwanted user field %s", name)
 		}
 	}
-	cfg := Config{Environment: "test", AppID: "example.app", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}, SigningEnabled: true}
+	cfg := Config{Environment: "test", AppID: "example.app", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}}
 	if _, err := PublishConsent(app, cfg, "v1", "Consent", "I consent."); err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +141,7 @@ func TestChangedConsentDoesNotCreateUser(t *testing.T) {
 	if err := app.RunAllMigrations(); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{Environment: "test", AppID: "example.app", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}, SigningEnabled: true}
+	cfg := Config{Environment: "test", AppID: "example.app", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}}
 	doc, err := PublishConsent(app, cfg, "v1", "Consent", "First version")
 	if err != nil {
 		t.Fatal(err)

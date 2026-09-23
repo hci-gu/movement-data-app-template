@@ -26,11 +26,11 @@ type Config struct {
 	AppID                     string
 	IOSAppID                  string
 	ReturnURL                 string
+	PublicURL                 string
 	CertFile, KeyFile, CAFile string
 	ActiveKey                 string
 	EncryptionKeys            map[string][]byte
 	TrustedProxies            []netip.Prefix
-	SigningEnabled            bool
 }
 
 func LoadConfig() (Config, error) {
@@ -39,10 +39,10 @@ func LoadConfig() (Config, error) {
 		AppID:       os.Getenv("BANKID_APP_IDENTIFIER"),
 		IOSAppID:    os.Getenv("BANKID_IOS_APP_ID"),
 		ReturnURL:   os.Getenv("BANKID_RETURN_URL"),
+		PublicURL:   strings.TrimRight(os.Getenv("BANKID_PUBLIC_URL"), "/"),
 		CertFile:    os.Getenv("BANKID_CERT_FILE"), KeyFile: os.Getenv("BANKID_KEY_FILE"), CAFile: os.Getenv("BANKID_CA_FILE"),
 		ActiveKey:      os.Getenv("STUDY_ACTIVE_ENCRYPTION_KEY"),
 		EncryptionKeys: map[string][]byte{},
-		SigningEnabled: env("BANKID_SIGNING_ENABLED", "true") == "true",
 	}
 	if c.Environment != "disabled" && c.Environment != "test" && c.Environment != "production" {
 		return c, errors.New("BANKID_ENVIRONMENT must be disabled, test or production")
@@ -109,6 +109,18 @@ func LoadConfig() (Config, error) {
 		}
 		if len(c.ReturnURL)+60 > 512 {
 			return c, errors.New("BANKID_RETURN_URL is too long")
+		}
+		if c.PublicURL == "" && u.Scheme == "https" {
+			c.PublicURL = "https://" + u.Host
+		}
+		if c.PublicURL != "" {
+			public, err := url.Parse(c.PublicURL)
+			if err != nil || public.Scheme != "https" || public.Host == "" || public.Path != "" || public.RawQuery != "" || public.Fragment != "" || public.User != nil {
+				return c, errors.New("BANKID_PUBLIC_URL must be an HTTPS origin")
+			}
+			if len(c.PublicURL)+len("/guardian//return?nonce=")+7+43 > 512 {
+				return c, errors.New("BANKID_PUBLIC_URL is too long for a guardian return URL")
+			}
 		}
 	}
 	return c, nil

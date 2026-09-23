@@ -29,11 +29,16 @@ type Request struct {
 	ReturnURL          string       `json:"returnUrl,omitempty"`
 	ReturnRisk         bool         `json:"returnRisk"`
 	App                *AppInfo     `json:"app,omitempty"`
+	Web                *WebInfo     `json:"web,omitempty"`
 	Requirement        *Requirement `json:"requirement,omitempty"`
 }
 
 type AppInfo struct {
 	AppIdentifier string `json:"appIdentifier"`
+}
+type WebInfo struct {
+	ReferringDomain string `json:"referringDomain,omitempty"`
+	UserAgent       string `json:"userAgent,omitempty"`
 }
 type Requirement struct {
 	PersonalNumber string `json:"personalNumber,omitempty"`

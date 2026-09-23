@@ -1,4 +1,4 @@
-// Package schema owns the eight application collections.
+// Package schema owns the application collections.
 package schema
 
 import (
@@ -150,6 +150,9 @@ func Verify(app core.App) error {
 	}
 	for _, c := range cs {
 		if c.System {
+			continue
+		}
+		if c.Name == "signingRequests" {
 			continue
 		}
 		if !expected[c.Name] {

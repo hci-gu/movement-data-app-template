@@ -113,7 +113,7 @@ class LoginScreen extends HookConsumerWidget {
             if (order.accepted)
               CupertinoButton.filled(
                 onPressed: disabled ? null : controller.finish,
-                child: const Text('Continue to Apple Health'),
+                child: const Text('Continue'),
               ),
             if (order.pending && order.mode == 'sameDevice')
               CupertinoButton.filled(

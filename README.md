@@ -2,7 +2,7 @@
 
 Flutter iOS app and PocketBase backend for one-step BankID consent signing and account creation, Apple Health step-data preview, and authenticated chunked uploads.
 
-The backend serves one study. The application has eight collections: `users`, `answers`, `dataUploads`, `signatures`, `consent_texts`, `questionnaires`, `questions`, and `questionOptions`. The app shows consent first; one successful BankID signature creates or finds a user by `personalNumber` and grants a session. Each terminal BankID attempt is saved in `signatures`; its `user` field is a relation to `users`. Consent state is derived from accepted signature records.
+The backend serves one study. The application has nine collections: `users`, `answers`, `dataUploads`, `signatures`, `signingRequests`, `consent_texts`, `questionnaires`, `questions`, and `questionOptions`. The app shows consent first; one successful BankID signature creates or finds a user by `personalNumber` and grants a session. Participants under 18 must collect one or two guardian signatures before uploading. Each terminal BankID attempt is saved in `signatures`; its `user` field is a relation to the participant. Consent state is derived from accepted signature records.
 
 - `lib/`: consent review, BankID attempts/login, receipts, HealthKit, and uploads.
 - `api/`: Go/PocketBase backend, BankID client, study administration, and uploads.

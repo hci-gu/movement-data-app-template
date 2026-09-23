@@ -61,6 +61,23 @@ class Api {
 
   Future<Map<String, dynamic>> currentParticipant() async =>
       Map<String, dynamic>.from((await api.get('/api/me')).data as Map);
+
+  Future<Map<String, dynamic>> guardianStatus() async =>
+      Map<String, dynamic>.from((await api.get('/api/guardians')).data as Map);
+
+  Future<Map<String, dynamic>> createGuardianRequest(
+    String personalNumber,
+    int guardianCount,
+  ) async => Map<String, dynamic>.from(
+    (await api.post(
+          '/api/guardians',
+          data: {
+            'personalNumber': personalNumber,
+            'guardianCount': guardianCount,
+          },
+        )).data
+        as Map,
+  );
   Future<void> logout() async {
     await api.post('/api/logout');
   }
@@ -100,8 +117,7 @@ class Api {
         },
         onError: (error, handler) {
           if (error.requestOptions.extra['public'] != true &&
-              (error.response?.statusCode == 401 ||
-                  error.response?.statusCode == 403)) {
+              error.response?.statusCode == 401) {
             onSessionInvalid?.call();
           }
           handler.next(error);

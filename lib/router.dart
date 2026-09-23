@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:research_steps_template/screens/introduction.dart';
 import 'package:research_steps_template/screens/login.dart';
 import 'package:research_steps_template/screens/steps.dart';
+import 'package:research_steps_template/screens/guardians.dart';
 import 'package:research_steps_template/screens/summary.dart';
 import 'package:research_steps_template/state/auth.dart';
 
@@ -19,6 +20,7 @@ class RouterNotifier extends ChangeNotifier {
       (_, _) => notifyListeners(),
     );
     _ref.listen<bool>(dataUploadedProvider, (_, _) => notifyListeners());
+    _ref.listen<bool?>(guardianRequiredProvider, (_, _) => notifyListeners());
   }
 
   String? redirect(BuildContext context, GoRouterState state) {
@@ -28,6 +30,7 @@ class RouterNotifier extends ChangeNotifier {
 
     final loggedIn = _ref.read(authProvider) != null;
     final hasUploadedData = _ref.read(dataUploadedProvider);
+    final guardianRequired = _ref.read(guardianRequiredProvider) == true;
     final isPublicRoute =
         state.matchedLocation == '/introduction' ||
         state.matchedLocation == '/introduction/login';
@@ -37,6 +40,23 @@ class RouterNotifier extends ChangeNotifier {
     }
 
     if (loggedIn && isPublicRoute) {
+      return guardianRequired
+          ? '/guardians'
+          : hasUploadedData
+          ? '/summary'
+          : '/upload';
+    }
+
+    if (loggedIn &&
+        guardianRequired &&
+        (state.matchedLocation == '/upload' ||
+            state.matchedLocation == '/summary')) {
+      return '/guardians';
+    }
+
+    if (loggedIn &&
+        !guardianRequired &&
+        state.matchedLocation == '/guardians') {
       return hasUploadedData ? '/summary' : '/upload';
     }
 
@@ -66,6 +86,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const LoginScreen(),
           ),
         ],
+      ),
+      GoRoute(
+        path: '/guardians',
+        name: 'guardians',
+        builder: (context, state) => const GuardiansScreen(),
       ),
       GoRoute(
         path: '/upload',
@@ -110,7 +135,13 @@ class LoadingScreen extends HookConsumerWidget {
           return;
         }
 
-        context.goNamed(hasUploadedData ? 'summary' : 'upload');
+        context.goNamed(
+          ref.read(guardianRequiredProvider) == true
+              ? 'guardians'
+              : hasUploadedData
+              ? 'summary'
+              : 'upload',
+        );
       });
 
       return null;

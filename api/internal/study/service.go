@@ -56,6 +56,7 @@ type Attempt struct {
 	mu                                                                  sync.Mutex
 	ID, SecretHash, InputHash, Purpose, Mode, UserID                    string
 	Nonce, IP, Status, Hint, SignatureID, TokenKey                      string
+	GuardianRequestID                                                   string
 	StartedAt, ReceivedAt, NextCollect, ExpiresAt, FinishedAt, ResultAt time.Time
 	Request                                                             bankid.Request
 	Order                                                               bankid.Order
@@ -144,7 +145,7 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	if s.provider == nil || !s.Config.SigningEnabled {
+	if s.provider == nil {
 		return nil, problem(503, "signingUnavailable", "BankID is currently unavailable.")
 	}
 	a := &Attempt{ID: id, SecretHash: hash(in.ClientSecret), InputHash: fingerprint, Purpose: "sign", Mode: in.Mode, IP: ip, Nonce: randomSecret(), Status: "pending", StartedAt: s.now(), ExpiresAt: s.now().Add(AttemptLifetime)}
@@ -355,7 +356,12 @@ func (s *Service) finalize(a *Attempt) error {
 			} else if !s.now().Before(a.ExpiresAt) {
 				outcome, hint = "rejected", "sessionExpired"
 			}
-			if outcome == "accepted" {
+			if outcome == "accepted" && a.Purpose == "guardian" {
+				outcome, hint, user, err = s.guardianCompletion(tx, a, completion)
+				if err != nil {
+					return err
+				}
+			} else if outcome == "accepted" {
 				doc, err := currentDocument(tx)
 				if err != nil {
 					return err
@@ -420,6 +426,16 @@ func (s *Service) finalize(a *Attempt) error {
 			return err
 		}
 		if outcome == "accepted" {
+			if a.Purpose == "guardian" {
+				request, err := tx.FindRecordById("signingRequests", a.GuardianRequestID)
+				if err != nil {
+					return err
+				}
+				request.Set("signature", r.Id)
+				if err := tx.Save(request); err != nil {
+					return err
+				}
+			}
 			userID = user.Id
 			tokenKey = user.TokenKey()
 		}
