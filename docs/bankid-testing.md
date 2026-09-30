@@ -8,6 +8,45 @@ python3 scripts/create-study-secrets.py --out api/secrets/study-keys.json
 
 Set BankID certificate, return URL, and keyring paths using [api/.env.example](../api/.env.example). The backend loads `.env` when present and also accepts deployment environment variables. Use one backend replica because pending BankID attempts live in process memory.
 
+## OpenShift test deployment
+
+The current test API is `https://movement-api.test.appadem.in`, in the `appademin` namespace. The image intentionally includes the four files in `api/secrets/` used by the API: `client.pem`, `client-key.pem`, `bankid-server-ca.pem`, and `study-keys.json`. Keep the same study keyring across rebuilds so existing evidence remains readable. The Docker build context must be `api/`; the `.p12` source bundle and local `.env` are excluded. Image permissions support OpenShift's assigned UID through group 0.
+
+Build and deploy from the repository root, using a new image tag for each release and updating `deploy/api.yaml` to match:
+
+```bash
+docker build --platform linux/amd64 \
+  -t registry.k8s.gu.se/appademin/movement-api:0.0.2-bankid-test-20260930 api
+docker push registry.k8s.gu.se/appademin/movement-api:0.0.2-bankid-test-20260930
+kubectl -n appademin apply -f deploy/api.yaml
+kubectl -n appademin rollout status deployment/movement-api
+```
+
+The deployment uses `Recreate` and a health readiness probe. Pending BankID attempts must be restarted after a deployment. `BANKID_APP_IDENTIFIER` matches the iOS bundle ID, `com.appademin.swedHeart`. The route replaces incoming forwarded headers, and `TRUSTED_PROXY_CIDRS` lists only the three ingress peer addresses observed reaching this API on 2026-09-30. Recheck these addresses if the ingress topology changes; do not substitute all private networks.
+
+For a fresh test database, publish the explicitly labeled test document once:
+
+```bash
+kubectl -n appademin exec -i deployment/movement-api -- \
+  sh -c 'cat > /tmp/test-consent.txt' < deploy/test-consent.txt
+kubectl -n appademin exec deployment/movement-api -- \
+  /pb/app bankid publish-consent --file /tmp/test-consent.txt \
+  --version test-2026-09-30 --title 'BankID technical test - not research consent' \
+  --dir=/pb/pb_data
+```
+
+Consent versions are immutable; use a new version label when changing the text. The test document is not approved research consent. Verify that `/api/health` returns 200 and `/api/consent/current` returns the test document with `bankidAvailable: true`.
+
+Run the iOS app against this environment with:
+
+```bash
+flutter run --dart-define-from-file=deploy/flutter-test.json
+```
+
+The phone must have a test BankID identity and BankID configured for the test environment. The app and backend both use `researchsteps://bankid/return` for the callback.
+
+## Consent and signing
+
 Publish approved consent in the PocketBase `consent_texts` collection or with:
 
 ```bash
