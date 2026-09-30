@@ -15,19 +15,17 @@ class AppConfig {
   static const studyTitle = 'Template Apple Health Step Study';
   static const supportEmail = 'research@example.org';
   static const privacyContact = 'privacy@example.org';
-  static const consentVersion = 'template-v1';
-  static const participantIdLabel = 'Participant ID';
-  static const participantIdHint = 'Example: STUDY-001';
-  static const participantIdHelp =
-      'Use an alphanumeric study ID. Replace this rule if your protocol requires another identifier format.';
+  static const bankidReturnUrl = String.fromEnvironment(
+    'BANKID_RETURN_URL',
+    defaultValue: 'researchsteps://bankid/return',
+  );
+  static const userIdLabel = 'User ID';
   static const requestedDataLabel = 'Apple Health step count';
   static const summaryLookbackDays = 14;
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://research-steps-api.example.org',
+    defaultValue: 'http://192.168.10.101:8090',
   );
-
-  static final participantIdPattern = RegExp(r'^[A-Z0-9][A-Z0-9_-]{3,31}$');
 
   static List<HealthDataType> get requestedTypes => [HealthDataType.STEPS];
 
@@ -38,25 +36,11 @@ class AppConfig {
   static DateTime get importStartDate =>
       DateTime(DateTime.now().year - 5, 1, 1);
 
-  static String normalizeParticipantId(String value) {
-    return value.trim().toUpperCase();
-  }
-
-  static bool isValidParticipantId(String value) {
-    return participantIdPattern.hasMatch(normalizeParticipantId(value));
-  }
-
   static const onboardingHighlights = [
     'Review study information and update the placeholder copy before production use.',
-    'Enroll with a participant identifier instead of a personal identity number.',
+    'Review the consent and sign with BankID to create or access your account.',
     'Request read access to Apple Health step data only.',
     'Preview the extracted dataset, then upload it to your study API.',
-  ];
-
-  static const consentStatements = [
-    'I have read the study information and understand how my Apple Health step data will be used for research.',
-    'I understand that this template uses placeholder text and must be adapted to my approved study protocol before deployment.',
-    'I consent to sharing my Apple Health step data with the research team identified in this app.',
   ];
 
   static const postUploadChecklist = [
@@ -89,8 +73,8 @@ class AppConfig {
     StudySection(
       title: 'Participant Identifier',
       paragraphs: [
-        'The template uses a generic participant identifier instead of a country-specific personal identity number.',
-        'If your study uses another identifier scheme, update both the validator in the app and the backend sanitization rules.',
+        'Your BankID sign-in creates a user account. Step uploads are linked to that user ID.',
+        'The backend retains encrypted identity and signing evidence, including your personal identity number. Your study consent explains who can access this information and how long it is retained.',
       ],
     ),
     StudySection(

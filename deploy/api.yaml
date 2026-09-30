@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: movement-api
+spec:
+    replicas: 1
+    strategy:
+        type: Recreate # Pending BankID attempts belong to one process; retries are needed after restart.
+    selector:
+        matchLabels:
+            app: movement-api
+    template:
+        metadata:
+            labels:
+                app: movement-api
+        spec:
+            volumes:
+                - name: movement-api-persistent-storage
+                  persistentVolumeClaim:
+                      claimName: movement-api-pv-claim
+            containers:
+                - name: movement-api
+                  image: 'registry.k8s.gu.se/appademin/movement-api:0.0.2-bankid-test-20260930'
+                  imagePullPolicy: Always
+                  readinessProbe:
+                      httpGet:
+                          path: /api/health
+                          port: web
+                      initialDelaySeconds: 5
+                      periodSeconds: 5
+                      timeoutSeconds: 3
+                  ports:
+                      - containerPort: 8080
+                        name: web
+                        protocol: TCP
+                  volumeMounts:
+                      - mountPath: /pb/pb_data
+                        name: movement-api-persistent-storage
+                  env:
+                    - name: BANKID_ENVIRONMENT
+                      value: test
+                    - name: BANKID_APP_IDENTIFIER
+                      value: com.appademin.swedHeart
+                    - name: BANKID_RETURN_URL
+                      value: researchsteps://bankid/return
+                    - name: BANKID_CERT_FILE
+                      value: /pb/secrets/client.pem
+                    - name: BANKID_KEY_FILE
+                      value: /pb/secrets/client-key.pem
+                    - name: BANKID_CA_FILE
+                      value: /pb/secrets/bankid-server-ca.pem
+                    - name: STUDY_SECRETS_FILE
+                      value: /pb/secrets/study-keys.json
+                    - name: TRUSTED_PROXY_CIDRS
+                      # Exact ingress peers observed on this cluster; recheck after ingress changes.
+                      value: "10.128.2.2/32,10.129.2.2/32,10.131.0.2/32"
+                    - name: BANKID_PUBLIC_URL
+                      value: https://movement-api.test.appadem.in
+---         
+apiVersion: v1
+kind: Service
+metadata:
+    name: movement-api-service
+spec:
+    selector:
+        app: movement-api
+    ports:
+        - protocol: TCP
+          port: 8080
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+    name: movement-api
+    annotations:
+        kubernetes.io/tls-acme: 'true'
+        haproxy.router.openshift.io/set-forwarded-headers: replace
+spec:
+    host: movement-api.test.appadem.in
+    to:
+        kind: Service
+        name: movement-api-service
+        weight: 100
+    port:
+        targetPort: 8080
+    tls:
+        termination: edge
+        insecureEdgeTerminationPolicy: Redirect
+    wildcardPolicy: None

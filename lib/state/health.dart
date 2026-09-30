@@ -156,9 +156,9 @@ class HealthManager {
     summary = StepImportSummary.fromHealthData(data);
   }
 
-  Future<bool> uploadLatestData(String participantId) async {
+  Future<bool> uploadLatestData(String userId) async {
     try {
-      ongoingUpload = Api().uploadData(participantId, data);
+      ongoingUpload = Api().uploadData(userId, data);
       await ongoingUpload;
       ongoingUpload = null;
       return true;

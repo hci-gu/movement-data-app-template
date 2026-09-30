@@ -48,3 +48,15 @@ app.*.map.json
 api/app
 api/pb_data
 api/storage
+api/.local/
+
+# Local BankID credentials, keyrings and evidence exports
+.env
+.env.*
+!.env.example
+**/secrets/
+**/evidence-exports/
+*.p12
+*.pfx
+*.pem
+*.key

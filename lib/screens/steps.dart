@@ -27,6 +27,14 @@ class UploadStepsScreen extends HookConsumerWidget {
       title: 'Connect Apple Health',
       noBackButton: true,
       withHorizontalPadding: false,
+      trailing: CupertinoButton(
+        padding: EdgeInsets.zero,
+        onPressed: () => context.pushNamed('consentReceipt'),
+        child: const Icon(
+          CupertinoIcons.doc_text,
+          semanticLabel: 'Signed consent and withdrawal',
+        ),
+      ),
       child: FutureBuilder<void>(
         future: HealthManager().ongoingUpload ?? initializeFuture,
         builder: (context, snapshot) {
@@ -62,10 +70,7 @@ class UploadStepsScreen extends HookConsumerWidget {
             );
           }
 
-          final participantId = ref
-              .read(authProvider)
-              ?.record
-              .getStringValue('username');
+          final userId = ref.read(authProvider)?.record.id;
 
           return ListView(
             padding: const EdgeInsets.all(AppTheme.basePadding),
@@ -122,13 +127,11 @@ class UploadStepsScreen extends HookConsumerWidget {
                 ),
               if (summary.sources.isNotEmpty) const SizedBox(height: 16),
               CupertinoButton.filled(
-                onPressed: participantId == null
+                onPressed: userId == null
                     ? null
                     : () async {
                         isUploading.value = true;
-                        final success = await manager.uploadLatestData(
-                          participantId,
-                        );
+                        final success = await manager.uploadLatestData(userId);
 
                         if (success) {
                           ref.read(dataUploadedProvider.notifier).state = true;

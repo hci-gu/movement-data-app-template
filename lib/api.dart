@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:research_steps_template/pocketbase.dart';
 import 'package:research_steps_template/state/health.dart';
 
 class Api {
+  Future<void> Function()? onSessionInvalid;
   final Dio api = Dio(
     BaseOptions(
       headers: {'Content-Type': 'application/json'},
@@ -19,7 +21,7 @@ class Api {
   }
 
   Future<void> uploadDataInChunks(
-    String participantId,
+    String userId,
     List<HealthDataPoint> data,
   ) async {
     final chunks = <Map<String, dynamic>>[];
@@ -33,7 +35,7 @@ class Api {
       }
 
       chunks.add({
-        'participantId': participantId,
+        'userId': userId,
         'chunkIndex': chunkIndex,
         'data': data
             .sublist(index, endIndex)
@@ -57,43 +59,44 @@ class Api {
     }
   }
 
-  Future<void> registerParticipant(
-    String participantId,
-    String password,
-    bool consentAccepted,
-  ) async {
-    await api.post(
-      '/users',
-      data: jsonEncode({
-        'participantId': participantId,
-        'password': password,
-        'consentAccepted': consentAccepted,
-      }),
-    );
+  Future<Map<String, dynamic>> currentParticipant() async =>
+      Map<String, dynamic>.from((await api.get('/api/me')).data as Map);
+
+  Future<Map<String, dynamic>> guardianStatus() async =>
+      Map<String, dynamic>.from((await api.get('/api/guardians')).data as Map);
+
+  Future<Map<String, dynamic>> createGuardianRequest(
+    String personalNumber,
+    int guardianCount,
+  ) async => Map<String, dynamic>.from(
+    (await api.post(
+          '/api/guardians',
+          data: {
+            'personalNumber': personalNumber,
+            'guardianCount': guardianCount,
+          },
+        )).data
+        as Map,
+  );
+  Future<void> logout() async {
+    await api.post('/api/logout');
   }
 
-  Future<void> uploadMetadata(
-    String participantId,
-    Map<String, dynamic> metadata,
-  ) async {
-    await api.post(
-      '/info',
-      options: Options(
-        headers: {'Content-Type': 'application/json; charset=UTF-8'},
-      ),
-      data: jsonEncode({'participantId': participantId, 'data': metadata}),
-    );
+  Future<void> withdrawConsent() async {
+    await api.post('/api/consent/withdraw');
   }
 
-  Future<void> uploadData(
-    String participantId,
-    List<HealthDataPoint> data,
-  ) async {
+  Future<Map<String, dynamic>> consentReceipt() async =>
+      Map<String, dynamic>.from(
+        (await api.get('/api/consent/receipt')).data as Map,
+      );
+
+  Future<void> uploadData(String userId, List<HealthDataPoint> data) async {
     if (data.isEmpty) {
       return;
     }
 
-    await uploadDataInChunks(participantId, data);
+    await uploadDataInChunks(userId, data);
   }
 
   static final Api _instance = Api._internal();
@@ -102,5 +105,24 @@ class Api {
     return _instance;
   }
 
-  Api._internal();
+  Api._internal() {
+    api.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.extra['public'] != true &&
+              pb.authStore.token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer ${pb.authStore.token}';
+          }
+          handler.next(options);
+        },
+        onError: (error, handler) {
+          if (error.requestOptions.extra['public'] != true &&
+              error.response?.statusCode == 401) {
+            onSessionInvalid?.call();
+          }
+          handler.next(error);
+        },
+      ),
+    );
+  }
 }

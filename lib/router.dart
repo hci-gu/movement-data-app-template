@@ -1,3 +1,5 @@
+import 'package:research_steps_template/bankid/controller.dart';
+import 'package:research_steps_template/screens/consent_receipt.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
@@ -5,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:research_steps_template/screens/introduction.dart';
 import 'package:research_steps_template/screens/login.dart';
 import 'package:research_steps_template/screens/steps.dart';
+import 'package:research_steps_template/screens/guardians.dart';
 import 'package:research_steps_template/screens/summary.dart';
 import 'package:research_steps_template/state/auth.dart';
 
@@ -17,6 +20,7 @@ class RouterNotifier extends ChangeNotifier {
       (_, _) => notifyListeners(),
     );
     _ref.listen<bool>(dataUploadedProvider, (_, _) => notifyListeners());
+    _ref.listen<bool?>(guardianRequiredProvider, (_, _) => notifyListeners());
   }
 
   String? redirect(BuildContext context, GoRouterState state) {
@@ -26,6 +30,7 @@ class RouterNotifier extends ChangeNotifier {
 
     final loggedIn = _ref.read(authProvider) != null;
     final hasUploadedData = _ref.read(dataUploadedProvider);
+    final guardianRequired = _ref.read(guardianRequiredProvider) == true;
     final isPublicRoute =
         state.matchedLocation == '/introduction' ||
         state.matchedLocation == '/introduction/login';
@@ -35,6 +40,23 @@ class RouterNotifier extends ChangeNotifier {
     }
 
     if (loggedIn && isPublicRoute) {
+      return guardianRequired
+          ? '/guardians'
+          : hasUploadedData
+          ? '/summary'
+          : '/upload';
+    }
+
+    if (loggedIn &&
+        guardianRequired &&
+        (state.matchedLocation == '/upload' ||
+            state.matchedLocation == '/summary')) {
+      return '/guardians';
+    }
+
+    if (loggedIn &&
+        !guardianRequired &&
+        state.matchedLocation == '/guardians') {
       return hasUploadedData ? '/summary' : '/upload';
     }
 
@@ -66,9 +88,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
       ),
       GoRoute(
+        path: '/guardians',
+        name: 'guardians',
+        builder: (context, state) => const GuardiansScreen(),
+      ),
+      GoRoute(
         path: '/upload',
         name: 'upload',
         builder: (context, state) => const UploadStepsScreen(),
+      ),
+      GoRoute(
+        path: '/consent-receipt',
+        name: 'consentReceipt',
+        builder: (context, state) => const ConsentReceiptScreen(),
       ),
       GoRoute(
         path: '/summary',
@@ -87,7 +119,8 @@ class LoadingScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     useEffect(() {
-      ref.read(authProvider.notifier).tryAutoLogin().then((_) {
+      ref.read(authProvider.notifier).tryAutoLogin().then((_) async {
+        await ref.read(bankIdProvider.notifier).restore();
         if (!context.mounted) {
           return;
         }
@@ -96,11 +129,19 @@ class LoadingScreen extends HookConsumerWidget {
         final hasUploadedData = ref.read(dataUploadedProvider);
 
         if (!loggedIn) {
-          context.goNamed('introduction');
+          context.goNamed(
+            !ref.read(bankIdProvider).begun ? 'introduction' : 'login',
+          );
           return;
         }
 
-        context.goNamed(hasUploadedData ? 'summary' : 'upload');
+        context.goNamed(
+          ref.read(guardianRequiredProvider) == true
+              ? 'guardians'
+              : hasUploadedData
+              ? 'summary'
+              : 'upload',
+        );
       });
 
       return null;
