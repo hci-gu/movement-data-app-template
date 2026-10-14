@@ -85,11 +85,12 @@ class DateQuestionField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Semantics(
         label: question.text,
         child: CupertinoButton(
+          alignment: Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(vertical: 12),
           onPressed: readOnly ? null : () => _pick(context),
           child: Text(

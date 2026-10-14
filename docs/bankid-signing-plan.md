@@ -17,6 +17,15 @@ The app shows the current consent before BankID. A successful BankID consent sig
 
 The backend checks age from the participant's BankID identity. Adults can proceed to upload. Minors choose one or two guardians; the selected count is fixed when the first link is created. Each link starts a web initiated BankID signing request with the current consent text visible. The backend checks the guardian's identity, age, signature evidence, and consent version before unlocking upload. The guardian request's `signature` relation points to the accepted signature record. Existing links can be used to sign a new consent version.
 
+The identity source is `completionData.user.personalNumber` from an accepted
+BankID result. `api/internal/study/evidence.go` saves it on the participant;
+`guardians.go` derives the age requirement, and `access.go` returns the verified
+`guardianRequired`/`consentRequired` state used by the app. Do not introduce a
+self-reported age, birth-date field or under-age toggle for this decision.
+Study-specific thresholds belong in backend rules. For age-specific documents
+that must be selected before a signature, follow
+[the workflow's sequencing guidance](workflow.md#age-and-consent-routing).
+
 Signing attempts live in memory until terminal. Each terminal result is saved with provider outcome and encrypted evidence. Failed attempts may have no user relation because BankID did not establish an identity. A backend restart interrupts pending attempts.
 
 PocketBase requires its auth collection's system email and password fields even with password login disabled. The backend creates a random internal password when it creates a user. Neither password authentication nor generic user record access is available to participants.

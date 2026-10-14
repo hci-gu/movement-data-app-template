@@ -4,7 +4,7 @@
 
 This repository is a reusable research-app template. Its current implementation is an iOS-focused Flutter app for reviewing study consent, signing with BankID, reading Apple Health step data, previewing it, and uploading it to a Go/PocketBase backend. A specific application is created by adding application context and adapting the template to those requirements.
 
-**Read [docs/workflow.md](docs/workflow.md) first for setup and deployment work.** It is the primary workflow guide (VIP). It currently outlines PocketBase setup, Flutter dependencies/build, deployment, and BankID/file verification, with some steps still unfinished. Use the detailed resources below to fill in operational details; do not assume the unfinished steps are complete instructions.
+**Read [docs/workflow.md](docs/workflow.md) first for setup and deployment work.** It is the primary workflow guide (VIP), covering PocketBase setup, publishing consent from `context/`, questionnaire seeding, study app icons, builds and verification. Use the detailed resources below for operational details.
 
 Read the relevant creator-supplied application context in `context/` before implementing changes. Developer-maintained guides in `docs/` explain how to work with the template. Template copy, test consent, existing deployment values, and example configuration are starting points that must be reviewed for the intended application.
 
@@ -12,7 +12,7 @@ Read the relevant creator-supplied application context in `context/` before impl
 
 | Resource | Use it for |
 | --- | --- |
-| [docs/workflow.md](docs/workflow.md) | Primary setup and deployment workflow; start here. |
+| [docs/workflow.md](docs/workflow.md) | Primary setup and deployment workflow, consent publication from context, and study icon generation/export; start here. |
 | [README.md](README.md) | Project overview, quick-start commands, collections, and customization prerequisites. |
 | [docs/bankid-testing.md](docs/bankid-testing.md) | BankID configuration, evidence keyring setup, consent publication, local and OpenShift test deployment, API endpoints, and verification commands. Environment-specific values describe the documented test setup. |
 | [docs/bankid-signing-plan.md](docs/bankid-signing-plan.md) | Current BankID architecture, collection relationships, participant and guardian signing, consent state, and signing-attempt persistence. |
@@ -59,6 +59,7 @@ Edit source directly and keep related behavior within its feature. Avoid registr
 - One backend serves one study. Collections cover users, signatures, guardian signing requests, consent texts, answers, uploads, and questionnaire definitions; see the architecture guide for relationships.
 - Baseline migrations leave questionnaire content empty. Application-specific seed migrations are added when adapting the template; shared synthetic questionnaire fixtures are loaded only by tests.
 - The app presents consent before BankID signing. Successful signing creates or finds the participant and grants a session. Consent and withdrawal state are derived from signature records.
+- Derive participant age and age-based consent/guardian requirements on the backend from the verified BankID response's personal number. Do not add an age, date-of-birth or "under 15/18" question to establish the participant's age group. The app follows the backend's verified participation state. If age-specific text must be selected before signing, follow the identity/document sequencing guidance in [the workflow](docs/workflow.md#age-and-consent-routing).
 - Participants under 18 need the selected one or two guardian signatures before uploading. The backend enforces consent as well as session authorization.
 - Step data is read from Apple Health, previewed locally, and uploaded in compressed chunks linked to the authenticated user.
 - Pending BankID attempts live in process memory, so the backend runs as one replica and restarts interrupt pending attempts. Persisted signatures and users survive.

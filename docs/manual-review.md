@@ -11,10 +11,13 @@ links and server configuration must agree; see [BankID testing](bankid-testing.m
 
 - [ ] Fresh launch shows introduction, one Continue action and optional study information.
 - [ ] Review consent, enable signing, cancel/retry and complete same-device BankID return. Confirmed signing opens home automatically. Also try QR signing.
+- [ ] Enrollment has no self-reported age-group toggle or birth-date question for routing. BankID test identities below, at and above the study's age threshold receive the backend-derived consent/guardian requirements. Any age-specific document is selected using verified identity and matches the text actually signed.
 - [ ] Relaunch during BankID: enrollment resumes and verifies status; a link alone grants nothing.
 - [ ] Home lists each questionnaire directly beside step upload. No forms is valid after successful discovery; discovery errors show Retry and disable Finish.
 - [ ] For a guardian participant, tasks and questionnaire deep links are blocked. Generate/sign guardian links, refresh or resume, and confirm tasks unlock only after verification.
-- [ ] Swipe questions vertically and use Previous/Next. Skip questions and go back. Selection must not advance. Long content scrolls within its page. Check large text, keyboard, VoiceOver/TalkBack and reduced motion.
+- [ ] Answer a question: after 0.5 seconds without another edit, a valid nonempty answer advances to the next visible question. Choice taps and confirmed dates advance; opening/cancelling the picker, cleared answers and invalid numbers do not. Typing another character restarts the delay. The last answer never submits automatically.
+- [ ] Swipe questions vertically and use Previous/Next to skip or revisit questions. Manual navigation, touching another control, leaving the form and backgrounding the app cancel pending automatic navigation. Saved responses never advance by themselves.
+- [ ] Short question content is vertically centered; long content scrolls within its page. Tap empty space at both ends of date/choice rows to check the full-width hit area. Check large text, keyboard, VoiceOver/TalkBack and reduced motion.
 - [ ] Fill a conditional answer, change its parent and confirm hidden answers disappear and progress updates. Gender-specific questions use BankID identity facts.
 - [ ] Only the final page offers Submit. Invalid supplied answers return to their page. Network failure preserves draft/page for retry. Leaving a dirty form prompts; Previous does not.
 - [ ] Confirmed submission returns home. Completed rows open saved responses read-only.

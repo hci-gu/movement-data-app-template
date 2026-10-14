@@ -43,6 +43,10 @@ Consent and guardian authorization remain server-enforced. Guardian approval
 refreshes verified session facts; confirmed withdrawal invalidates the session.
 Session changes dispose feature state, cancel pending chunks and prevent late
 reads/uploads from marking completion. Participant detail sheets dismiss.
+Age-based decisions use the verified BankID personal number on the backend;
+do not add a participant age-group toggle or birth-date question for routing.
+See [age and consent routing](workflow.md#age-and-consent-routing) when adapting
+thresholds or selecting age-specific consent documents.
 
 Questionnaire parsing belongs to gateway/models. Cross-question relationship
 validation belongs to controller loading. Visibility recursively follows parent
@@ -52,6 +56,13 @@ skips remain unanswered. Saved responses are read-only. The backend independentl
 checks definitions, answers, visibility and identity-derived audience. Registered
 gender is derived in `api/internal/study/identity.go` and passed into rules.
 Do not add `required`, `visibleWhen`, expressions or a condition registry to settings.
+
+A valid nonempty answer advances to the next visible question after 500 ms
+without another edit. Dates count as answered only on picker confirmation.
+Manual interaction/navigation and app backgrounding cancel pending advancement;
+the last page always requires explicit submission. Short question content is
+centered vertically, while long content remains scrollable. Keep these behaviors
+in the questionnaire screen and widgets, outside definition settings.
 
 Step daily totals still sum rounded values by each sample's local start day.
 Uploads preserve native `HealthDataPoint.toJson()` samples in gzip JSON

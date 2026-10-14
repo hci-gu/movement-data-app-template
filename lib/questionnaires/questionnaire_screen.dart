@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:go_router/go_router.dart';
@@ -32,20 +33,70 @@ class _QuestionnairePages extends ConsumerStatefulWidget {
       _QuestionnairePagesState();
 }
 
-class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
+class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages>
+    with WidgetsBindingObserver {
   final pages = PageController();
   List<String> ids = [];
   int index = 0;
   bool allowPop = false, asking = false, reconciling = false;
   String? errorTarget;
+  Timer? autoAdvance;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  void cancelAutoAdvance() => autoAdvance?.cancel();
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) cancelAutoAdvance();
+  }
+
+  void answer(QuestionDefinition question, Object? value) {
+    cancelAutoAdvance();
+    final provider = questionnaireControllerProvider(widget.questionnaireId);
+    final controller = ref.read(provider.notifier);
+    controller.setAnswer(question.id, value);
+    if (isUnanswered(value) ||
+        validateValue(question, value, controller.now()) != null) {
+      return;
+    }
+    autoAdvance = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted ||
+          asking ||
+          reconciling ||
+          ModalRoute.of(context)?.isCurrent == false ||
+          ids.isEmpty ||
+          ids[index] != question.id) {
+        return;
+      }
+      final state = ref.read(provider);
+      if (state.loading ||
+          state.submitting ||
+          state.response != null ||
+          state.answers[question.id] != value ||
+          state.errors.containsKey(question.id)) {
+        return;
+      }
+      // Resolve the next page after any branch changes. The last answer never
+      // submits the response; move ignores a target beyond the final page.
+      unawaited(move(index + 1));
+    });
+  }
 
   @override
   void dispose() {
+    cancelAutoAdvance();
+    WidgetsBinding.instance.removeObserver(this);
     pages.dispose();
     super.dispose();
   }
 
   Future<void> home() async {
+    cancelAutoAdvance();
     setState(() => allowPop = true);
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
@@ -58,6 +109,7 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
   }
 
   Future<void> leave(QuestionnaireState state) async {
+    cancelAutoAdvance();
     if (asking || state.submitting) return;
     asking = true;
     final discard =
@@ -95,6 +147,7 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
     final current = ids.isEmpty ? null : ids[index.clamp(0, ids.length - 1)];
     var target = current == null ? 0 : next.indexOf(current);
     if (target < 0) {
+      cancelAutoAdvance();
       target = 0;
       for (var i = math.min(index - 1, ids.length - 1); i >= 0; i--) {
         final preceding = next.indexOf(ids[i]);
@@ -115,6 +168,7 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
   }
 
   Future<void> move(int target) async {
+    cancelAutoAdvance();
     if (!mounted ||
         !pages.hasClients ||
         target < 0 ||
@@ -137,6 +191,7 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
   }
 
   Future<void> submit() async {
+    cancelAutoAdvance();
     FocusManager.instance.primaryFocus?.unfocus();
     final provider = questionnaireControllerProvider(widget.questionnaireId);
     final controller = ref.read(provider.notifier);
@@ -166,7 +221,7 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
         : visibleQuestions(definition, state.answers, participant);
     reconcile(visible);
     final readOnly = state.response != null;
-    return PopScope(
+    final content = PopScope(
       canPop: allowPop || (!state.dirty && !state.submitting),
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) leave(state);
@@ -250,6 +305,7 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
                                   : null,
                               onPageChanged: (value) {
                                 if (reconciling) return;
+                                cancelAutoAdvance();
                                 FocusManager.instance.primaryFocus?.unfocus();
                                 setState(() => index = value);
                               },
@@ -270,8 +326,7 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
                                   question: q,
                                   value: state.answers[q.id],
                                   error: state.errors[q.id],
-                                  onChanged: (value) =>
-                                      controller.setAnswer(q.id, value),
+                                  onChanged: (value) => answer(q, value),
                                 );
                               },
                             ),
@@ -330,11 +385,12 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
               ),
       ),
     );
+    return Listener(onPointerDown: (_) => cancelAutoAdvance(), child: content);
   }
 }
 
 /// The inner scroll owns long content. Overscroll at its boundary deliberately
-/// turns one page; selecting an answer never changes pages.
+/// turns one page. Short content is centered in the available page height.
 class _QuestionPage extends StatefulWidget {
   final QuestionDefinition question;
   final Object? value;
@@ -419,41 +475,50 @@ class _QuestionPageState extends State<_QuestionPage> {
         }
         return false;
       },
-      child: SingleChildScrollView(
-        controller: scroll,
-        physics: const ClampingScrollPhysics(
-          parent: AlwaysScrollableScrollPhysics(),
-        ),
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.description.isNotEmpty) ...[
-              QuestionnaireRichText(widget.description),
-              const SizedBox(height: 16),
-            ],
-            Text(
-              widget.readOnly
-                  ? 'Dina sparade svar'
-                  : 'Du kan hoppa över frågor.',
-              style: AppTheme.bodyMuted,
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          controller: scroll,
+          physics: const ClampingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          ),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: math.max(0, constraints.maxHeight - 32),
             ),
-            const SizedBox(height: 16),
-            QuestionCard(
-              question: widget.question,
-              error: widget.error,
-              child: KeyedSubtree(
-                key: inputKey,
-                child: QuestionField(
-                  question: widget.question,
-                  value: widget.value,
-                  readOnly: widget.readOnly,
-                  onChanged: widget.onChanged,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.description.isNotEmpty) ...[
+                  QuestionnaireRichText(widget.description),
+                  const SizedBox(height: 16),
+                ],
+                Text(
+                  widget.readOnly
+                      ? 'Dina sparade svar'
+                      : 'Du kan hoppa över frågor.',
+                  style: AppTheme.bodyMuted,
                 ),
-              ),
+                const SizedBox(height: 16),
+                QuestionCard(
+                  question: widget.question,
+                  error: widget.error,
+                  child: KeyedSubtree(
+                    key: inputKey,
+                    child: QuestionField(
+                      question: widget.question,
+                      value: widget.value,
+                      readOnly: widget.readOnly,
+                      onChanged: widget.onChanged,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     ),

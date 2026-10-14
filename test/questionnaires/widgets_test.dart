@@ -61,6 +61,256 @@ QuestionnaireDefinition small(List<QuestionDefinition> questions) =>
     );
 
 void main() {
+  testWidgets('a choice advances to its visible follow-up after 500 ms', (
+    tester,
+  ) async {
+    final gateway = FakeQuestionnaireGateway()
+      ..definition = small(const [
+        QuestionDefinition(
+          id: 'a',
+          text: 'Branch',
+          type: QuestionType.singleChoice,
+          options: [QuestionOption('Yes', 'yes'), QuestionOption('No', 'no')],
+        ),
+        QuestionDefinition(
+          id: 'b',
+          text: 'Follow-up',
+          type: QuestionType.text,
+          dependency: 'a',
+          dependencyValue: 'yes',
+        ),
+        QuestionDefinition(id: 'c', text: 'Last', type: QuestionType.text),
+      ]);
+    await form(tester, gateway);
+    await tester.tap(find.text('Yes'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 499));
+    expect(find.text('Fråga 1 av 3'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Fråga 2 av 3'), findsOneWidget);
+    expect(find.text('Follow-up').hitTestable(), findsWidgets);
+    expect(gateway.submissions, 0);
+  });
+
+  testWidgets('short question content is vertically centered in its page', (
+    tester,
+  ) async {
+    final gateway = FakeQuestionnaireGateway()
+      ..definition = small(const [
+        QuestionDefinition(id: 'a', text: 'Date', type: QuestionType.date),
+      ]);
+    await form(tester, gateway);
+    final viewport = tester.getRect(find.byType(PageView));
+    final top = tester.getTopLeft(find.byType(QuestionnaireRichText)).dy;
+    final bottom = tester.getBottomLeft(find.byType(QuestionCard)).dy;
+    expect((top + bottom) / 2, closeTo(viewport.center.dy, 1));
+  });
+
+  testWidgets('date control opens from the empty right side of its row', (
+    tester,
+  ) async {
+    final gateway = FakeQuestionnaireGateway()
+      ..definition = small(const [
+        QuestionDefinition(id: 'a', text: 'Date', type: QuestionType.date),
+      ]);
+    await form(tester, gateway);
+    final row = tester.getRect(find.byType(QuestionField));
+    await tester.tapAt(Offset(row.right - 8, row.center.dy));
+    await tester.pumpAndSettle();
+    expect(find.byType(CupertinoDatePicker), findsOneWidget);
+  });
+
+  testWidgets(
+    'typing restarts the delay; clearing and invalid values stay put',
+    (tester) async {
+      final gateway = FakeQuestionnaireGateway()
+        ..definition = small(const [
+          QuestionDefinition(
+            id: 'a',
+            text: 'Number',
+            type: QuestionType.integer,
+            numberSettings: NumberSettings(min: 0, max: 7),
+          ),
+          QuestionDefinition(id: 'b', text: 'Text', type: QuestionType.text),
+          QuestionDefinition(id: 'c', text: 'Last', type: QuestionType.text),
+        ]);
+      final container = await form(tester, gateway);
+      final input = find.byType(CupertinoTextField).hitTestable();
+      for (final invalid in ['-', '8']) {
+        await tester.enterText(input, invalid);
+        await tester.pump(const Duration(seconds: 1));
+        expect(find.text('Fråga 1 av 3'), findsOneWidget);
+      }
+      await tester.enterText(input, '0');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.enterText(input, '7');
+      await tester.pump(const Duration(milliseconds: 499));
+      expect(find.text('Fråga 1 av 3'), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('Fråga 2 av 3'), findsOneWidget);
+      await tester.enterText(input, 'Draft');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.enterText(input, '');
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Fråga 2 av 3'), findsOneWidget);
+      await tester.enterText(input, 'Complete');
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+      expect(find.text('Fråga 3 av 3'), findsOneWidget);
+      await tester.enterText(input, 'Final answer');
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Fråga 3 av 3'), findsOneWidget);
+      expect(gateway.submissions, 0);
+      expect(
+        container
+            .read(questionnaireControllerProvider('testfrm00000001'))
+            .answers,
+        {'a': 7, 'b': 'Complete', 'c': 'Final answer'},
+      );
+    },
+  );
+
+  testWidgets('manual navigation and leaving cancel pending advancement', (
+    tester,
+  ) async {
+    final gateway = FakeQuestionnaireGateway()
+      ..definition = small(const [
+        QuestionDefinition(id: 'a', text: 'First', type: QuestionType.text),
+        QuestionDefinition(id: 'b', text: 'Second', type: QuestionType.text),
+        QuestionDefinition(id: 'c', text: 'Last', type: QuestionType.text),
+      ]);
+    await form(tester, gateway);
+    await tester.enterText(find.byType(CupertinoTextField).hitTestable(), 'A');
+    await tester.tap(find.text('Nästa'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Fråga 2 av 3'), findsOneWidget);
+    await tester.enterText(find.byType(CupertinoTextField).hitTestable(), 'B');
+    await tester.tap(find.byIcon(CupertinoIcons.xmark));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Stanna'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Fråga 2 av 3'), findsOneWidget);
+    await tester.enterText(find.byType(CupertinoTextField).hitTestable(), 'C');
+    await tester.drag(find.byType(PageView), const Offset(0, -400));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Fråga 3 av 3'), findsOneWidget);
+    expect(gateway.submissions, 0);
+  });
+
+  testWidgets('backgrounding and disposing cancel pending advancement', (
+    tester,
+  ) async {
+    final gateway = FakeQuestionnaireGateway()
+      ..definition = small(const [
+        QuestionDefinition(id: 'a', text: 'First', type: QuestionType.text),
+        QuestionDefinition(id: 'b', text: 'Second', type: QuestionType.text),
+      ]);
+    await form(tester, gateway);
+    await tester.enterText(find.byType(CupertinoTextField).hitTestable(), 'A');
+    tester.binding.handleAppLifecycleStateChanged(
+      AppLifecycleState.inactive,
+    );
+    tester.binding.handleAppLifecycleStateChanged(
+      AppLifecycleState.resumed,
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Fråga 1 av 2'), findsOneWidget);
+    await tester.enterText(find.byType(CupertinoTextField).hitTestable(), 'B');
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'dates advance only after confirmation; reopening cancels the delay',
+    (tester) async {
+      final gateway = FakeQuestionnaireGateway()
+        ..definition = small(const [
+          QuestionDefinition(id: 'a', text: 'Date', type: QuestionType.date),
+          QuestionDefinition(id: 'b', text: 'Last', type: QuestionType.text),
+        ]);
+      final container = await form(tester, gateway);
+      await tester.tap(find.text('Välj datum'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.text('Avbryt'));
+      await tester.pumpAndSettle();
+      expect(find.text('Fråga 1 av 2'), findsOneWidget);
+      expect(
+        container
+            .read(questionnaireControllerProvider('testfrm00000001'))
+            .answers,
+        isEmpty,
+      );
+
+      await tester.tap(find.text('Välj datum'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Välj'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      final dateButton = find.ancestor(
+        of: find.textContaining(RegExp(r'^\d{4}-\d{2}-\d{2}$')),
+        matching: find.byType(CupertinoButton),
+      );
+      await tester.tap(dateButton);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.text('Avbryt'));
+      await tester.pumpAndSettle();
+      expect(find.text('Fråga 1 av 2'), findsOneWidget);
+      await tester.tap(dateButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Välj'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+      expect(find.text('Fråga 2 av 2'), findsOneWidget);
+    },
+  );
+
+  for (final type in [
+    QuestionType.text,
+    QuestionType.integer,
+    QuestionType.singleChoice,
+  ]) {
+    testWidgets('$type accepts taps at the right edge of the answer row', (
+      tester,
+    ) async {
+      final gateway = FakeQuestionnaireGateway()
+        ..definition = small([
+          QuestionDefinition(
+            id: 'a',
+            text: 'Question',
+            type: type,
+            options: type == QuestionType.singleChoice
+                ? const [QuestionOption('Yes', 'yes')]
+                : const [],
+          ),
+        ]);
+      final container = await form(tester, gateway);
+      final row = tester.getRect(find.byType(QuestionField));
+      await tester.tapAt(Offset(row.right - 8, row.center.dy));
+      await tester.pump();
+      if (type == QuestionType.singleChoice) {
+        expect(
+          container
+              .read(questionnaireControllerProvider('testfrm00000001'))
+              .answers['a'],
+          'yes',
+        );
+      } else {
+        expect(tester.testTextInput.isVisible, true);
+      }
+      await tester.pump(const Duration(seconds: 1));
+      expect(gateway.submissions, 0);
+    });
+  }
+
   testWidgets(
     'keyboard and large text keep navigation reachable with accessible progress',
     (tester) async {
@@ -193,10 +443,14 @@ void main() {
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Option A'));
       await tester.tap(find.text('Option A'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpAndSettle();
       final provider = questionnaireControllerProvider('testfrm00000001');
       container.read(provider.notifier).setAnswer(qid(3), '2024-04-01');
       container.read(provider.notifier).setAnswer(qid(7), 3);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Föregående'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Option C'));
       await tester.tap(find.text('Option C'));
@@ -401,10 +655,10 @@ void main() {
         questionnaireControllerProvider('testfrm00000001').notifier,
       );
       await tester.tap(find.text('Yes'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpAndSettle();
-      expect(find.text('Fråga 1 av 3'), findsOneWidget);
-      await tester.tap(find.text('Nästa'));
-      await tester.pumpAndSettle();
+      expect(find.text('Fråga 2 av 3'), findsOneWidget);
       await tester.enterText(
         find.byType(CupertinoTextField).hitTestable(),
         'hidden draft',
