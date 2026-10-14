@@ -167,8 +167,6 @@ func SetAccessRules(app core.App) error {
 		case "answers":
 			c.ListRule = types.Pointer(`user = @request.auth.id`)
 			c.ViewRule = c.ListRule
-			c.UpdateRule = c.ListRule
-			c.DeleteRule = c.ListRule
 			c.CreateRule = types.Pointer(`@request.auth.id != "" && user = @request.auth.id`)
 		}
 		if err := app.Save(c); err != nil {

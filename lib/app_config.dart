@@ -24,7 +24,7 @@ class AppConfig {
   static const summaryLookbackDays = 14;
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.10.101:8090',
+    defaultValue: 'http://192.168.10.144:8090',
   );
 
   static List<HealthDataType> get requestedTypes => [HealthDataType.STEPS];

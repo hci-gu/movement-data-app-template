@@ -1,3 +1,4 @@
+import 'package:research_steps_template/questionnaires/questionnaire_list_screen.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:go_router/go_router.dart';
@@ -24,6 +25,10 @@ class SummaryScreen extends StatelessWidget {
             label: 'Summary',
           ),
           BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.list_bullet),
+            label: 'Formulär',
+          ),
+          BottomNavigationBarItem(
             icon: Icon(CupertinoIcons.doc_text),
             label: 'Study',
           ),
@@ -34,6 +39,8 @@ class SummaryScreen extends StatelessWidget {
           case 0:
             return const UploadSummaryHome();
           case 1:
+            return const QuestionnaireListScreen(inTab: true);
+          case 2:
             return const AboutScreen();
           default:
             return const SizedBox.shrink();

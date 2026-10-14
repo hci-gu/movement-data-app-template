@@ -1,0 +1,294 @@
+[
+  {
+    "collection": "questionOptions",
+    "data": {
+      "id": "testopt00000001",
+      "name": "Example branches",
+      "value": [
+        {
+          "label": "Option A",
+          "value": "branch_a"
+        },
+        {
+          "label": "Option B",
+          "value": "branch_b"
+        },
+        {
+          "label": "Option C",
+          "value": "branch_c"
+        }
+      ]
+    }
+  },
+  {
+    "collection": "questionOptions",
+    "data": {
+      "id": "testopt00000002",
+      "name": "Example values",
+      "value": [
+        {
+          "label": "Value 1",
+          "value": "value_1"
+        },
+        {
+          "label": "Value 2",
+          "value": "value_2"
+        },
+        {
+          "label": "Value 3",
+          "value": "value_3"
+        },
+        {
+          "label": "Value 4",
+          "value": "value_4"
+        },
+        {
+          "label": "Value 5",
+          "value": "value_5"
+        }
+      ]
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000001",
+      "introduction": "",
+      "placeholder": "ÅÅÅÅ-MM",
+      "settings": {
+        "precision": "month"
+      },
+      "dependency": "",
+      "dependencyValue": null,
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Example month for a restricted audience",
+      "type": "date",
+      "audience": "female"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000002",
+      "introduction": "",
+      "placeholder": "",
+      "settings": {},
+      "dependency": "",
+      "dependencyValue": null,
+      "options": "testopt00000001",
+      "valueFromQuestion": "",
+      "text": "Choose an example branch",
+      "type": "singleChoice"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000003",
+      "introduction": "",
+      "placeholder": "ÅÅÅÅ-MM-DD",
+      "settings": {
+        "precision": "day"
+      },
+      "dependency": "testqst00000002",
+      "dependencyValue": "branch_a",
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Date for branch A",
+      "type": "date"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000004",
+      "introduction": "",
+      "placeholder": "ÅÅÅÅ-MM-DD",
+      "settings": {
+        "precision": "day"
+      },
+      "dependency": "testqst00000002",
+      "dependencyValue": [
+        "branch_b",
+        "branch_c"
+      ],
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Date for branch B or C",
+      "type": "date"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000005",
+      "introduction": "<p>An example count with a lower bound.</p>",
+      "placeholder": "",
+      "settings": {
+        "min": 0,
+        "unit": "items"
+      },
+      "dependency": "testqst00000002",
+      "dependencyValue": "branch_a",
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Count for branch A",
+      "type": "integer"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000006",
+      "introduction": "<p>An example count with a lower bound.</p>",
+      "placeholder": "",
+      "settings": {
+        "min": 0,
+        "unit": "items"
+      },
+      "dependency": "testqst00000002",
+      "dependencyValue": [
+        "branch_b",
+        "branch_c"
+      ],
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Count for branch B or C",
+      "type": "integer"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000007",
+      "introduction": "",
+      "placeholder": "",
+      "settings": {
+        "min": 0,
+        "unit": "items"
+      },
+      "dependency": "",
+      "dependencyValue": null,
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Shared count",
+      "type": "integer"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000008",
+      "introduction": "",
+      "placeholder": "",
+      "settings": {},
+      "dependency": "",
+      "dependencyValue": null,
+      "options": "testopt00000002",
+      "valueFromQuestion": "",
+      "text": "Choose an example value",
+      "type": "singleChoice"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000009",
+      "introduction": "<p>An example of a bounded answer.</p>",
+      "placeholder": "",
+      "settings": {
+        "min": 0,
+        "max": 7,
+        "unit": "items"
+      },
+      "dependency": "testqst00000002",
+      "dependencyValue": "branch_b",
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Bounded count for branch B",
+      "type": "integer"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000010",
+      "introduction": "",
+      "placeholder": "",
+      "settings": {
+        "min": 0,
+        "max": 24,
+        "unit": "items"
+      },
+      "dependency": "testqst00000002",
+      "dependencyValue": "branch_b",
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Second bounded count for branch B",
+      "type": "integer"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000011",
+      "introduction": "<p>An example of a bounded answer.</p>",
+      "placeholder": "",
+      "settings": {
+        "min": 0,
+        "max": 7,
+        "unit": "items"
+      },
+      "dependency": "testqst00000002",
+      "dependencyValue": "branch_c",
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Bounded count for branch C",
+      "type": "integer"
+    }
+  },
+  {
+    "collection": "questions",
+    "data": {
+      "id": "testqst00000012",
+      "introduction": "",
+      "placeholder": "",
+      "settings": {
+        "min": 0,
+        "max": 24,
+        "unit": "items"
+      },
+      "dependency": "testqst00000002",
+      "dependencyValue": "branch_c",
+      "options": "",
+      "valueFromQuestion": "",
+      "text": "Second bounded count for branch C",
+      "type": "integer"
+    }
+  },
+  {
+    "collection": "questionnaires",
+    "data": {
+      "id": "testfrm00000001",
+      "name": "Example questionnaire",
+      "enabled": true,
+      "occurance": "once",
+      "description": "<p>Synthetic test data for question types, branching, and audience rules.</p>",
+      "questions": [
+        "testqst00000001",
+        "testqst00000002",
+        "testqst00000003",
+        "testqst00000004",
+        "testqst00000005",
+        "testqst00000006",
+        "testqst00000007",
+        "testqst00000008",
+        "testqst00000009",
+        "testqst00000010",
+        "testqst00000011",
+        "testqst00000012"
+      ]
+    }
+  }
+]

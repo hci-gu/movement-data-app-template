@@ -33,24 +33,27 @@ Keep this index updated when adding or moving template documentation. Applicatio
 | `lib/app_config.dart` | App/study names, contacts, participant-facing copy, Health data selection, import period, and `API_BASE_URL` / `BANKID_RETURN_URL` build configuration. |
 | `lib/screens/`, `lib/widgets/`, `lib/theme.dart` | Participant screens, step preview chart, and Cupertino styling. |
 | `lib/bankid/` | BankID models, gateway, and signing controller. |
+| `lib/questionnaires/` | Questionnaire models, rules, gateway, controller, and input widgets. |
 | `lib/state/auth.dart`, `lib/storage.dart` | Authentication state, session restoration, secure session/signing storage, and local upload preferences. |
 | `lib/state/health.dart`, `lib/api.dart`, `lib/pocketbase.dart` | Health permissions/import/summary, authenticated API calls, compressed chunk uploads, and PocketBase client. |
 | `api/main.go` | PocketBase entry point, migrations, study service, and route registration. |
 | `api/internal/study/` | Consent, participant sessions, guardians, encrypted signing evidence, administration, and configuration. |
 | `api/internal/bankid/` | BankID provider client. |
+| `api/internal/questionnaires/` | Questionnaire definition parsing and validation; `testdata/` contains synthetic test fixtures only. |
 | `api/internal/schema/`, `api/migrations/` | Collection schema, schema/data migrations, and questionnaire seeds. |
 | `api/upload_routes.go`, `api/upload_storage.go` | Upload authorization, metadata, raw chunk storage, and researcher export. |
 | `health/` | Local Flutter Health plugin used through a path dependency in `pubspec.yaml`. |
 | `ios/`, `android/`, `web/`, `assets/` | Platform projects and assets; validate platform support for the intended app. |
 | `deploy/`, `api/Dockerfile` | Deployment manifest, Flutter test configuration, test consent, and backend image build. |
 | `scripts/` | Study keyring generation and iOS BankID associated-domain configuration helpers. |
-| `test/bankid/`, Go `*_test.go` files under `api/` | Flutter BankID tests and backend tests. |
+| `test/bankid/`, `test/questionnaires/`, Go `*_test.go` files under `api/` | Flutter BankID/questionnaire tests and backend tests. |
 
 The Flutter app uses Riverpod/hooks for state, GoRouter for navigation, Dio for API calls, and PocketBase for the client/auth store. Dependency and toolchain declarations live in `pubspec.yaml` / `pubspec.lock` and `api/go.mod` / `api/go.sum`.
 
 ## Current behavior to preserve when adapting the template
 
 - One backend serves one study. Collections cover users, signatures, guardian signing requests, consent texts, answers, uploads, and questionnaire definitions; see the architecture guide for relationships.
+- Baseline migrations leave questionnaire content empty. Application-specific seed migrations are added when adapting the template; shared synthetic questionnaire fixtures are loaded only by tests.
 - The app presents consent before BankID signing. Successful signing creates or finds the participant and grants a session. Consent and withdrawal state are derived from signature records.
 - Participants under 18 need the selected one or two guardian signatures before uploading. The backend enforces consent as well as session authorization.
 - Step data is read from Apple Health, previewed locally, and uploaded in compressed chunks linked to the authenticated user.

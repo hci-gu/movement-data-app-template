@@ -1,12 +1,13 @@
 package study
 
 import (
+	"app/internal/questionnaires"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
 )
 
 func (s *Service) userDTO(user *core.Record) map[string]any {
-	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user)}
+	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": questionnaires.Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user)}
 }
 func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
@@ -87,18 +88,5 @@ func (s *Service) registerQuestionnaireAccess() {
 		}
 		return e.Next()
 	})
-	write := func(e *core.RecordRequestEvent) error {
-		if !e.HasSuperuserAuth() {
-			if err := guard(e.RequestEvent); err != nil {
-				return err
-			}
-			if e.Record.GetString("user") != e.Auth.Id {
-				return problem(403, "wrongParticipant", "Answers must belong to the authenticated participant.")
-			}
-		}
-		return e.Next()
-	}
-	s.App.OnRecordCreateRequest("answers").BindFunc(write)
-	s.App.OnRecordUpdateRequest("answers").BindFunc(write)
-	s.App.OnRecordDeleteRequest("answers").BindFunc(write)
+	s.registerAnswerWrites(guard)
 }

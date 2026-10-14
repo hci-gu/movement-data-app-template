@@ -117,7 +117,9 @@ class Api {
         },
         onError: (error, handler) {
           if (error.requestOptions.extra['public'] != true &&
-              error.response?.statusCode == 401) {
+              error.response?.statusCode == 401 &&
+              error.requestOptions.headers['Authorization'] ==
+                  'Bearer ${pb.authStore.token}') {
             onSessionInvalid?.call();
           }
           handler.next(error);

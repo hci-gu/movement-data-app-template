@@ -54,6 +54,7 @@ class AppScaffold extends StatelessWidget {
   final bool noBackButton;
   final bool withHorizontalPadding;
   final Widget? trailing;
+  final Widget? leading;
 
   const AppScaffold({
     super.key,
@@ -62,6 +63,7 @@ class AppScaffold extends StatelessWidget {
     this.noBackButton = false,
     this.withHorizontalPadding = true,
     this.trailing,
+    this.leading,
   });
 
   @override
@@ -78,7 +80,7 @@ class AppScaffold extends StatelessWidget {
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: title == null ? null : Text(title!, style: AppTheme.cardTitle),
-        leading: noBackButton ? const SizedBox.shrink() : null,
+        leading: leading ?? (noBackButton ? const SizedBox.shrink() : null),
         trailing: trailing,
       ),
       child: DecoratedBox(

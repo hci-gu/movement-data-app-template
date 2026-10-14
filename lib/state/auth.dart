@@ -68,16 +68,28 @@ class Auth extends StateNotifier<RecordAuth?> {
   }
 
   Future<void> validateSession() async {
-    if (state == null) return;
+    final current = state;
+    if (current == null) return;
     try {
       final user = await Api().currentParticipant();
-      if (user['consentRequired'] == true) await invalidate();
-      if (state != null) {
-        ref.read(guardianRequiredProvider.notifier).state =
-            user['guardianRequired'] == true;
+      if (!mounted || state?.token != current.token) return;
+      if (user['consentRequired'] == true) {
+        await invalidate();
+        return;
+      }
+      ref.read(guardianRequiredProvider.notifier).state =
+          user['guardianRequired'] == true;
+      if (user['gender'] != current.record.data['gender']) {
+        final record = RecordModel(user);
+        pb.authStore.save(current.token, record);
+        state = RecordAuth(
+          token: current.token,
+          record: record,
+          meta: current.meta,
+        );
       }
     } catch (_) {
-      await invalidate();
+      if (mounted && state?.token == current.token) await invalidate();
     }
   }
 

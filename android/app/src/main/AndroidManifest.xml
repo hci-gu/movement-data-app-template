@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- API access is needed in every build, including release. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:label="research_steps_template"
         android:name="${applicationName}"

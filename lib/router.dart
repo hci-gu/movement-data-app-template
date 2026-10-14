@@ -1,3 +1,5 @@
+import 'package:research_steps_template/questionnaires/questionnaire_list_screen.dart';
+import 'package:research_steps_template/questionnaires/questionnaire_screen.dart';
 import 'package:research_steps_template/bankid/controller.dart';
 import 'package:research_steps_template/screens/consent_receipt.dart';
 import 'package:flutter/cupertino.dart';
@@ -50,7 +52,8 @@ class RouterNotifier extends ChangeNotifier {
     if (loggedIn &&
         guardianRequired &&
         (state.matchedLocation == '/upload' ||
-            state.matchedLocation == '/summary')) {
+            state.matchedLocation == '/summary' ||
+            state.matchedLocation.startsWith('/questionnaires'))) {
       return '/guardians';
     }
 
@@ -101,6 +104,20 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/consent-receipt',
         name: 'consentReceipt',
         builder: (context, state) => const ConsentReceiptScreen(),
+      ),
+      GoRoute(
+        path: '/questionnaires',
+        name: 'questionnaires',
+        builder: (context, state) => const QuestionnaireListScreen(),
+        routes: [
+          GoRoute(
+            path: ':id',
+            name: 'questionnaire',
+            builder: (context, state) => QuestionnaireScreen(
+              questionnaireId: state.pathParameters['id']!,
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: '/summary',
