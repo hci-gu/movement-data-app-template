@@ -47,6 +47,7 @@ app.*.map.json
 
 api/app
 api/pb_data
+api/context
 api/storage
 api/.local/
 
