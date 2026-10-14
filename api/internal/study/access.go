@@ -1,13 +1,12 @@
 package study
 
 import (
-	"app/internal/questionnaires"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/security"
 )
 
 func (s *Service) userDTO(user *core.Record) map[string]any {
-	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": questionnaires.Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user)}
+	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user)}
 }
 func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)

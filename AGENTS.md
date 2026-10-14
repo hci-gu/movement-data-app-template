@@ -17,6 +17,8 @@ Read the relevant creator-supplied application context in `context/` before impl
 | [docs/bankid-testing.md](docs/bankid-testing.md) | BankID configuration, evidence keyring setup, consent publication, local and OpenShift test deployment, API endpoints, and verification commands. Environment-specific values describe the documented test setup. |
 | [docs/bankid-signing-plan.md](docs/bankid-signing-plan.md) | Current BankID architecture, collection relationships, participant and guardian signing, consent state, and signing-attempt persistence. |
 | [docs/questionnaire-data.md](docs/questionnaire-data.md) | Turning source questionnaire material into PocketBase definitions, option sets, answer settings, reproducible seed migrations, and verification. |
+| [docs/customization.md](docs/customization.md) | Source-editing map, module ownership, session isolation, questionnaire/upload invariants and storage compatibility. |
+| [docs/manual-review.md](docs/manual-review.md) | Participant-flow and physical-device review checklist. |
 | [health/README.md](health/README.md) | Bundled Health plugin setup, supported data types, permissions, and usage. Android guidance here describes plugin capabilities; the app's current focus is iOS/Apple Health. |
 | [health/CHANGELOG.md](health/CHANGELOG.md) | Bundled Health plugin version history. |
 | [ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md](ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md) | Replacing iOS launch-screen assets. |
@@ -29,13 +31,13 @@ Keep this index updated when adding or moving template documentation. Applicatio
 | --- | --- |
 | `context/` | Creator-supplied application source material, such as ethical approvals and questionnaire specifications. |
 | `docs/` | Technical guides maintained by the template developers, including setup, architecture, and questionnaire-data instructions. |
-| `lib/main.dart`, `lib/router.dart` | Flutter startup, BankID return links, lifecycle handling, navigation, and session/guardian route gates. |
-| `lib/app_config.dart` | App/study names, contacts, participant-facing copy, Health data selection, import period, and `API_BASE_URL` / `BANKID_RETURN_URL` build configuration. |
-| `lib/screens/`, `lib/widgets/`, `lib/theme.dart` | Participant screens, step preview chart, and Cupertino styling. |
-| `lib/bankid/` | BankID models, gateway, and signing controller. |
+| `lib/main.dart`, `lib/app/` | Startup, lifecycle/links, routes, home checklist composition and Done. `environment.dart` owns build-time URLs. |
+| `lib/study/` | Introduction, optional information sheet, study copy and contacts. |
+| `lib/ui/` | Shared theme, scaffold, card, sheet and formatting helpers. |
+| `lib/enrollment/` | BankID consent/signing, guardian sheet, consent receipt/withdrawal; network operations belong in gateways/controllers. |
 | `lib/questionnaires/` | Questionnaire models, rules, gateway, controller, and input widgets. |
-| `lib/state/auth.dart`, `lib/storage.dart` | Authentication state, session restoration, secure session/signing storage, and local upload preferences. |
-| `lib/state/health.dart`, `lib/api.dart`, `lib/pocketbase.dart` | Health permissions/import/summary, authenticated API calls, compressed chunk uploads, and PocketBase client. |
+| `lib/session/`, `lib/infrastructure/` | Typed sessions, verified access, expiry and persistence; shared provider-owned Dio and storage primitives. No feature-reset imports in session. |
+| `lib/steps/` | Health reader, summary/chart, compressed upload, scoped completion persistence and home card. |
 | `api/main.go` | PocketBase entry point, migrations, study service, and route registration. |
 | `api/internal/study/` | Consent, participant sessions, guardians, encrypted signing evidence, administration, and configuration. |
 | `api/internal/bankid/` | BankID provider client. |
@@ -46,9 +48,11 @@ Keep this index updated when adding or moving template documentation. Applicatio
 | `ios/`, `android/`, `web/`, `assets/` | Platform projects and assets; validate platform support for the intended app. |
 | `deploy/`, `api/Dockerfile` | Deployment manifest, Flutter test configuration, test consent, and backend image build. |
 | `scripts/` | Study keyring generation and iOS BankID associated-domain configuration helpers. |
-| `test/bankid/`, `test/questionnaires/`, Go `*_test.go` files under `api/` | Flutter BankID/questionnaire tests and backend tests. |
+| `test/`, Go `*_test.go` files under `api/` | Flutter feature/controller/gateway/routing/widget tests and backend enforcement tests. |
 
-The Flutter app uses Riverpod/hooks for state, GoRouter for navigation, Dio for API calls, and PocketBase for the client/auth store. Dependency and toolchain declarations live in `pubspec.yaml` / `pubspec.lock` and `api/go.mod` / `api/go.sum`.
+The Flutter app uses Riverpod/hooks for state, GoRouter for navigation, Dio for API calls and typed sessions with secure storage. PocketBase runs on the backend; there is no global client/token mirror. Dependency and toolchain declarations live in `pubspec.yaml` / `pubspec.lock` and `api/go.mod` / `api/go.sum`.
+
+Edit source directly and keep related behavior within its feature. Avoid registries, configurable workflows and mandatory layers. The main flow is Introduction → BankID/consent → Home checklist → Done. Home combines questionnaire discovery/completion and step upload; guardian approval is a conditional prerequisite. Questionnaires use one route with vertical pages; settings are presentation-only. Read the customization guide before changing completion, storage or authorization behavior.
 
 ## Current behavior to preserve when adapting the template
 
@@ -68,7 +72,7 @@ The template developers maintain `docs/` for reusable technical documentation. A
 
 Useful context includes the application's purpose and scope, participant groups, approved study/consent/privacy text, contacts, branding and app identifiers, required screens and flows, Health data types and collection periods, questionnaire sources, deployment environments, and acceptance criteria. Record decisions and unresolved requirements so future sessions can use them without reconstructing the conversation.
 
-Apply that context to the relevant code and configuration, especially `lib/app_config.dart`, platform metadata/permissions, consent records, questionnaire migrations, and deployment files. Keep the workflow guide current when setup requirements change. Do not invent questionnaire choices, answer limits, or behavior absent from source material; follow [docs/questionnaire-data.md](docs/questionnaire-data.md).
+Apply context to `lib/study/`, `lib/app/environment.dart`, the relevant features, platform metadata/permissions, consent records, questionnaire migrations and deployment files. Keep the workflow guide current when setup changes. Do not invent questionnaire choices, limits or behavior absent from source material; follow [docs/questionnaire-data.md](docs/questionnaire-data.md).
 
 ## Working and verification
 
@@ -78,3 +82,4 @@ Apply that context to the relevant code and configuration, especially `lib/app_c
 - From `api/`, build with `go build -o app .` and run backend checks with `go test ./...`.
 - For Python helper changes, use `python -m py_compile <changed-files>` for a syntax check.
 - Verify BankID handoff and HealthKit permissions on a physical iPhone before participant use. Report any checks that could not run and what remains unverified.
+- For integrated changes, run the complete `flutter test` suite, `flutter build apk --release`, and `flutter build ios --simulator`. Keep [manual review](docs/manual-review.md) current.

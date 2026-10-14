@@ -33,7 +33,7 @@ func (s *Service) registerAnswerWrites(guard func(*core.RequestEvent) error) {
 			if err := e.Record.UnmarshalJSONField("answers", &answers); err != nil || answers == nil {
 				return problem(400, "invalidAnswers", "Svaren måste vara ett JSON-objekt.")
 			}
-			messages := d.Validate(answers, questionnaires.Gender(e.Auth.GetString("personalNumber")), s.now())
+			messages := d.Validate(answers, Gender(e.Auth.GetString("personalNumber")), s.now())
 			if len(messages) > 0 {
 				fields := validation.Errors{}
 				for id, message := range messages {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"regexp"
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -29,18 +28,6 @@ type Question struct {
 	Options                        []Option
 }
 type Definition struct{ Questions []Question }
-
-// Gender returns the registered category encoded in a verified Swedish identity.
-// Invalid/unknown identities never acquire a gender-specific audience.
-func Gender(personalNumber string) string {
-	if !regexp.MustCompile(`^[0-9]{12}$`).MatchString(personalNumber) {
-		return "unknown"
-	}
-	if (personalNumber[10]-'0')%2 == 0 {
-		return "female"
-	}
-	return "male"
-}
 
 func Load(app core.App, id string) (Definition, error) {
 	d := Definition{}

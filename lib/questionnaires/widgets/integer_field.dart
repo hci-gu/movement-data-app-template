@@ -1,5 +1,5 @@
 import 'package:flutter/cupertino.dart';
-import 'package:research_steps_template/theme.dart';
+import 'package:research_steps_template/ui/theme.dart';
 import '../models.dart';
 import 'text_field.dart';
 

@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
-import 'package:research_steps_template/theme.dart';
+import 'package:research_steps_template/ui/theme.dart';
 import '../models.dart';
 
 // Render text and basic emphasis only. No scripts, images, embedded content,

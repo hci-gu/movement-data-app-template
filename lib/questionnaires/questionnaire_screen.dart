@@ -1,23 +1,62 @@
+import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:research_steps_template/theme.dart';
+import '../ui/theme.dart';
 import 'controller.dart';
+import 'models.dart';
 import 'rules.dart';
 import 'widgets/question_card.dart';
 import 'widgets/question_field.dart';
 
-class QuestionnaireScreen extends ConsumerStatefulWidget {
+class QuestionnaireScreen extends ConsumerWidget {
   final String questionnaireId;
   const QuestionnaireScreen({super.key, required this.questionnaireId});
   @override
-  ConsumerState<QuestionnaireScreen> createState() =>
-      _QuestionnaireScreenState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final provider = questionnaireControllerProvider(questionnaireId);
+    ref.watch(provider);
+    // A different session gets a fresh page controller as well as fresh answers.
+    return _QuestionnairePages(
+      key: ObjectKey(ref.read(provider.notifier)),
+      questionnaireId: questionnaireId,
+    );
+  }
 }
 
-class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
-  final fields = <String, GlobalKey>{};
-  bool allowPop = false, asking = false;
+class _QuestionnairePages extends ConsumerStatefulWidget {
+  final String questionnaireId;
+  const _QuestionnairePages({super.key, required this.questionnaireId});
+  @override
+  ConsumerState<_QuestionnairePages> createState() =>
+      _QuestionnairePagesState();
+}
+
+class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages> {
+  final pages = PageController();
+  List<String> ids = [];
+  int index = 0;
+  bool allowPop = false, asking = false, reconciling = false;
+  String? errorTarget;
+
+  @override
+  void dispose() {
+    pages.dispose();
+    super.dispose();
+  }
+
+  Future<void> home() async {
+    setState(() => allowPop = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final router = GoRouter.maybeOf(context);
+    if (router != null) {
+      router.goNamed('home');
+    } else if (Navigator.of(context).canPop()) {
+      Navigator.pop(context);
+    }
+  }
+
   Future<void> leave(QuestionnaireState state) async {
     if (asking || state.submitting) return;
     asking = true;
@@ -44,15 +83,74 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
             ) ==
             true;
     asking = false;
-    if (!discard || !mounted) return;
-    setState(() => allowPop = true);
-    await WidgetsBinding.instance.endOfFrame;
-    if (mounted) {
-      if (context.canPop()) {
-        context.pop();
-      } else {
-        context.goNamed('questionnaires');
+    if (discard && mounted) await home();
+  }
+
+  void reconcile(List<QuestionDefinition> visible) {
+    final next = visible.map((q) => q.id).toList();
+    if (next.length == ids.length &&
+        List.generate(next.length, (i) => next[i] == ids[i]).every((v) => v)) {
+      return;
+    }
+    final current = ids.isEmpty ? null : ids[index.clamp(0, ids.length - 1)];
+    var target = current == null ? 0 : next.indexOf(current);
+    if (target < 0) {
+      target = 0;
+      for (var i = math.min(index - 1, ids.length - 1); i >= 0; i--) {
+        final preceding = next.indexOf(ids[i]);
+        if (preceding >= 0) {
+          target = preceding;
+          break;
+        }
       }
+    }
+    ids = next;
+    index = target;
+    reconciling = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (pages.hasClients && ids.isNotEmpty) pages.jumpToPage(index);
+      reconciling = false;
+    });
+  }
+
+  Future<void> move(int target) async {
+    if (!mounted ||
+        !pages.hasClients ||
+        target < 0 ||
+        target >= ids.length ||
+        ref
+            .read(questionnaireControllerProvider(widget.questionnaireId))
+            .submitting) {
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (MediaQuery.of(context).disableAnimations) {
+      pages.jumpToPage(target);
+    } else {
+      await pages.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Future<void> submit() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final provider = questionnaireControllerProvider(widget.questionnaireId);
+    final controller = ref.read(provider.notifier);
+    final saved = await controller.submit();
+    if (!mounted || ref.read(provider.notifier) != controller) return;
+    if (saved) {
+      await home();
+      return;
+    }
+    final errors = ref.read(provider).errors;
+    final target = ids.indexWhere(errors.containsKey);
+    if (target >= 0) {
+      setState(() => errorTarget = ids[target]);
+      await move(target);
     }
   }
 
@@ -64,20 +162,25 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
     final participant = ref.watch(participantContextProvider);
     final definition = state.definition;
     final visible = definition == null || participant == null
-        ? []
+        ? <QuestionDefinition>[]
         : visibleQuestions(definition, state.answers, participant);
+    reconcile(visible);
+    final readOnly = state.response != null;
     return PopScope(
       canPop: allowPop || (!state.dirty && !state.submitting),
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) leave(state);
       },
       child: AppScaffold(
-        title: 'Formulär',
+        title: definition?.summary.name ?? 'Formulär',
         withHorizontalPadding: false,
         leading: CupertinoButton(
           padding: EdgeInsets.zero,
           onPressed: state.submitting ? null : () => leave(state),
-          child: const Icon(CupertinoIcons.back, semanticLabel: 'Tillbaka'),
+          child: const Icon(
+            CupertinoIcons.xmark,
+            semanticLabel: 'Till checklistan',
+          ),
         ),
         child: state.loading
             ? const Center(child: CupertinoActivityIndicator())
@@ -90,103 +193,269 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
                     children: [
                       Text(state.error ?? 'Formuläret kunde inte läsas.'),
                       CupertinoButton(
-                        onPressed: () => controller.load(),
+                        onPressed: controller.load,
                         child: const Text('Försök igen'),
                       ),
                     ],
                   ),
                 ),
               )
-            : SingleChildScrollView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: const EdgeInsets.all(AppTheme.basePadding),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(definition.summary.name, style: AppTheme.sectionTitle),
-                    const SizedBox(height: 12),
-                    if (definition.summary.description.isNotEmpty)
-                      QuestionnaireRichText(definition.summary.description),
-                    Text(
-                      state.response != null
-                          ? 'Dina svar är inskickade. Tack för ditt deltagande.'
-                          : 'Du kan hoppa över frågor. Skicka in när du är klar.',
-                      style: AppTheme.bodyMuted,
+            : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
                     ),
-                    const SizedBox(height: 20),
-                    for (final q in visible)
-                      Padding(
-                        key: fields.putIfAbsent(q.id, GlobalKey.new),
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: QuestionCard(
-                          question: q,
-                          error: state.errors[q.id],
-                          child: QuestionField(
-                            key: ValueKey(q.id),
-                            question: q,
-                            value: state.answers[q.id],
-                            readOnly:
-                                state.response != null || state.submitting,
-                            onChanged: (value) => ref
-                                .read(provider.notifier)
-                                .setAnswer(q.id, value),
-                          ),
-                        ),
+                    child: Semantics(
+                      liveRegion: true,
+                      excludeSemantics: true,
+                      label: visible.isEmpty
+                          ? 'Inga frågor att visa'
+                          : 'Fråga ${index + 1} av ${visible.length}: ${visible[index].text}',
+                      child: Text(
+                        visible.isEmpty
+                            ? 'Inga frågor att visa'
+                            : 'Fråga ${index + 1} av ${visible.length}',
+                        style: AppTheme.bodyMuted,
                       ),
-                    if (state.error != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            state.error!,
-                            style: const TextStyle(
-                              color: CupertinoColors.systemRed,
+                    ),
+                  ),
+                  Expanded(
+                    child: visible.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                readOnly
+                                    ? 'Ditt tomma svar är sparat. Det finns inga frågor att visa.'
+                                    : 'Det finns inga frågor för dig i detta formulär. Du kan ändå skicka in ett tomt svar.',
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          )
+                        : AbsorbPointer(
+                            absorbing: state.submitting,
+                            child: PageView.builder(
+                              controller: pages,
+                              scrollDirection: Axis.vertical,
+                              physics: state.submitting
+                                  ? const NeverScrollableScrollPhysics()
+                                  : const ClampingScrollPhysics(),
+                              itemCount: visible.length,
+                              findChildIndexCallback: (key) =>
+                                  key is ValueKey<String> &&
+                                      ids.contains(key.value)
+                                  ? ids.indexOf(key.value)
+                                  : null,
+                              onPageChanged: (value) {
+                                if (reconciling) return;
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                setState(() => index = value);
+                              },
+                              itemBuilder: (context, i) {
+                                final q = visible[i];
+                                return _QuestionPage(
+                                  key: ValueKey(q.id),
+                                  active: i == index,
+                                  onBoundary: (direction) =>
+                                      move(i + direction),
+                                  revealError:
+                                      errorTarget == q.id &&
+                                      state.errors.containsKey(q.id),
+                                  description: i == 0
+                                      ? definition.summary.description
+                                      : '',
+                                  readOnly: readOnly,
+                                  question: q,
+                                  value: state.answers[q.id],
+                                  error: state.errors[q.id],
+                                  onChanged: (value) =>
+                                      controller.setAnswer(q.id, value),
+                                );
+                              },
                             ),
                           ),
+                  ),
+                  if (state.error != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          state.error!,
+                          style: const TextStyle(
+                            color: CupertinoColors.systemRed,
+                          ),
                         ),
                       ),
-                    if (state.response == null)
-                      CupertinoButton.filled(
-                        onPressed: state.submitting
-                            ? null
-                            : () async {
-                                FocusScope.of(context).unfocus();
-                                await controller.submit();
-                                if (!mounted ||
-                                    ref.read(provider.notifier) != controller) {
-                                  return;
-                                }
-                                final errors = ref.read(provider).errors;
-                                if (errors.isNotEmpty) {
-                                  await WidgetsBinding.instance.endOfFrame;
-                                  final target =
-                                      fields[errors.keys.first]?.currentContext;
-                                  if (target != null && target.mounted) {
-                                    await Scrollable.ensureVisible(
-                                      target,
-                                      duration: const Duration(
-                                        milliseconds: 250,
-                                      ),
-                                      alignment: 0.1,
-                                    );
-                                  }
-                                }
-                              },
-                        child: state.submitting
-                            ? const CupertinoActivityIndicator()
-                            : const Text('Skicka in svar'),
-                      ),
-                    if (state.response != null)
-                      CupertinoButton(
-                        onPressed: () => leave(state),
-                        child: const Text('Tillbaka till formulär'),
-                      ),
-                  ],
-                ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: CupertinoButton(
+                            onPressed: !state.submitting && index > 0
+                                ? () => move(index - 1)
+                                : null,
+                            child: const Text('Föregående'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: CupertinoButton.filled(
+                            onPressed: state.submitting
+                                ? null
+                                : index < visible.length - 1
+                                ? () => move(index + 1)
+                                : readOnly
+                                ? home
+                                : submit,
+                            child: state.submitting
+                                ? const CupertinoActivityIndicator()
+                                : Text(
+                                    index < visible.length - 1
+                                        ? 'Nästa'
+                                        : readOnly
+                                        ? 'Till checklistan'
+                                        : 'Skicka in svar',
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
       ),
     );
   }
+}
+
+/// The inner scroll owns long content. Overscroll at its boundary deliberately
+/// turns one page; selecting an answer never changes pages.
+class _QuestionPage extends StatefulWidget {
+  final QuestionDefinition question;
+  final Object? value;
+  final String description;
+  final String? error;
+  final bool active, readOnly, revealError;
+  final ValueChanged<Object?> onChanged;
+  final ValueChanged<int> onBoundary;
+  const _QuestionPage({
+    super.key,
+    required this.question,
+    required this.value,
+    required this.description,
+    required this.error,
+    required this.active,
+    required this.readOnly,
+    required this.revealError,
+    required this.onChanged,
+    required this.onBoundary,
+  });
+  @override
+  State<_QuestionPage> createState() => _QuestionPageState();
+}
+
+class _QuestionPageState extends State<_QuestionPage> {
+  final scroll = ScrollController();
+  final inputKey = GlobalKey();
+  double overscroll = 0;
+  bool turned = false;
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active && widget.revealError) revealInput();
+  }
+
+  void revealInput() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final target = inputKey.currentContext;
+      if (mounted && target != null) {
+        Scrollable.ensureVisible(target, alignment: 0.5);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _QuestionPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active &&
+        widget.revealError &&
+        (!oldWidget.active ||
+            !oldWidget.revealError ||
+            oldWidget.error != widget.error)) {
+      revealInput();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    excluding: !widget.active,
+    child: NotificationListener<ScrollNotification>(
+      onNotification: (event) {
+        if (event.depth != 0) return false;
+        if (event is ScrollStartNotification) {
+          overscroll = 0;
+          turned = false;
+        }
+        if (event is OverscrollNotification &&
+            event.dragDetails != null &&
+            widget.active &&
+            !turned) {
+          overscroll += event.overscroll;
+          if (overscroll.abs() >= 65) {
+            turned = true;
+            widget.onBoundary(overscroll > 0 ? 1 : -1);
+          }
+        }
+        return false;
+      },
+      child: SingleChildScrollView(
+        controller: scroll,
+        physics: const ClampingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.description.isNotEmpty) ...[
+              QuestionnaireRichText(widget.description),
+              const SizedBox(height: 16),
+            ],
+            Text(
+              widget.readOnly
+                  ? 'Dina sparade svar'
+                  : 'Du kan hoppa över frågor.',
+              style: AppTheme.bodyMuted,
+            ),
+            const SizedBox(height: 16),
+            QuestionCard(
+              question: widget.question,
+              error: widget.error,
+              child: KeyedSubtree(
+                key: inputKey,
+                child: QuestionField(
+                  question: widget.question,
+                  value: widget.value,
+                  readOnly: widget.readOnly,
+                  onChanged: widget.onChanged,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

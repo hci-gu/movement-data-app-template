@@ -4,6 +4,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:research_steps_template/questionnaires/controller.dart';
 import 'package:research_steps_template/questionnaires/models.dart';
 import 'package:research_steps_template/questionnaires/gateway.dart';
+import 'package:dio/dio.dart';
+import 'gateway_test.dart' show Transport, body;
 import 'fixtures.dart';
 
 void main() {
@@ -13,6 +15,35 @@ void main() {
         participant: const ParticipantContext('u', 'female'),
         questionnaireId: 'testfrm00000001',
       );
+  test(
+    'controller rejects invalid relationships through fake and HTTP gateways',
+    () async {
+      final invalid = fixtureJson();
+      final records = (invalid['expand']['questions'] as List)
+          .cast<Map<String, dynamic>>();
+      records.firstWhere((q) => q['id'] == qid(7))['dependency'] = qid(7);
+      records.firstWhere((q) => q['id'] == qid(7))['dependencyValue'] = 1;
+      final fake = FakeQuestionnaireGateway()
+        ..definition = QuestionnaireDefinition.fromJson(invalid);
+      final client = Dio(BaseOptions(baseUrl: 'http://example.test'))
+        ..httpClientAdapter = Transport((_) async => body(invalid));
+      final http = HttpQuestionnaireGateway(client);
+      // Parsing succeeds; cross-question validation has one owner in the controller.
+      expect((await http.load('testfrm00000001')).questions.length, 12);
+      for (final gateway in <QuestionnaireGateway>[fake, http]) {
+        final c = QuestionnaireController(
+          gateway: gateway,
+          participant: const ParticipantContext('u', 'female'),
+          questionnaireId: 'testfrm00000001',
+        );
+        await c.load();
+        expect(c.state.definition, isNull);
+        expect(c.state.error, contains('konfiguration'));
+        c.dispose();
+      }
+      client.close();
+    },
+  );
   test(
     'invalid input is retained and submission failure preserves draft',
     () async {

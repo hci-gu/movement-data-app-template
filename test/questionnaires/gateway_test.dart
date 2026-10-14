@@ -5,19 +5,22 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:research_steps_template/questionnaires/gateway.dart';
 import 'fixtures.dart';
-import 'package:research_steps_template/api.dart';
-import 'package:research_steps_template/pocketbase.dart';
-import 'package:pocketbase/pocketbase.dart';
+import 'package:research_steps_template/infrastructure/http_client.dart';
 
 class Transport implements HttpClientAdapter {
   final Future<ResponseBody> Function(RequestOptions) respond;
-  Transport(this.respond);
+  final Future<void> Function(Stream<Uint8List>?)? consume;
+  Transport(this.respond, {this.consume});
   @override
   Future<ResponseBody> fetch(
     RequestOptions options,
     Stream<Uint8List>? stream,
     Future<void>? cancel,
-  ) => respond(options);
+  ) async {
+    await consume?.call(stream);
+    return respond(options);
+  }
+
   @override
   void close({bool force = false}) {}
 }
@@ -99,13 +102,14 @@ void main() {
           },
         },
       };
-      final client = Dio(BaseOptions(baseUrl: 'http://example.test'))
-        ..httpClientAdapter = Transport((r) async => body(response, status));
       final reasons = <String>[];
-      final gateway = HttpQuestionnaireGateway(
-        client,
-        onAccessDenied: reasons.add,
-      );
+      final connection = SessionConnection()..token = 'current';
+      connection.onAccessDenied = (_, reason) async {
+        reasons.add(reason);
+      };
+      final client = createHttpClient('http://example.test', connection)
+        ..httpClientAdapter = Transport((r) async => body(response, status));
+      final gateway = HttpQuestionnaireGateway(client);
       await expectLater(
         gateway.submit('u', 'q', DateTime.now(), {}),
         throwsA(
@@ -129,37 +133,44 @@ void main() {
     },
   );
   test('an expired old request cannot invalidate a newer login', () async {
-    final api = Api();
-    final oldAdapter = api.api.httpClientAdapter;
+    final connection = SessionConnection()..token = 'old-token';
+    final client = createHttpClient('http://example.test', connection);
     final gate = Completer<ResponseBody>();
     final sent = Completer<void>();
-    api.init('http://example.test');
-    api.api.httpClientAdapter = Transport((request) async {
+    client.httpClientAdapter = Transport((request) async {
       if (!sent.isCompleted) sent.complete();
       return gate.future;
     });
     var invalidations = 0;
-    api.onSessionInvalid = () async {
+    connection.onAccessDenied = (_, _) async {
       invalidations++;
     };
-    addTearDown(() {
-      api.api.httpClientAdapter = oldAdapter;
-      api.onSessionInvalid = null;
-      pb.authStore.clear();
-    });
-    pb.authStore.save('old-token', RecordModel({'id': 'old'}));
-    final request = api.api.get('/api/collections/questionnaires/records');
+    addTearDown(() => client.close());
+    final request = client.get('/api/collections/questionnaires/records');
     final expectation = expectLater(request, throwsA(isA<DioException>()));
     await sent.future;
-    pb.authStore.save('new-token', RecordModel({'id': 'new'}));
+    connection.token = 'new-token';
     gate.complete(body({'message': 'expired'}, 401));
     await expectation;
     expect(invalidations, 0);
-    api.api.httpClientAdapter = Transport(
+    client.httpClientAdapter = Transport(
       (r) async => body({'message': 'expired'}, 401),
     );
     await expectLater(
-      api.api.get('/api/collections/questionnaires/records'),
+      client.get('/api/collections/questionnaires/records'),
+      throwsA(isA<DioException>()),
+    );
+    expect(invalidations, 1);
+    await expectLater(
+      client.get('/api/public', options: Options(extra: {'public': true})),
+      throwsA(isA<DioException>()),
+    );
+    expect(invalidations, 1);
+    await expectLater(
+      client.get(
+        '/api/old',
+        options: Options(headers: {'Authorization': 'Bearer old-token'}),
+      ),
       throwsA(isA<DioException>()),
     );
     expect(invalidations, 1);

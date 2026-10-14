@@ -275,7 +275,7 @@ func TestQuestionnaireDefinitionValidation(t *testing.T) {
 	if _, err := questionnaires.Load(app, "testfrm00000001"); err == nil {
 		t.Fatal("cycle accepted")
 	}
-	if questionnaires.Gender("") != "unknown" {
+	if Gender("") != "unknown" {
 		t.Fatal("unknown gender")
 	}
 }

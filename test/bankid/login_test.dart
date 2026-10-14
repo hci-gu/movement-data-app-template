@@ -1,9 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:research_steps_template/bankid/controller.dart';
-import 'package:research_steps_template/bankid/models.dart';
-import 'package:research_steps_template/screens/login.dart';
+import 'package:research_steps_template/enrollment/bankid/controller.dart';
+import 'package:research_steps_template/enrollment/bankid/models.dart';
+import 'package:research_steps_template/enrollment/login_screen.dart';
 import 'fakes.dart';
 
 void main() {

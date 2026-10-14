@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:research_steps_template/api.dart';
-import 'package:research_steps_template/state/auth.dart';
+import '../infrastructure/http_client.dart';
+import '../session/controller.dart';
 import 'gateway.dart';
 import 'models.dart';
 import 'rules.dart';
@@ -155,28 +155,25 @@ class QuestionnaireController extends StateNotifier<QuestionnaireState> {
 }
 
 final participantContextProvider = Provider<ParticipantContext?>((ref) {
-  final auth = ref.watch(authProvider);
-  return auth == null
+  final participant = ref.watch(
+    sessionProvider.select(
+      (s) => (
+        id: s?.participant.id,
+        gender: s?.participant.gender,
+        allowed: s?.participant.canParticipate == true,
+      ),
+    ),
+  );
+  return !participant.allowed || participant.id == null
       ? null
-      : ParticipantContext(
-          auth.record.id,
-          auth.record.getStringValue('gender', 'unknown'),
-        );
+      : ParticipantContext(participant.id!, participant.gender ?? 'unknown');
 });
 
 final questionnaireGatewayProvider = Provider<QuestionnaireGateway>((ref) {
-  final token = ref.watch(authProvider)?.token;
+  final token = ref.watch(sessionProvider.select((s) => s?.token));
   return HttpQuestionnaireGateway(
-    Api().api,
-    onAccessDenied: (reason) {
-      if (ref.read(authProvider)?.token != token) return;
-      if (reason == 'guardianRequired') {
-        ref.read(guardianRequiredProvider.notifier).state = true;
-      }
-      if (reason == 'consentRequired') {
-        unawaited(ref.read(authProvider.notifier).invalidate());
-      }
-    },
+    ref.watch(httpClientProvider),
+    sessionToken: token,
   );
 });
 

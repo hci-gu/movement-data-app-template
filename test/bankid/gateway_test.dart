@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:research_steps_template/bankid/gateway.dart';
-import 'package:research_steps_template/bankid/models.dart';
+import 'package:research_steps_template/enrollment/bankid/gateway.dart';
+import 'package:research_steps_template/enrollment/bankid/models.dart';
 
 class Transport implements HttpClientAdapter {
   int status = 200;

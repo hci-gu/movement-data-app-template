@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'models.dart';
-import 'rules.dart';
 
 abstract class QuestionnaireGateway {
   Future<List<QuestionnaireSummary>> list();
@@ -25,26 +24,13 @@ class AnswerValidationError implements Exception {
 
 class HttpQuestionnaireGateway implements QuestionnaireGateway {
   final Dio client;
-  final void Function(String reason)? onAccessDenied;
-  HttpQuestionnaireGateway(this.client, {this.onAccessDenied});
-
-  Future<Response<dynamic>> _request(
-    Future<Response<dynamic>> Function() request,
-  ) async {
-    try {
-      return await request();
-    } on DioException catch (e) {
-      if (e.response?.statusCode == 403) {
-        final body = e.response?.data;
-        final data = body is Map ? body['data'] : null;
-        final reason = data is Map ? data['reason'] : null;
-        if (reason is Map && reason['code'] is String) {
-          onAccessDenied?.call(reason['code'] as String);
-        }
-      }
-      rethrow;
-    }
-  }
+  final String? sessionToken;
+  HttpQuestionnaireGateway(this.client, {this.sessionToken});
+  Options get _options => Options(
+    headers: sessionToken == null
+        ? null
+        : {'Authorization': 'Bearer $sessionToken'},
+  );
 
   String _quoted(String value) =>
       '"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"';
@@ -56,16 +42,15 @@ class HttpQuestionnaireGateway implements QuestionnaireGateway {
     final records = <Map<String, dynamic>>[];
     var page = 1;
     while (true) {
-      final result = await _request(
-        () => client.get(
-          '/api/collections/$collection/records',
-          queryParameters: {
-            'filter': filter,
-            'page': page,
-            'perPage': 100,
-            'sort': 'created,id',
-          },
-        ),
+      final result = await client.get(
+        '/api/collections/$collection/records',
+        options: _options,
+        queryParameters: {
+          'filter': filter,
+          'page': page,
+          'perPage': 100,
+          'sort': 'created,id',
+        },
       );
       final data = jsonObject(result.data);
       final items = data['items'];
@@ -94,16 +79,14 @@ class HttpQuestionnaireGateway implements QuestionnaireGateway {
 
   @override
   Future<QuestionnaireDefinition> load(String id) async {
-    final result = await _request(
-      () => client.get(
-        '/api/collections/questionnaires/records/${Uri.encodeComponent(id)}',
-        queryParameters: {'expand': 'questions.options'},
-      ),
+    final result = await client.get(
+      '/api/collections/questionnaires/records/${Uri.encodeComponent(id)}',
+      options: _options,
+      queryParameters: {'expand': 'questions.options'},
     );
     final definition = QuestionnaireDefinition.fromJson(
       jsonObject(result.data),
     );
-    checkDefinition(definition);
     return definition;
   }
 
@@ -127,16 +110,15 @@ class HttpQuestionnaireGateway implements QuestionnaireGateway {
     Map<String, Object?> answers,
   ) async {
     try {
-      final result = await _request(
-        () => client.post(
-          '/api/collections/answers/records',
-          data: {
-            'user': participantId,
-            'questionnaire': questionnaireId,
-            'started': started.toUtc().toIso8601String(),
-            'answers': answers,
-          },
-        ),
+      final result = await client.post(
+        '/api/collections/answers/records',
+        options: _options,
+        data: {
+          'user': participantId,
+          'questionnaire': questionnaireId,
+          'started': started.toUtc().toIso8601String(),
+          'answers': answers,
+        },
       );
       return QuestionnaireResponse.fromJson(jsonObject(result.data));
     } on DioException catch (e) {

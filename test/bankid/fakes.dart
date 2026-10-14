@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:research_steps_template/bankid/controller.dart';
-import 'package:research_steps_template/bankid/gateway.dart';
-import 'package:research_steps_template/bankid/models.dart';
+import 'package:research_steps_template/enrollment/bankid/controller.dart';
+import 'package:research_steps_template/enrollment/bankid/gateway.dart';
+import 'package:research_steps_template/enrollment/bankid/models.dart';
 
 const document = ConsentDocument(
   id: 'version1',
