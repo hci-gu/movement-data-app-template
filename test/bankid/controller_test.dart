@@ -140,16 +140,24 @@ void main() {
     await cancellation;
     expect(controller.state.attempt!.status, 'cancelled');
   });
-  test('start over cancels live attempt and clears storage', () async {
-    await controller.begin();
-    controller.setReviewed(true);
-    await controller.start('qr');
-    await controller.reset();
-    expect(gateway.cancels, 1);
-    expect(store.value, isNull);
-    expect(controller.state.begun, true);
-    expect(controller.state.document!.id, document.id);
-  });
+  test(
+    'cancel then review clears the attempt and requires consent again',
+    () async {
+      await controller.begin();
+      controller.setReviewed(true);
+      await controller.start('qr');
+      await controller.cancel();
+      expect(controller.state.attempt!.status, 'cancelled');
+      await controller.reviewAgain();
+      expect(gateway.cancels, 1);
+      expect(store.value, isNull);
+      expect(controller.state.begun, true);
+      expect(controller.state.document!.id, document.id);
+      expect(controller.state.reviewed, false);
+      await controller.start('qr');
+      expect(gateway.starts, hasLength(1));
+    },
+  );
   test('expired credential cannot restore an attempt', () async {
     store.value = {'id': 'old', 'secret': 'secret', 'expiresAt': 1};
     await controller.restore();

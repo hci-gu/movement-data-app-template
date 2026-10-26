@@ -38,9 +38,14 @@ class GuardiansSheet extends HookConsumerWidget {
             style: AppTheme.body,
           ),
           const SizedBox(height: 20),
+          const Text('Number of guardians', style: AppTheme.body),
+          const SizedBox(height: 12),
           CupertinoSlidingSegmentedControl<int>(
             groupValue: count,
-            children: const {1: Text('One guardian'), 2: Text('Two guardians')},
+            children: const {
+              1: Text('1', semanticsLabel: 'One guardian'),
+              2: Text('2', semanticsLabel: 'Two guardians'),
+            },
             onValueChanged: (value) {
               if (!state.busy && state.status.count == 0 && value != null) {
                 chosenCount.value = value;
@@ -75,7 +80,8 @@ class GuardiansSheet extends HookConsumerWidget {
                             : 'Waiting for signature',
                         style: AppTheme.body,
                       ),
-                      if (!state.status.requests[i].signed)
+                      if (!state.status.requests[i].signed) ...[
+                        const SizedBox(height: 16),
                         CupertinoButton(
                           onPressed: () async {
                             await Clipboard.setData(
@@ -91,6 +97,7 @@ class GuardiansSheet extends HookConsumerWidget {
                                 : 'Copy signing link',
                           ),
                         ),
+                      ],
                     ] else ...[
                       CupertinoTextField(
                         controller: i == 0 ? first : second,
@@ -99,6 +106,7 @@ class GuardiansSheet extends HookConsumerWidget {
                         maxLength: 12,
                         enabled: !state.busy,
                       ),
+                      const SizedBox(height: 16),
                       CupertinoButton(
                         onPressed:
                             state.busy || i > state.status.requests.length
@@ -127,6 +135,7 @@ class GuardiansSheet extends HookConsumerWidget {
                 style: AppTheme.body,
               ),
             ),
+          const SizedBox(height: 16),
           CupertinoButton(
             onPressed: state.busy ? null : controller.refresh,
             child: state.busy

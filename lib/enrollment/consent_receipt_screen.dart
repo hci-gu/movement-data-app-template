@@ -13,7 +13,8 @@ class ConsentReceiptScreen extends ConsumerWidget {
     final receipt = state.receipt;
     return AppScaffold(
       title: 'Signed consent',
-      child: ListView(
+      child: AppScrollBody(
+        centerContent: receipt == null,
         children: [
           if (state.loading)
             const Padding(
@@ -21,7 +22,11 @@ class ConsentReceiptScreen extends ConsumerWidget {
               child: CupertinoActivityIndicator(),
             ),
           if (state.error != null) ...[
-            Text(state.error!, style: AppTheme.body),
+            Text(
+              state.error!,
+              textAlign: receipt == null ? TextAlign.center : TextAlign.start,
+              style: AppTheme.body,
+            ),
             if (receipt == null)
               CupertinoButton(
                 onPressed: controller.load,
@@ -42,6 +47,7 @@ class ConsentReceiptScreen extends ConsumerWidget {
               'Withdrawing consent stops future participation. Contact the study team about data already submitted.',
               style: AppTheme.body,
             ),
+            const SizedBox(height: 16),
             CupertinoButton(
               key: const ValueKey('withdraw-consent'),
               onPressed: state.withdrawing || receipt.status == 'withdrawn'

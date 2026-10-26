@@ -7,6 +7,7 @@ class AppTheme {
   static const Color sand = Color(0xFFF6EFE4);
   static const Color accent = Color(0xFFF28C48);
   static const Color border = Color(0x1F183247);
+  static const Color navigationBackground = CupertinoColors.white;
 
   static const double basePadding = 16;
 
@@ -43,7 +44,7 @@ class AppTheme {
   static CupertinoThemeData get cupertinoTheme => const CupertinoThemeData(
     primaryColor: ocean,
     scaffoldBackgroundColor: Color(0xFFF7FAFC),
-    barBackgroundColor: Color(0xFFF7FAFC),
+    barBackgroundColor: navigationBackground,
     textTheme: CupertinoTextThemeData(primaryColor: ink),
   );
 }
@@ -79,6 +80,9 @@ class AppScaffold extends StatelessWidget {
 
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
+        backgroundColor: AppTheme.navigationBackground,
+        automaticBackgroundVisibility: false,
+        border: const Border(bottom: BorderSide(color: AppTheme.border)),
         middle: title == null
             ? null
             : Text(
@@ -102,6 +106,39 @@ class AppScaffold extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Short status content stays centered below the navigation bar. Taller content
+/// grows naturally and scrolls, including with accessibility text sizes.
+class AppScrollBody extends StatelessWidget {
+  final List<Widget> children;
+  final bool centerContent;
+
+  const AppScrollBody({
+    super.key,
+    required this.children,
+    this.centerContent = false,
+  });
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: (constraints.maxHeight - 48).clamp(0, double.infinity),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: centerContent
+              ? MainAxisAlignment.center
+              : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      ),
+    ),
+  );
 }
 
 class AppCard extends StatelessWidget {

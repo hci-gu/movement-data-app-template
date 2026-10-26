@@ -116,7 +116,7 @@ String bankIdError(Object error) {
     return 'This BankID request has expired or the server restarted. Start a new request.';
   }
   if (error is BankIdUnavailable) {
-    return 'BankID is not available yet. Please try later.';
+    return 'BankID is currently unavailable. Please try again later.';
   }
   if (error is DioException) {
     final data = error.response?.data;

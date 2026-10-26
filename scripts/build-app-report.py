@@ -11,6 +11,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import platform
+import re
 import shutil
 import struct
 import subprocess
@@ -21,6 +22,61 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 WORK = ROOT / "build" / "app-report"
 PW_PACKAGE = "@playwright/cli@0.1.22"
+
+
+def content_strings(value: object, path: str = "content"):
+    """Inspect exported content, excluding legitimate input-format hints."""
+    if isinstance(value, str):
+        yield path, value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            if key != "placeholder":
+                yield from content_strings(item, f"{path}.{key}")
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            yield from content_strings(item, f"{path}[{i}]")
+
+
+def validate_copy(value: object, path: str, *, check_contacts: bool = True) -> None:
+    # Deliberately narrow: editorial quality, approved wording and actual service
+    # availability still require the workflow's source and deployment review.
+    markers = re.compile(
+        r"\b(?:TODO|TBD|FIXME|lorem ipsum|demonstration only|demonstration consent|test environment only)\b"
+        r"|\[(?:insert|replace|draft|utkast)\b[^\]]*\]"
+        r"|^\s*(?:draft|utkast)(?:\s*[:—-].*)?\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    contacts = re.compile(r"@[\w.-]*\bexample\.(?:org|com|net|invalid)\b", re.IGNORECASE)
+    for field, text in content_strings(value, path):
+        if markers.search(text) or (check_contacts and contacts.search(text)):
+            raise ValueError(f"Unfinished participant content in {field}. Replace draft markers/example contacts before study delivery.")
+
+
+def validate_study_source(source: dict) -> None:
+    if source.get("sourceKind") != "study":
+        raise ValueError("Study definitions/consent are missing. Seed the study questionnaire and pass --consent; --study never substitutes template content.")
+    consent = source.get("consent", {})
+    if not all(isinstance(consent.get(field), str) and consent[field].strip() for field in ("title", "text")):
+        raise ValueError("Study consent needs a final title and full text.")
+    validate_copy(source, "study source")
+
+
+def validate_study_manifest(manifest: dict) -> None:
+    content = manifest.get("studyContent", {})
+    for field in ("appName", "introduction", "supportEmail", "privacyContact"):
+        if not isinstance(content.get(field), str) or not content[field].strip():
+            raise ValueError(f"Study content is missing {field}; refresh the report captures after completing the app copy.")
+    if content["appName"] == "Research Steps" or content["introduction"] == (
+        "Contribute to research by answering the study questions and sharing your step history."
+    ):
+        raise ValueError("Replace the template study name and introduction before study delivery.")
+    validate_copy(content, "StudyContent")
+    for case in manifest["cases"]:
+        if not isinstance(case.get("participantText"), list):
+            raise ValueError(f"Missing participant copy capture for {case['id']}.")
+        # Synthetic participant input may contain example contacts. Study contacts
+        # are validated above; only draft markers are checked in rendered states.
+        validate_copy(case["participantText"], case["id"], check_contacts=False)
 
 
 def executable(name: str) -> str:
@@ -128,7 +184,7 @@ def render_report(manifest: dict, metadata: dict, captures: Path) -> str:
                 figure = f'<button class="shot" type="button" aria-label="Enlarge {esc(label)}"><img loading="lazy" decoding="async" src="data:image/png;base64,{image}" alt="{esc(label)}"></button>'
                 figures.append(figure)
             more = f'<details class="continuation"><summary>Continue below · {len(figures)-1} more captures</summary>{"".join(figures[1:])}</details>' if len(figures) > 1 else ""
-            cards.append(f'<article class="screen" data-search="{esc(group + " " + case["title"] + " " + case["id"])}"><div class="screen-heading"><h3>{esc(case["title"])}</h3><p>{esc(case["path"])}</p></div>{figures[0]}{more}<footer>{esc(case["id"])}</footer></article>')
+            cards.append(f'<article class="screen" data-search="{esc(group + " " + case["title"] + " " + case["id"])}"><div class="screen-heading"><h3>{esc(case["title"])}</h3></div>{figures[0]}{more}</article>')
         sections.append(f'<section class="group" id="{anchor}"><h2>{esc(group)} <span>{len(cases)} views</span></h2><div class="screens">{"".join(cards)}</div></section>')
     check_rows = []
     for check in metadata["checks"]:
@@ -157,7 +213,7 @@ def main() -> None:
     parser.add_argument("--font", help="Override Flutter SDK's Roboto font for captures")
     parser.add_argument("--prepare-only", action="store_true", help="Refresh demo content without tests, captures or report")
     parser.add_argument("--skip-builds", action="store_true", help="Generate a development report; mark native builds as not run")
-    parser.add_argument("--study", action="store_true", help="Require study content; reject the template demonstration fallback")
+    parser.add_argument("--study", action="store_true", help="Require final study content; reject template copy, example contacts and draft markers")
     args = parser.parse_args()
     WORK.mkdir(parents=True, exist_ok=True)
     checks: list[dict] = []
@@ -166,8 +222,8 @@ def main() -> None:
         export += ["--consent", str(Path(args.consent).expanduser().resolve()), "--title", args.consent_title]
     run(export, "export-study", checks, ROOT / "api")
     source = (WORK / "source" / "study.json").read_bytes()
-    if args.study and json.loads(source)["sourceKind"] != "study":
-        raise ValueError("Study definitions/consent are missing. Seed the study questionnaire and pass --consent; --study never substitutes template content.")
+    if args.study:
+        validate_study_source(json.loads(source))
     generated = "// Generated by scripts/build-app-report.py. Demo entry point only.\nconst generatedStudyBase64 =\n    '" + base64.b64encode(source).decode("ascii") + "';\n"
     (ROOT / "lib" / "demo" / "study_data.g.dart").write_text(generated, encoding="utf-8")
     if args.prepare_only:
@@ -187,6 +243,9 @@ def main() -> None:
     run([flutter, "test", "--reporter", "expanded", "--dart-define=REPORT_CAPTURE=true", f"--dart-define=REPORT_OUTPUT={capture_dir}", f"--dart-define=REPORT_FONT={font}"], "flutter-tests-and-captures", checks)
     manifest = json.loads((capture_dir / "manifest.json").read_text(encoding="utf-8"))
     validate_manifest(manifest, capture_dir)
+    if args.study:
+        validate_study_manifest(manifest)
+        checks.append({"name": "study-content", "status": "passed"})
     browser = guardian_captures(checks)
     manifest["cases"].extend(browser)
     manifest["requiredCases"].extend(c["id"] for c in browser)

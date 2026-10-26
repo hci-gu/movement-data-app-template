@@ -4,6 +4,12 @@ This is a concrete app to edit, not a workflow engine. Read the application sour
 material in `context/`, then change the relevant widgets, functions and backend
 rules directly. Add interfaces only for useful testing/platform boundaries.
 
+Read [design and copy guidelines](design-guidelines.md) before changing UI. Keep
+navigation bars visibly distinct, center standalone artwork and short status
+content, and leave space between explanations and actions. Use factual,
+source-backed copy and the [delivery readiness requirements](workflow.md#delivery-readiness);
+unfinished setup must never become an invented closed-study screen.
+
 The journey is **Introduction → BankID / consent → Home checklist → Done**.
 Home lists enabled questionnaires and step upload in either task order. Guardian
 approval is a conditional prerequisite on home. Information, guardian links and
@@ -23,6 +29,7 @@ step charts use optional sheets. The account menu includes consent and withdrawa
 | Study-specific eligibility | Named functions beside questionnaire rules | Enforce matching backend conditions; never trust client identity facts. |
 | Replace BankID | `lib/enrollment/`, `lib/session/` | Also change backend authentication/evidence, native links and deployment. |
 | Theme/formatting | `lib/ui/` | Keep feature-specific copy/formatting with its feature. |
+| Status layout and copy | `lib/ui/theme.dart`, relevant screen | `AppScrollBody` centers short status groups and scrolls tall content; follow [design guidelines](design-guidelines.md). |
 | Demo and delivery screenshots | `lib/demo/`, `test/report/` | Real app widgets and routes with isolated sample services; [report guide](app-report.md). Update cases with UI changes. |
 
 ## Ownership and invariants

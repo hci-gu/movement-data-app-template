@@ -2,7 +2,8 @@
 
 1. Read the supplied files in `context/` for the study purpose, participant groups,
    consent, questionnaire, data collection and branding. Record source locations,
-   agreed decisions and unresolved questions in the study's documentation.
+   agreed decisions and unresolved questions in the study's documentation. Read
+   [design and copy guidelines](design-guidelines.md) before adapting any screen.
 2. Set up the Go/PocketBase server in `api/` using
    [BankID setup and testing](bankid-testing.md). Configure the intended database,
    BankID environment, certificates, evidence keyring and return links.
@@ -17,6 +18,8 @@
    widgets live in `lib/ui/`; questionnaire inputs in `lib/questionnaires/widgets/`;
    study copy in `lib/study/`; flow composition in `lib/app/`; collection behavior
    in `lib/steps/`. Review native names, identifiers and permission descriptions.
+   Apply [delivery readiness](#delivery-readiness): final study content and working
+   enrollment are requirements for the generated app.
 6. **Create and install a study-specific app icon** when image generation tools
    are available. Normalize the artwork to 1024 × 1024 and run the checked-in
    resizing/installation helper for every Xcode icon slot, following
@@ -33,7 +36,34 @@
    the report with `--study` and the study consent source, inspect every screen
    and scroll continuation, fix rendering problems, and regenerate after the last
    change. Link the generated report in the final response. The report must use
-   the adapted app's content and record actual verification results.
+   the adapted app's content and record actual verification results. Review the
+   [visual acceptance criteria](design-guidelines.md#visual-acceptance), including
+   small screens and enlarged text.
+
+## Delivery readiness
+
+Treat a study adaptation as an app intended for deployment and testing against
+the configured backend. Complete consent publication, BankID configuration and
+the supported participant flow. Final participant screens must contain zero
+unfinished placeholders: replace template names, contacts, icons and permission
+copy; supply approved consent and source-backed questionnaire content.
+
+Do not add “study not open yet”, “coming soon”, draft banners, fake success,
+inactive registration or similar workarounds because inputs or setup are missing.
+Keep unresolved requirements and newly drafted text in developer/owner review
+documents. Resolve them with the supplied sources or study owner; if they remain
+unresolved, report the precise delivery blocker and do not claim production
+readiness. Do not invent approval or bypass consent/security enforcement.
+
+Actual network/BankID failures still need clear participant-facing error and retry
+states. Availability restrictions must come from an explicit study requirement
+and real state, never an agent's assumption about readiness.
+
+The report's `--study` mode rejects template source content, known default study
+copy, example contacts and explicit draft markers. It does not establish ethical
+approval, recognize all unfinished wording or verify a live backend. Review all
+copy and assets, verify `/api/consent/current` and a complete signing flow against
+the intended environment, and record physical-device results separately.
 
 ## Publish study consent
 
@@ -52,7 +82,8 @@ audiences; age comes from BankID, without a participant age-group selector.
 Extract the agreed consent into a UTF-8 text file, for example
 `deploy/consent/study-consent.txt`. Check extraction for missing paragraphs,
 broken characters and lost headings. If approved wording is missing or conflicting,
-ask the study owner to resolve it; clearly label newly drafted text for review.
+ask the study owner to resolve it; clearly label newly drafted text in owner-review
+documents and keep it out of participant-facing screens until resolved.
 `deploy/test-consent.txt` is for technical testing only and must not become the
 study's research consent.
 
@@ -123,7 +154,8 @@ icon that fits the study's subject, participants and supplied branding in
 `context/`. Save the selected original as `assets/icon/source.png`, at least
 1024 pixels on each side. Use a clear motif, an opaque background and square
 corners; keep important content away from the system's mask. If generation is
-unavailable, use supplied study artwork and report any remaining placeholder.
+unavailable, use final supplied study artwork. Missing artwork is an unresolved
+delivery requirement; do not call a study app with a placeholder icon complete.
 
 Follow [App icon generation and installation](app-icons.md) for Apple's current
 requirements, prompt guidance, dependencies, supported inputs and verification.

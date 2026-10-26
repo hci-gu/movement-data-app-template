@@ -15,6 +15,7 @@ import 'package:research_steps_template/demo/services.dart';
 import 'package:research_steps_template/enrollment/bankid/models.dart';
 import 'package:research_steps_template/questionnaires/widgets/question_card.dart';
 import 'package:research_steps_template/study/content.dart';
+import 'package:research_steps_template/ui/theme.dart';
 
 const capture = bool.fromEnvironment('REPORT_CAPTURE');
 const output = String.fromEnvironment(
@@ -187,9 +188,35 @@ void main() {
         if (preview.id == 'withdraw' || preview.state == 'question-discard') {
           expect(find.byType(CupertinoAlertDialog), findsOneWidget);
         }
+        if (preview.state.startsWith('bankid-')) {
+          final body = find.byType(AppScrollBody);
+          final card = find
+              .descendant(of: body, matching: find.byType(AppCard))
+              .first;
+          final lastAction = find
+              .descendant(of: body, matching: find.byType(CupertinoButton))
+              .last;
+          final groupCenter =
+              (tester.getTopLeft(card).dy +
+                  tester.getBottomLeft(lastAction).dy) /
+              2;
+          expect(groupCenter, closeTo(tester.getCenter(body).dy, 1));
+          expect(find.text('Start over'), findsNothing);
+        }
 
         final images = <String>[];
+        final participantText = <String>{};
         Future<void> snapshot() async {
+          for (final element in find.byType(RichText).evaluate()) {
+            // Input hints and synthetic typed answers are not authored app copy.
+            if (element.findAncestorWidgetOfExactType<CupertinoTextField>() !=
+                    null ||
+                element.findAncestorWidgetOfExactType<EditableText>() != null) {
+              continue;
+            }
+            final text = (element.widget as RichText).text.toPlainText().trim();
+            if (text.isNotEmpty) participantText.add(text);
+          }
           if (!capture) return;
           final name = '${preview.id}-${images.length + 1}.png';
           await tester.runAsync(() async {
@@ -210,11 +237,93 @@ void main() {
 
         await captureSections(tester, preview.id, snapshot);
         expect(runtime.blockedRequests, 0);
-        results.add({...preview.toJson(), 'images': images});
+        results.add({
+          ...preview.toJson(),
+          'images': images,
+          'participantText': participantText.toList(),
+        });
       } finally {
         await tester.pumpWidget(const SizedBox());
         runtime.dispose();
         debugDefaultTargetPlatformOverride = null;
+      }
+    });
+  }
+
+  for (final id in [
+    'introduction',
+    'consent',
+    'bankid-pending',
+    'bankid-qr',
+    'bankid-expired',
+    'bankid-cancelled',
+    'bankid-accepted',
+    'home',
+    'guardian-required',
+    'guardians-new',
+    'done',
+  ]) {
+    testWidgets('small phone with enlarged text: $id', (tester) async {
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1;
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.platformDispatcher.clearTextScaleFactorTestValue();
+      });
+      final runtime = DemoRuntime(study, cases.singleWhere((c) => c.id == id));
+      final captureKey = GlobalKey();
+      final previewKey = GlobalKey<DemoPreviewState>();
+      try {
+        await runtime.prepare();
+        await tester.pumpWidget(
+          DemoPreview(
+            key: previewKey,
+            runtime: runtime,
+            captureKey: captureKey,
+          ),
+        );
+        for (
+          var i = 0;
+          i < 100 && previewKey.currentState?.ready != true;
+          i++
+        ) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(previewKey.currentState?.ready, true);
+        expect(previewKey.currentState?.error, isNull);
+        await tester.pump(const Duration(milliseconds: 400));
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(tester.takeException(), isNull);
+        var section = 0;
+        await captureSections(tester, id, () async {
+          if (!capture) return;
+          await tester.runAsync(() async {
+            final boundary =
+                captureKey.currentContext!.findRenderObject()!
+                    as RenderRepaintBoundary;
+            final image = await boundary.toImage(pixelRatio: 2);
+            final bytes = await image.toByteData(
+              format: ui.ImageByteFormat.png,
+            );
+            final file = File('$output/layout-review/$id-${++section}.png');
+            await file.parent.create(recursive: true);
+            await file.writeAsBytes(bytes!.buffer.asUint8List());
+            image.dispose();
+          });
+        });
+        for (final scroll in scrolls(tester)) {
+          expect(
+            scroll.position.pixels,
+            closeTo(scroll.position.maxScrollExtent, 1),
+          );
+        }
+        expect(runtime.blockedRequests, 0);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        runtime.dispose();
       }
     });
   }
@@ -264,7 +373,10 @@ void main() {
         count++;
       });
       expect(count, greaterThan(2));
-      expect(find.text('Start over').hitTestable(), findsOneWidget);
+      expect(
+        find.text('Use BankID on another device').hitTestable(),
+        findsOneWidget,
+      );
       final positions = scrolls(tester).map((s) => s.position);
       expect(positions, isNotEmpty);
       for (final p in positions) {
@@ -314,6 +426,17 @@ void main() {
         File('$output/manifest.json').writeAsStringSync(
           const JsonEncoder.withIndent('  ').convert({
             'appName': StudyContent.appName,
+            'studyContent': {
+              'appName': StudyContent.appName,
+              'title': StudyContent.title,
+              'introduction': StudyContent.introduction,
+              'supportEmail': StudyContent.supportEmail,
+              'privacyContact': StudyContent.privacyContact,
+              'information': [
+                for (final section in StudyContent.information)
+                  [section.$1, section.$2],
+              ],
+            },
             'sourceKind': study.sourceKind,
             'viewport': {'width': 390, 'height': 844, 'pixelRatio': 2},
             'renderer':

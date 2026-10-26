@@ -7,6 +7,12 @@ and build/check results. It works offline and can be shared without its build
 directory. Generated reports are ignored by Git; link the actual file in the
 agent's final response.
 
+Each preview has a descriptive heading separated from its screenshot by a margin.
+Only screenshots have a rounded frame; routes and case IDs are not displayed
+around them. Scroll continuations use the same framing. Routes and IDs remain
+in the build manifest for coverage/debugging. Follow the
+[design guidelines](design-guidelines.md#visual-acceptance) when reviewing layout.
+
 ## Run the template
 
 Prerequisites: the repository's Flutter and Go toolchains, Python 3.10+, Node.js
@@ -46,7 +52,8 @@ normal backend startup. A small additional text-input example is demo-only.
    ```
 
    Omit `--consent` only if a migration already publishes the intended consent.
-   `--study` rejects the template fallback. A study with no questionnaire is
+   `--study` rejects the template fallback and explicit draft/test markers in
+   exported consent and definitions. A study with no questionnaire is
    supported when study consent is supplied. Preserve the source file outside
    the generated output; report text is a preview copy, not proof of approval.
 3. Update demo cases and sample services for added screens, overlays, data types,
@@ -61,7 +68,10 @@ normal backend startup. A small additional text-input example is demo-only.
 
 5. Open `app_report.html`. Inspect every screen, all long-content continuations,
    images of conditional questions and the browser pages. Check clipping, text,
-   blank states, correct data and completed animations. Fix problems and rerun.
+   blank states, correct data and completed animations. Check artwork alignment,
+   visible navigation bars, centered BankID states, guardian-button spacing and
+   factual final copy. Inspect small screens and enlarged text as described in
+   [manual review](manual-review.md). Fix problems and rerun.
    Verify search, image enlargement and offline loading. Link the report in the
    final response and state any unverified device-dependent behavior.
 
@@ -71,6 +81,22 @@ iOS simulator app on macOS. Missing captures, unreachable questions, rendering
 exceptions, unexpected HTTP calls and failed checks stop generation. The final
 HTML is replaced atomically only after success. A failed run leaves any previous
 report unchanged and explicitly reports that it is stale.
+
+A full `--study` run also checks the capture manifest's `studyContent` and
+`participantText`: known default study names/introduction, example contact emails,
+and explicit unfinished markers (TODO, TBD, FIXME, lorem ipsum, demonstration/test
+consent, `[insert …]`, `[draft]`, and standalone Draft/Utkast headings) fail delivery.
+Study metadata includes the introduction, information sections and contacts;
+rendered Flutter text is collected through every scroll continuation. Input hints
+and synthetic typed answers are excluded. Loading views may have no text.
+`--prepare-only` checks exported source content only; app copy is checked during
+the full capture run. Ordinary template reports remain explicitly synthetic.
+
+This is a narrow check for identifiable leftovers, not a language/approval or
+deployment validator. Review guardian HTML copy, assets, native metadata, every
+participant-facing string and actual enrollment availability. Do not remove real
+failure states or bypass safeguards to pass a report. Record unresolved inputs
+outside participant UI following [delivery readiness](workflow.md#delivery-readiness).
 
 For quicker iteration, `--skip-builds` omits the two native app builds and marks
 them **not run** in the report. This is a development report, not final build
@@ -127,6 +153,12 @@ are held for inspection. Long pages are captured in overlapping viewport section
 date wheels and questionnaire page navigation are excluded from that scrolling.
 Every required case needs at least one valid PNG. The builder clears only its own
 capture directory before running, so stale images cannot fill missing coverage.
+
+The capture suite also checks the introduction, consent, BankID states, checklist,
+guardian setup and Done at 320 × 568 with 2× text. It writes their overlapping
+review images to `build/app-report/captures/layout-review/`. Inspect these alongside
+the report; they are additional layout checks and are not included in its view
+counts. Normal BankID captures assert that the full status/action group is centered.
 
 The gallery uses real controllers with seeded state and fake gateways. Production
 routing and authorization are unchanged. HTTP is blocked as a backstop, storage is

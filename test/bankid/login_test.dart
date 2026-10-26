@@ -59,6 +59,31 @@ void main() {
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
+      expect(find.text('Start over'), findsNothing);
+      // The QR and its actions must stay reachable on a short phone with large
+      // text, even after changing size while the request is active.
+      tester.view.physicalSize = const Size(320, 568);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pump();
+      await tester.ensureVisible(find.text('Cancel request'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancel request').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.text('Cancel request'));
+      await tester.pumpAndSettle();
+      expect(gateway.cancels, 1);
+      expect(find.text('You cancelled the BankID request.'), findsOneWidget);
+      await tester.ensureVisible(find.text('Review consent and try again'));
+      await tester.tap(find.text('Review consent and try again'));
+      await tester.pumpAndSettle();
+      expect(store.value, isNull);
+      expect(
+        tester.widget<CupertinoSwitch>(find.byType(CupertinoSwitch)).value,
+        false,
+      );
+      expect(button('Sign with BankID').onPressed, isNull);
+      expect(tester.takeException(), isNull);
       await tester.pumpWidget(
         const SizedBox(),
       ); // Dispose provider and polling timer.

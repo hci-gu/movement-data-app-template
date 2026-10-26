@@ -8,6 +8,8 @@ This repository is a reusable research-app template. Its current implementation 
 
 Read the relevant creator-supplied application context in `context/` before implementing changes. Developer-maintained guides in `docs/` explain how to work with the template. Template copy, test consent, existing deployment values, and example configuration are starting points that must be reviewed for the intended application.
 
+Read [docs/design-guidelines.md](docs/design-guidelines.md) before adapting UI or copy. Deliver final, source-backed participant content and working enrollment: no invented slogans, unfinished placeholders or “study not open yet” screens added to cover incomplete setup. Record missing requirements in development/delivery documentation and resolve them before calling the app production-ready.
+
 ## Markdown resource index
 
 | Resource | Use it for |
@@ -18,6 +20,7 @@ Read the relevant creator-supplied application context in `context/` before impl
 | [docs/bankid-signing-plan.md](docs/bankid-signing-plan.md) | Current BankID architecture, collection relationships, participant and guardian signing, consent state, and signing-attempt persistence. |
 | [docs/questionnaire-data.md](docs/questionnaire-data.md) | Turning source questionnaire material into PocketBase definitions, option sets, answer settings, reproducible seed migrations, and verification. |
 | [docs/customization.md](docs/customization.md) | Source-editing map, module ownership, session isolation, questionnaire/upload invariants and storage compatibility. |
+| [docs/design-guidelines.md](docs/design-guidelines.md) | Required navigation, artwork alignment, status layouts, spacing, factual copy and visual acceptance criteria. |
 | [docs/manual-review.md](docs/manual-review.md) | Participant-flow and physical-device review checklist. |
 | [docs/app-report.md](docs/app-report.md) | Demo gallery, offline service fixtures, complete screenshot coverage and generating the final `app_report.html`. |
 | [docs/app-icons.md](docs/app-icons.md) | Generate study artwork, normalize a 1024px master, install all iOS icon sizes with the checked-in helper, and verify Xcode/App Store assets. |

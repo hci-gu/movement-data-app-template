@@ -1,6 +1,6 @@
 class StudyContent {
   static const appName = 'Research Steps';
-  static const title = 'Welcome to the study';
+  static const title = 'About the study';
   static const introduction =
       'Contribute to research by answering the study questions and sharing your step history.';
   static const supportEmail = 'research@example.org';

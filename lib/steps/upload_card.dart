@@ -73,7 +73,7 @@ class StepUploadCard extends ConsumerWidget {
                 state.error ??
                     'Read your step history from ${ref.watch(healthSourceNameProvider)}, review it, then upload when you are ready.',
             }, style: AppTheme.body),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             if (state.samples.isNotEmpty)
               CupertinoButton.filled(
                 onPressed: controller.upload,

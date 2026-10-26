@@ -304,21 +304,6 @@ class BankIdController extends StateNotifier<SigningState> {
     });
   }
 
-  Future<void> reset() => _run(() async {
-    if (state.attempt?.pending == true) {
-      final result = await gateway.cancel(state.attempt!);
-      if (result.accepted) {
-        await _update(result);
-        return;
-      }
-    }
-    _timer?.cancel();
-    _timer = null;
-    await store.clear();
-    final doc = await gateway.currentConsent();
-    if (!mounted) return;
-    state = SigningState(begun: true, document: doc, busy: true);
-  });
   @override
   void dispose() {
     _timer?.cancel();

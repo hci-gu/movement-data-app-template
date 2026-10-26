@@ -261,7 +261,7 @@ class DemoBankIdController extends BankIdController {
           : document,
       busy: kind == 'consent-loading',
       error: kind == 'consent-error'
-          ? 'BankID is not available yet. Please try later.'
+          ? 'Study consent could not be loaded. Please try again.'
           : null,
       attempt: order
           ? BankIdAttempt(

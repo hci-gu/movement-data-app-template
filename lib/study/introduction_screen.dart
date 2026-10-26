@@ -14,10 +14,16 @@ class IntroductionScreen extends StatelessWidget {
     child: ListView(
       padding: const EdgeInsets.symmetric(vertical: 32),
       children: [
-        const Icon(
-          CupertinoIcons.heart_circle,
-          size: 72,
-          color: AppTheme.ocean,
+        const Center(
+          child: SizedBox(
+            width: 112,
+            height: 112,
+            child: Icon(
+              CupertinoIcons.heart_circle,
+              size: 72,
+              color: AppTheme.ocean,
+            ),
+          ),
         ),
         const SizedBox(height: 24),
         const Text(StudyContent.title, style: AppTheme.heroTitle),
@@ -28,7 +34,7 @@ class IntroductionScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('A few simple steps', style: AppTheme.cardTitle),
+              Text('Taking part', style: AppTheme.cardTitle),
               SizedBox(height: 12),
               Text(
                 '1. Read the consent and sign with BankID.\n2. Complete the tasks on your checklist.\n3. Finish when everything is submitted.',
@@ -45,7 +51,7 @@ class IntroductionScreen extends StatelessWidget {
         CupertinoButton(
           key: const ValueKey('show-information'),
           onPressed: () => showAppSheet(context, const StudyInformationSheet()),
-          child: const Text('About the study'),
+          child: const Text('Study information and contact'),
         ),
       ],
     ),

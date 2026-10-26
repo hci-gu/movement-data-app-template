@@ -87,7 +87,7 @@ List<PreviewCase> previewCases(DemoStudy study) {
           'bankid-qr': 'BankID QR signing',
           'bankid-expired': 'Expired QR code',
           'bankid-cancelled': 'Cancelled signing',
-          'bankid-accepted': 'Signature accepted (before navigation)',
+          'bankid-accepted': 'Consent signed',
         }[state]!,
         'Joining the study',
         '/introduction/login',
@@ -100,7 +100,7 @@ List<PreviewCase> previewCases(DemoStudy study) {
         state,
         {
           'forms-loading': 'Loading questionnaires',
-          'forms-error': 'Questionnaire discovery failed',
+          'forms-error': 'Questionnaires unavailable',
           'forms-empty': 'No enabled questionnaires',
         }[state]!,
         'Checklist',

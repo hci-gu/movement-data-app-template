@@ -38,7 +38,11 @@ class LoginScreen extends HookConsumerWidget {
 
     return AppScaffold(
       title: document != null ? 'Study consent' : 'Join the study',
-      child: ListView(
+      child: AppScrollBody(
+        key: ValueKey(
+          order == null ? 'consent-${document?.id}' : 'bankid-${order.id}',
+        ),
+        centerContent: order != null || document == null,
         children: [
           if (state.error != null) ...[
             AppCard(
@@ -62,6 +66,7 @@ class LoginScreen extends HookConsumerWidget {
               'Signing the consent with BankID also creates your account or signs you in.',
               style: AppTheme.body,
             ),
+            const SizedBox(height: 16),
             CupertinoButton.filled(
               onPressed: disabled ? null : controller.begin,
               child: const Text('Load consent'),
@@ -193,14 +198,6 @@ class LoginScreen extends HookConsumerWidget {
               child: const Text('Load study consent'),
             ),
           ],
-          if (state.begun && !state.busy && order?.accepted != true) ...[
-            const SizedBox(height: 24),
-            CupertinoButton(
-              onPressed: controller.reset,
-              child: const Text('Start over'),
-            ),
-          ],
-          const SizedBox(height: 24),
         ],
       ),
     );

@@ -310,7 +310,7 @@ void main() {
         }
         expect(h.container.read(homeStateProvider).canFinish, true);
         await tap(tester, 'Finish');
-        expect(find.text('Thank you'), findsOneWidget);
+        expect(find.text('All tasks complete'), findsOneWidget);
         await h.preview(tester, 'done');
         await tap(tester, 'Review checklist');
         await tap(tester, 'Review saved answers');

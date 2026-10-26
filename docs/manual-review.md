@@ -10,15 +10,20 @@ The default remains `http://192.168.10.144:8090`. BankID return settings, native
 links and server configuration must agree; see [BankID testing](bankid-testing.md).
 
 - [ ] Fresh launch shows introduction, one Continue action and optional study information.
+- [ ] Apply [design and copy guidelines](design-guidelines.md): introduction artwork is centered in its size constraint; study, consent and checklist titles sit in a distinct navigation bar with a visible bottom separator before scrolling. Copy is factual and source-backed, without invented slogans or duplicated checklist headings.
+- [ ] Final study copy, contacts, assets and consent contain no unfinished placeholders. There are no invented “not open yet”, draft or coming-soon notices and no inactive enrollment workaround. Resolve missing inputs/configuration as delivery requirements; verify signing against the intended backend. Genuine runtime failures retain useful retry actions.
 - [ ] Generate/install the study icon using [the icon guide](app-icons.md), run `prepare-app-icons.py --check`, inspect the small exports and installed Home Screen icon, and verify the App Store icon in the release archive before upload.
 - [ ] Review consent, enable signing, cancel/retry and complete same-device BankID return. Confirmed signing opens home automatically. Also try QR signing.
+- [ ] Pending, QR, expired, cancelled and accepted BankID states center their entire content/action group below the navigation bar. Cancel request is the only cancellation action; no Start over appears. QR renewal and consent-review retry work, and retry requires reviewing consent again. Short Done and guardian browser states are centered too.
 - [ ] Enrollment has no self-reported age-group toggle or birth-date question for routing. BankID test identities below, at and above the study's age threshold receive the backend-derived consent/guardian requirements. Any age-specific document is selected using verified identity and matches the text actually signed.
 - [ ] Relaunch during BankID: enrollment resumes and verifies status; a link alone grants nothing.
 - [ ] Home lists each questionnaire directly beside step upload. No forms is valid after successful discovery; discovery errors show Retry and disable Finish.
 - [ ] For a guardian participant, tasks and questionnaire deep links are blocked. Generate/sign guardian links, refresh or resume, and confirm tasks unlock only after verification.
+- [ ] Guardian approval and comparable cards/sheets have at least 16 logical pixels between explanatory text and their action buttons.
 - [ ] Answer a question: after 0.5 seconds without another edit, a valid nonempty answer advances to the next visible question. Choice taps and confirmed dates advance; opening/cancelling the picker, cleared answers and invalid numbers do not. Typing another character restarts the delay. The last answer never submits automatically.
 - [ ] Swipe questions vertically and use Previous/Next to skip or revisit questions. Manual navigation, touching another control, leaving the form and backgrounding the app cancel pending automatic navigation. Saved responses never advance by themselves.
 - [ ] Short question content is vertically centered; long content scrolls within its page. Tap empty space at both ends of date/choice rows to check the full-width hit area. Check large text, keyboard, VoiceOver/TalkBack and reduced motion.
+- [ ] At 320 logical pixels wide and 2× text size, inspect introduction, consent, every BankID state, checklist, guardian sheet and Done. No clipped text or horizontal overflow; final actions and long-document endings remain reachable. Also check safe areas, navigation and keyboard on a physical iPhone.
 - [ ] Fill a conditional answer, change its parent and confirm hidden answers disappear and progress updates. Gender-specific questions use BankID identity facts.
 - [ ] Only the final page offers Submit. Invalid supplied answers return to their page. Network failure preserves draft/page for retry. Leaving a dirty form prompts; Previous does not.
 - [ ] Confirmed submission returns home. Completed rows open saved responses read-only.
@@ -26,8 +31,10 @@ links and server configuration must agree; see [BankID testing](bankid-testing.m
 - [ ] Complete questionnaire then steps; reverse the order with another test participant. Finish remains disabled until all tasks are confirmed.
 - [ ] Finish opens Done. Review returns home without a redirect loop; relaunch also opens home with scoped step completion restored.
 - [ ] Open information, receipt and sign-out from home and Done. Withdrawal signs out only after confirmed success.
+- [ ] An unavailable receipt centers both its message text and Retry action. Support and privacy email addresses are underlined links that open the mail app with the correct recipient.
 - [ ] Sign out during a slow read/request/upload and use another test participant. No old draft, result or completion marker may appear.
 - [ ] Generate `app_report.html` using [the report guide](app-report.md) after the last UI change. Review every image and long-content continuation, including all questionnaire branches, saved answers, sheets/dialogs and guardian browser pages. Test search, image enlargement and offline opening; include the report in the final delivery.
+- [ ] Report headings are outside screenshot frames with a clear margin. Rounded borders/shadows belong only to screenshots, including continuations. No route labels or case-ID footers resemble app UI.
 
 Use test identities/data. Actual BankID handoff, guardian signing and native health
 checks require device interaction; automated fake gateways do not substitute for

@@ -23,8 +23,6 @@ class HomeScreen extends ConsumerWidget {
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 24),
         children: [
-          const Text('One task at a time', style: AppTheme.sectionTitle),
-          const SizedBox(height: 12),
           const Text(
             'Complete these tasks in whichever order works for you.',
             style: AppTheme.body,
@@ -41,6 +39,7 @@ class HomeScreen extends ConsumerWidget {
                     'Your guardian must approve participation before you can begin the tasks.',
                     style: AppTheme.body,
                   ),
+                  const SizedBox(height: 16),
                   CupertinoButton.filled(
                     key: const ValueKey('show-guardians'),
                     onPressed: () async {
@@ -75,6 +74,7 @@ class HomeScreen extends ConsumerWidget {
                     const Text(
                       'Questionnaires could not be loaded. Please try again.',
                     ),
+                    const SizedBox(height: 16),
                     CupertinoButton(
                       onPressed: () =>
                           ref.invalidate(questionnaireListProvider),
@@ -119,7 +119,8 @@ class HomeScreen extends ConsumerWidget {
                                   'This questionnaire is not supported by this app. Please contact the study team.',
                                 ),
                               )
-                            else
+                            else ...[
+                              const SizedBox(height: 16),
                               CupertinoButton(
                                 onPressed: () async {
                                   await context.pushNamed(
@@ -136,6 +137,7 @@ class HomeScreen extends ConsumerWidget {
                                       : 'Open questionnaire',
                                 ),
                               ),
+                            ],
                           ],
                         ),
                       ),
