@@ -9,6 +9,12 @@ import 'controller.dart';
 import 'health_reader.dart';
 import 'step_preview_chart.dart';
 
+final openHealthSettingsProvider = Provider<Future<bool> Function()>(
+  (ref) => openAppSettings,
+);
+
+final healthSourceNameProvider = Provider<String>((ref) => healthSourceName);
+
 class StepUploadCard extends ConsumerWidget {
   const StepUploadCard({super.key});
   @override
@@ -65,7 +71,7 @@ class StepUploadCard extends ConsumerWidget {
                 '${formatInteger(state.summary.rawSampleCount)} samples across ${state.summary.daysWithData} days are ready to share.',
               _ =>
                 state.error ??
-                    'Read your step history from $healthSourceName, review it, then upload when you are ready.',
+                    'Read your step history from ${ref.watch(healthSourceNameProvider)}, review it, then upload when you are ready.',
             }, style: AppTheme.body),
             const SizedBox(height: 12),
             if (state.samples.isNotEmpty)
@@ -84,12 +90,13 @@ class StepUploadCard extends ConsumerWidget {
               ),
             if (state.phase == StepsPhase.denied)
               CupertinoButton(
-                onPressed: openAppSettings,
+                onPressed: ref.watch(openHealthSettingsProvider),
                 child: const Text('Open settings'),
               ),
           ],
           if (state.samples.isNotEmpty && !state.busy)
             CupertinoButton(
+              key: const ValueKey('show-step-details'),
               onPressed: () => showAppSheet(
                 context,
                 ParticipantSheet(child: _StepDetails(state)),

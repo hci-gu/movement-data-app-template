@@ -19,6 +19,8 @@ Read the relevant creator-supplied application context in `context/` before impl
 | [docs/questionnaire-data.md](docs/questionnaire-data.md) | Turning source questionnaire material into PocketBase definitions, option sets, answer settings, reproducible seed migrations, and verification. |
 | [docs/customization.md](docs/customization.md) | Source-editing map, module ownership, session isolation, questionnaire/upload invariants and storage compatibility. |
 | [docs/manual-review.md](docs/manual-review.md) | Participant-flow and physical-device review checklist. |
+| [docs/app-report.md](docs/app-report.md) | Demo gallery, offline service fixtures, complete screenshot coverage and generating the final `app_report.html`. |
+| [docs/app-icons.md](docs/app-icons.md) | Generate study artwork, normalize a 1024px master, install all iOS icon sizes with the checked-in helper, and verify Xcode/App Store assets. |
 | [health/README.md](health/README.md) | Bundled Health plugin setup, supported data types, permissions, and usage. Android guidance here describes plugin capabilities; the app's current focus is iOS/Apple Health. |
 | [health/CHANGELOG.md](health/CHANGELOG.md) | Bundled Health plugin version history. |
 | [ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md](ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md) | Replacing iOS launch-screen assets. |
@@ -33,6 +35,7 @@ Keep this index updated when adding or moving template documentation. Applicatio
 | `docs/` | Technical guides maintained by the template developers, including setup, architecture, and questionnaire-data instructions. |
 | `lib/main.dart`, `lib/app/` | Startup, lifecycle/links, routes, home checklist composition and Done. `environment.dart` owns build-time URLs. |
 | `lib/study/` | Introduction, optional information sheet, study copy and contacts. |
+| `lib/main_demo.dart`, `lib/demo/` | Separate demo entry point and shared preview cases; real screens with in-memory sample services. Never imported by production startup. |
 | `lib/ui/` | Shared theme, scaffold, card, sheet and formatting helpers. |
 | `lib/enrollment/` | BankID consent/signing, guardian sheet, consent receipt/withdrawal; network operations belong in gateways/controllers. |
 | `lib/questionnaires/` | Questionnaire models, rules, gateway, controller, and input widgets. |
@@ -47,7 +50,7 @@ Keep this index updated when adding or moving template documentation. Applicatio
 | `health/` | Local Flutter Health plugin used through a path dependency in `pubspec.yaml`. |
 | `ios/`, `android/`, `web/`, `assets/` | Platform projects and assets; validate platform support for the intended app. |
 | `deploy/`, `api/Dockerfile` | Deployment manifest, Flutter test configuration, test consent, and backend image build. |
-| `scripts/` | Study keyring generation and iOS BankID associated-domain configuration helpers. |
+| `scripts/` | Study keyring generation, iOS BankID associated-domain configuration, app icon preparation/validation and app report helpers. |
 | `test/`, Go `*_test.go` files under `api/` | Flutter feature/controller/gateway/routing/widget tests and backend enforcement tests. |
 
 The Flutter app uses Riverpod/hooks for state, GoRouter for navigation, Dio for API calls and typed sessions with secure storage. PocketBase runs on the backend; there is no global client/token mirror. Dependency and toolchain declarations live in `pubspec.yaml` / `pubspec.lock` and `api/go.mod` / `api/go.sum`.
@@ -82,5 +85,7 @@ Apply context to `lib/study/`, `lib/app/environment.dart`, the relevant features
 - From the repository root, install Flutter dependencies with `flutter pub get`. For Flutter changes, run `flutter analyze` and the relevant tests; the documented BankID suite is `flutter test test/bankid`.
 - From `api/`, build with `go build -o app .` and run backend checks with `go test ./...`.
 - For Python helper changes, use `python -m py_compile <changed-files>` for a syntax check.
+- When adapting study branding, use image generation when available, then run `scripts/prepare-app-icons.py` and its `--check` mode following [the icon guide](docs/app-icons.md). Include the source, 1024px master and complete Xcode icon set in the study changes.
 - Verify BankID handoff and HealthKit permissions on a physical iPhone before participant use. Report any checks that could not run and what remains unverified.
 - For integrated changes, run the complete `flutter test` suite, `flutter build apk --release`, and `flutter build ios --simulator`. Keep [manual review](docs/manual-review.md) current.
+- Finish every study-app adaptation with a freshly generated and visually reviewed `app_report.html`. Follow [the report guide](docs/app-report.md), use `--study` to reject template fallback content, cover every app screen/overlay and enabled questionnaire question, and link the report in the final response. Update preview cases alongside new UI. Do not claim complete coverage when required captures or checks failed, and report device-dependent checks separately.

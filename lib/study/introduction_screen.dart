@@ -43,6 +43,7 @@ class IntroductionScreen extends StatelessWidget {
           child: const Text('Continue with BankID'),
         ),
         CupertinoButton(
+          key: const ValueKey('show-information'),
           onPressed: () => showAppSheet(context, const StudyInformationSheet()),
           child: const Text('About the study'),
         ),

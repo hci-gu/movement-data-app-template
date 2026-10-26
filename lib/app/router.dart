@@ -45,6 +45,9 @@ class _RouterRefresh extends ChangeNotifier {
   void changed() => notifyListeners();
 }
 
+// Alternate entry points can choose a starting location; all redirects still run.
+final initialLocationProvider = Provider<String>((ref) => '/loading');
+
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = _RouterRefresh();
   ref.listen(startupProvider, (_, _) => refresh.changed());
@@ -58,7 +61,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     (_, _) => refresh.changed(),
   );
   final router = GoRouter(
-    initialLocation: '/loading',
+    initialLocation: ref.watch(initialLocationProvider),
     refreshListenable: refresh,
     redirect: (context, state) {
       final startup = ref.read(startupProvider);
@@ -102,8 +105,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/questionnaires/:id',
         name: 'questionnaire',
-        builder: (_, state) =>
-            QuestionnaireScreen(questionnaireId: state.pathParameters['id']!),
+        builder: (_, state) => QuestionnaireScreen(
+          questionnaireId: state.pathParameters['id']!,
+          initialQuestionId: state.uri.queryParameters['question'],
+        ),
       ),
       for (final path in [
         '/upload',

@@ -12,7 +12,12 @@ import 'widgets/question_field.dart';
 
 class QuestionnaireScreen extends ConsumerWidget {
   final String questionnaireId;
-  const QuestionnaireScreen({super.key, required this.questionnaireId});
+  final String? initialQuestionId;
+  const QuestionnaireScreen({
+    super.key,
+    required this.questionnaireId,
+    this.initialQuestionId,
+  });
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final provider = questionnaireControllerProvider(questionnaireId);
@@ -21,13 +26,19 @@ class QuestionnaireScreen extends ConsumerWidget {
     return _QuestionnairePages(
       key: ObjectKey(ref.read(provider.notifier)),
       questionnaireId: questionnaireId,
+      initialQuestionId: initialQuestionId,
     );
   }
 }
 
 class _QuestionnairePages extends ConsumerStatefulWidget {
   final String questionnaireId;
-  const _QuestionnairePages({super.key, required this.questionnaireId});
+  final String? initialQuestionId;
+  const _QuestionnairePages({
+    super.key,
+    required this.questionnaireId,
+    this.initialQuestionId,
+  });
   @override
   ConsumerState<_QuestionnairePages> createState() =>
       _QuestionnairePagesState();
@@ -145,7 +156,9 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages>
       return;
     }
     final current = ids.isEmpty ? null : ids[index.clamp(0, ids.length - 1)];
-    var target = current == null ? 0 : next.indexOf(current);
+    var target = current == null
+        ? next.indexOf(widget.initialQuestionId ?? '')
+        : next.indexOf(current);
     if (target < 0) {
       cancelAutoAdvance();
       target = 0;
@@ -230,6 +243,7 @@ class _QuestionnairePagesState extends ConsumerState<_QuestionnairePages>
         title: definition?.summary.name ?? 'Formulär',
         withHorizontalPadding: false,
         leading: CupertinoButton(
+          key: const ValueKey('questionnaire-close'),
           padding: EdgeInsets.zero,
           onPressed: state.submitting ? null : () => leave(state),
           child: const Icon(

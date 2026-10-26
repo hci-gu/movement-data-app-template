@@ -42,6 +42,7 @@ class HomeScreen extends ConsumerWidget {
                     style: AppTheme.body,
                   ),
                   CupertinoButton.filled(
+                    key: const ValueKey('show-guardians'),
                     onPressed: () async {
                       await showAppSheet(
                         context,
@@ -64,7 +65,7 @@ class HomeScreen extends ConsumerWidget {
                   children: [
                     CupertinoActivityIndicator(),
                     SizedBox(width: 12),
-                    Text('Loading questionnaires…'),
+                    Expanded(child: Text('Loading questionnaires…')),
                   ],
                 ),
               ),

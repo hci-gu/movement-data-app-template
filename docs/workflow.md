@@ -18,13 +18,22 @@
    study copy in `lib/study/`; flow composition in `lib/app/`; collection behavior
    in `lib/steps/`. Review native names, identifiers and permission descriptions.
 6. **Create and install a study-specific app icon** when image generation tools
-   are available, following [Study app icon](#study-app-icon) below.
+   are available. Normalize the artwork to 1024 × 1024 and run the checked-in
+   resizing/installation helper for every Xcode icon slot, following
+   [Study app icon](#study-app-icon) below. Validate the generated assets before
+   the final build.
 7. Install dependencies with `flutter pub get`, then run `flutter analyze` and
    `flutter test`. In `api/`, run `go test ./...` and `go build -o app .`.
    Build with `flutter build apk --release` and `flutter build ios --simulator`.
    The app's main target is iOS; complete [manual review](manual-review.md),
    including BankID handoff and HealthKit permission checks on a physical iPhone
    before participant use. Report any unavailable checks or setup steps.
+8. **End by showcasing the finished app in `app_report.html`.** Follow
+   [Demo gallery and app report](app-report.md): update preview cases, generate
+   the report with `--study` and the study consent source, inspect every screen
+   and scroll continuation, fix rendering problems, and regenerate after the last
+   change. Link the generated report in the final response. The report must use
+   the adapted app's content and record actual verification results.
 
 ## Publish study consent
 
@@ -111,33 +120,28 @@ the participant's age does not turn a signature into consent to a different text
 
 When an agent has access to image generation tools, use them to create a custom
 icon that fits the study's subject, participants and supplied branding in
-`context/`. Use a simple, recognizable motif, strong contrast and generous margins
-so it remains legible at small sizes. Follow any supplied brand requirements.
-Save the square master, for example as `assets/icon/app-icon.png`, at least
-1024 × 1024 pixels. Use an opaque background for the iOS assets and leave corners
-square so the operating system can apply its mask.
+`context/`. Save the selected original as `assets/icon/source.png`, at least
+1024 pixels on each side. Use a clear motif, an opaque background and square
+corners; keep important content away from the system's mask. If generation is
+unavailable, use supplied study artwork and report any remaining placeholder.
 
-Generate the artwork once, then resize/export consistent PNG variants into the
-platform projects. Inspect their actual manifests and asset catalogs: saving a
-master or replacing just one PNG does not install the app icon. For the current
-template, populate these destinations:
+Follow [App icon generation and installation](app-icons.md) for Apple's current
+requirements, prompt guidance, dependencies, supported inputs and verification.
+With Python 3.11+ and the icon dependency environment prepared, run:
 
-| Platform | Destination | Pixel sizes / mapping |
-| --- | --- | --- |
-| iOS | `ios/Runner/Assets.xcassets/AppIcon.appiconset/` | Each `Contents.json` slot needs a matching PNG at `size × scale`. Current iPhone slots: 40, 60, 29, 58, 87, 80, 120, 120 and 180 px. iPad slots: 20, 40, 29, 58, 40, 80, 76, 152 and 167 px. Marketing: 1024 px (`appstore.png`). |
-| Android | `android/app/src/main/res/mipmap-*/ic_launcher.png` | `mdpi`: 48 px, `hdpi`: 72 px, `xhdpi`: 96 px, `xxhdpi`: 144 px, `xxxhdpi`: 192 px. |
-| Web | `web/icons/` | Replace `Icon-192.png`, `Icon-512.png`, `Icon-maskable-192.png` and `Icon-maskable-512.png` at their named sizes; keep the motif inside the maskable safe area. |
-| Web favicon | `web/favicon.png` | 32 × 32 px; keep the reference in `web/index.html` consistent. |
+```sh
+build/icon-tools/bin/python scripts/prepare-app-icons.py assets/icon/source.png
+build/icon-tools/bin/python scripts/prepare-app-icons.py --check
+```
 
-Update every applicable iOS `Contents.json` filename, including the currently
-empty iPad slots. Reuse identical-size assets where suitable. Ensure Xcode's
-`ASSETCATALOG_COMPILER_APPICON_NAME` still selects `AppIcon`, Android's manifest
-still selects the generated launcher resource, and web manifest paths match.
-If adaptive/round Android icons or additional platforms are enabled, export and
-wire their required assets too; do not leave another launcher variant showing
-the template artwork.
+The helper saves the exact 1024 × 1024 RGB/sRGB master at
+`assets/icon/app-icon-1024.png`, generates 13 PNGs for all 19 iPhone/iPad/App Store
+entries, installs them into `ios/Runner/Assets.xcassets/AppIcon.appiconset/`, and
+updates `Contents.json`. It verifies dimensions, alpha removal, matching artwork
+and the project's `AppIcon` build setting. Cropping and flattening transparent
+artwork require explicit options described in the guide.
 
-Inspect the master and small exports, verify every referenced file's dimensions
-and the iOS PNGs' lack of an alpha channel, then build and inspect the installed
-launcher icon. If image generation is unavailable, use supplied study artwork
-when available and report any remaining placeholder explicitly.
+Inspect the master and small exports, build iOS, and inspect the installed icon.
+The App Store icon travels with the signed app build; validate the archive before
+upload. This helper prepares assets and does not publish the app. Also replace
+Android/web icon assets if those platforms are included in the study app.

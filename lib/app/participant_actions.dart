@@ -10,6 +10,7 @@ class ParticipantMenu extends ConsumerWidget {
   const ParticipantMenu({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) => CupertinoButton(
+    key: const ValueKey('participant-menu'),
     padding: EdgeInsets.zero,
     child: const Icon(
       CupertinoIcons.ellipsis_circle,

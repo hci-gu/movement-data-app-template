@@ -43,6 +43,7 @@ class ConsentReceiptScreen extends ConsumerWidget {
               style: AppTheme.body,
             ),
             CupertinoButton(
+              key: const ValueKey('withdraw-consent'),
               onPressed: state.withdrawing || receipt.status == 'withdrawn'
                   ? null
                   : () async {

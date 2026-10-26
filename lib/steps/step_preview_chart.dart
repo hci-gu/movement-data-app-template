@@ -46,11 +46,15 @@ class StepPreviewChart extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Text(
-                      '${entry.date.month}/${entry.date.day}',
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: CupertinoColors.systemGrey,
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '${entry.date.month}/${entry.date.day}',
+                        maxLines: 1,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: CupertinoColors.systemGrey,
+                        ),
                       ),
                     ),
                   ],

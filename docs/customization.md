@@ -23,6 +23,7 @@ step charts use optional sheets. The account menu includes consent and withdrawa
 | Study-specific eligibility | Named functions beside questionnaire rules | Enforce matching backend conditions; never trust client identity facts. |
 | Replace BankID | `lib/enrollment/`, `lib/session/` | Also change backend authentication/evidence, native links and deployment. |
 | Theme/formatting | `lib/ui/` | Keep feature-specific copy/formatting with its feature. |
+| Demo and delivery screenshots | `lib/demo/`, `test/report/` | Real app widgets and routes with isolated sample services; [report guide](app-report.md). Update cases with UI changes. |
 
 ## Ownership and invariants
 

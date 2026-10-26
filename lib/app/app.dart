@@ -69,7 +69,14 @@ class _AppState extends ConsumerState<App> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
+  Widget build(BuildContext context) => const AppView();
+}
+
+/// The real app UI, shared by native startup and the isolated demo entry point.
+class AppView extends ConsumerWidget {
+  const AppView({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => GestureDetector(
     onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
     child: CupertinoApp.router(
       debugShowCheckedModeBanner: false,

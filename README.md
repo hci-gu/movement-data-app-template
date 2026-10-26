@@ -12,8 +12,10 @@ The backend serves one study. The application has nine collections: `users`, `an
 - [Questionnaire definitions and responses](docs/questionnaire-data.md)
 - [Adapting the source and module ownership](docs/customization.md)
 - [Manual review checklist](docs/manual-review.md)
+- [Demo gallery and final app report](docs/app-report.md)
+- [Study app icon generation and Xcode installation](docs/app-icons.md)
 
-The baseline includes reusable questionnaire widgets and validation, with no study-specific questionnaire seeds. Create questionnaire definitions from the intended application's source material. Synthetic examples are used only by tests.
+The baseline includes reusable questionnaire widgets and validation, with no study-specific questionnaire seeds. Create questionnaire definitions from the intended application's source material. Synthetic examples are used only by tests and the separate demo entry point.
 
 The journey is Introduction → BankID/consent → Home checklist → Done. Questionnaires and step upload can be completed in either order. Questionnaires show one question per vertical page; saved responses can be reviewed from home. Customize the source directly using the guide above.
 
@@ -22,6 +24,18 @@ flutter pub get
 flutter run --dart-define=API_BASE_URL=https://your-api.example.org \
   --dart-define=BANKID_RETURN_URL=researchsteps://bankid/return
 ```
+
+Explore screens without a backend or real participant data, then generate the
+standalone screenshot report:
+
+```bash
+flutter run -t lib/main_demo.dart
+python3 scripts/build-app-report.py
+```
+
+Every study adaptation finishes with a reviewed `app_report.html`. See the
+[report guide](docs/app-report.md) for exporting actual study content, adding
+screen coverage and the browser/native build prerequisites.
 
 ```bash
 cd api

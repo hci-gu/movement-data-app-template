@@ -1,0 +1,2 @@
+# Icon preparation only; Python 3.11+. No Flutter/backend runtime dependency.
+Pillow==13.0.0

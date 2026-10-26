@@ -10,6 +10,7 @@ The default remains `http://192.168.10.144:8090`. BankID return settings, native
 links and server configuration must agree; see [BankID testing](bankid-testing.md).
 
 - [ ] Fresh launch shows introduction, one Continue action and optional study information.
+- [ ] Generate/install the study icon using [the icon guide](app-icons.md), run `prepare-app-icons.py --check`, inspect the small exports and installed Home Screen icon, and verify the App Store icon in the release archive before upload.
 - [ ] Review consent, enable signing, cancel/retry and complete same-device BankID return. Confirmed signing opens home automatically. Also try QR signing.
 - [ ] Enrollment has no self-reported age-group toggle or birth-date question for routing. BankID test identities below, at and above the study's age threshold receive the backend-derived consent/guardian requirements. Any age-specific document is selected using verified identity and matches the text actually signed.
 - [ ] Relaunch during BankID: enrollment resumes and verifies status; a link alone grants nothing.
@@ -26,7 +27,9 @@ links and server configuration must agree; see [BankID testing](bankid-testing.m
 - [ ] Finish opens Done. Review returns home without a redirect loop; relaunch also opens home with scoped step completion restored.
 - [ ] Open information, receipt and sign-out from home and Done. Withdrawal signs out only after confirmed success.
 - [ ] Sign out during a slow read/request/upload and use another test participant. No old draft, result or completion marker may appear.
+- [ ] Generate `app_report.html` using [the report guide](app-report.md) after the last UI change. Review every image and long-content continuation, including all questionnaire branches, saved answers, sheets/dialogs and guardian browser pages. Test search, image enlargement and offline opening; include the report in the final delivery.
 
 Use test identities/data. Actual BankID handoff, guardian signing and native health
 checks require device interaction; automated fake gateways do not substitute for
-them. Verification evidence is recorded at the end of `implementation-plan.md`.
+them. The generated app report records automated verification results; record
+physical-device results separately and keep remaining checks explicit.

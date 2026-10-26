@@ -32,6 +32,9 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/app_report.html
+/app_report.html.tmp
+/output/playwright/
 
 # Symbolication related
 app.*.symbols

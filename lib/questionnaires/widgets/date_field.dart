@@ -90,6 +90,7 @@ class DateQuestionField extends StatelessWidget {
       Semantics(
         label: question.text,
         child: CupertinoButton(
+          key: ValueKey('date-${question.id}'),
           alignment: Alignment.centerLeft,
           padding: const EdgeInsets.symmetric(vertical: 12),
           onPressed: readOnly ? null : () => _pick(context),
