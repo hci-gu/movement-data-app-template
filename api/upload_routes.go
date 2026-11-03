@@ -17,7 +17,7 @@ import (
 
 func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requireSession, requireConsent func(*core.RequestEvent) error) {
 	r.GET("/test", func(c *core.RequestEvent) error {
-		return c.String(http.StatusOK, "Research steps template API is running")
+		return c.String(http.StatusOK, "Skolios och rörelse API is running")
 	})
 
 	r.POST("/data", func(c *core.RequestEvent) error {
@@ -40,6 +40,9 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		}
 		if len(reqBody.Data) == 0 {
 			return httpError(http.StatusBadRequest, "No data points provided")
+		}
+		if err := validateMovement(app, userID, reqBody.Data, time.Now()); err != nil {
+			return err
 		}
 
 		dataHash, err := hashDataItems(reqBody.Data)

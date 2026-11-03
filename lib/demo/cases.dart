@@ -61,7 +61,7 @@ List<PreviewCase> previewCases(DemoStudy study) {
     ),
     const PreviewCase(
       'information',
-      'Study information',
+      'Om studien',
       'Joining the study',
       '/introduction',
       signedIn: false,
@@ -87,7 +87,7 @@ List<PreviewCase> previewCases(DemoStudy study) {
           'bankid-qr': 'BankID QR signing',
           'bankid-expired': 'Expired QR code',
           'bankid-cancelled': 'Cancelled signing',
-          'bankid-accepted': 'Consent signed',
+          'bankid-accepted': 'Samtycket är signerat',
         }[state]!,
         'Joining the study',
         '/introduction/login',
@@ -218,12 +218,22 @@ List<PreviewCase> previewCases(DemoStudy study) {
     ),
     const PreviewCase(
       'done',
-      'All tasks complete',
+      'Allt är inskickat',
       'Completion',
       '/done',
       state: 'done',
     ),
   ];
+  cases.add(
+    const PreviewCase(
+      'consent-information',
+      'Study information before signing',
+      'Enrollment',
+      '/introduction/login',
+      signedIn: false,
+      actions: ['consent-information'],
+    ),
+  );
   final pickerTypes = <bool>{};
   for (final form in study.forms) {
     final route = '/questionnaires/${form.summary.id}';

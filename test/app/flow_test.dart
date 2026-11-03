@@ -264,8 +264,8 @@ void main() {
         final h = Harness();
         await h.mount(tester);
         await h.preview(tester, 'introduction');
-        expect(find.text('Continue with BankID'), findsOneWidget);
-        await tap(tester, 'Continue with BankID');
+        expect(find.text('Läs samtycke och fortsätt'), findsOneWidget);
+        await tap(tester, 'Läs samtycke och fortsätt');
         expect(find.text(bankid.document.text), findsOneWidget);
         await tester.tap(find.byType(CupertinoSwitch));
         await tester.pumpAndSettle();
@@ -277,24 +277,24 @@ void main() {
           document: bankid.document,
           grant: grant(),
         );
-        await tap(tester, 'Sign with BankID');
-        expect(find.text('Your checklist'), findsOneWidget);
+        await tap(tester, 'Signera med BankID');
+        expect(find.text('Din checklista'), findsOneWidget);
         await h.preview(tester, 'home');
         expect(h.reader.reads, 0);
         Future<void> upload() async {
-          await tap(tester, 'Read step history');
-          await tap(tester, 'Upload step data');
+          await tap(tester, 'Hämta rörelsedata');
+          await tap(tester, 'Skicka rörelsedata');
         }
 
         Future<void> questionnaire() async {
-          await tap(tester, 'Open questionnaire');
+          await tap(tester, 'Svara på frågor');
           await h.preview(tester, 'questionnaire');
           await tester.enterText(
             find.byType(CupertinoTextField),
             'Saved answer',
           );
           await tap(tester, 'Skicka in svar');
-          expect(find.text('Your checklist'), findsOneWidget);
+          expect(find.text('Din checklista'), findsOneWidget);
         }
 
         if (stepsFirst) {
@@ -309,11 +309,11 @@ void main() {
           await upload();
         }
         expect(h.container.read(homeStateProvider).canFinish, true);
-        await tap(tester, 'Finish');
-        expect(find.text('All tasks complete'), findsOneWidget);
+        await tap(tester, 'Avsluta');
+        expect(find.text('Allt är inskickat'), findsOneWidget);
         await h.preview(tester, 'done');
-        await tap(tester, 'Review checklist');
-        await tap(tester, 'Review saved answers');
+        await tap(tester, 'Visa checklistan');
+        await tap(tester, 'Visa sparade svar');
         expect(
           tester
               .widget<CupertinoTextField>(find.byType(CupertinoTextField))
@@ -322,7 +322,7 @@ void main() {
         );
         await tap(tester, 'Till checklistan');
         expect(
-          find.text('Your checklist'),
+          find.text('Din checklista'),
           findsOneWidget,
           reason:
               '${h.container.read(routerProvider).routeInformationProvider.value.uri}: ${tester.widgetList<Text>(find.byType(Text)).map((w) => w.data).toList()}',
@@ -338,12 +338,12 @@ void main() {
       h.sessions.value = grant(guardian: true);
       h.sessionApi.participant = h.sessionApi.participant.requiringGuardian();
       await h.mount(tester);
-      expect(find.text('Guardian approval'), findsOneWidget);
+      expect(find.text('Vårdnadshavares samtycke'), findsOneWidget);
       expect(h.forms.lists, 0);
       expect(h.reader.reads, 0);
       h.container.read(routerProvider).go('/questionnaires/testfrm00000001');
       await tester.pumpAndSettle();
-      expect(find.text('Your checklist'), findsOneWidget);
+      expect(find.text('Din checklista'), findsOneWidget);
       expect(h.forms.lists, 0);
       await h.close(tester);
     },
@@ -354,7 +354,7 @@ void main() {
       final h = Harness();
       h.attempts.value = bankid.pending.toStorage();
       await h.mount(tester);
-      expect(find.text('Continue with BankID'), findsOneWidget);
+      expect(find.text('Fortsätt med BankID'), findsOneWidget);
       expect(h.container.read(sessionProvider), isNull);
       expect(h.signingApi.statuses, greaterThan(0));
       await h.close(tester);
@@ -372,13 +372,13 @@ void main() {
       h.forms.fail = true;
       h.container.invalidate(questionnaireListProvider);
       await tester.pumpAndSettle();
-      expect(find.text('Retry questionnaires'), findsOneWidget);
+      expect(find.text('Hämta formulär igen'), findsOneWidget);
       expect(h.container.read(homeStateProvider).canFinish, false);
       h.container.read(routerProvider).goNamed('done');
       await tester.pumpAndSettle();
-      expect(find.text('Your checklist'), findsOneWidget);
+      expect(find.text('Din checklista'), findsOneWidget);
       h.forms.fail = false;
-      await tap(tester, 'Retry questionnaires');
+      await tap(tester, 'Hämta formulär igen');
       expect(h.container.read(homeStateProvider).canFinish, true);
       await h.close(tester);
     },
@@ -394,14 +394,14 @@ void main() {
       await steps.read();
       await tester.pumpAndSettle();
       expect(h.container.read(homeStateProvider).canFinish, false);
-      await tap(tester, 'Open questionnaire');
+      await tap(tester, 'Svara på frågor');
       await tester.tap(find.byIcon(CupertinoIcons.xmark));
       await tester.pumpAndSettle();
       h.reader.result = const HealthRead(true, []);
       await steps.read();
       await tester.pumpAndSettle();
       expect(h.container.read(homeStateProvider).canFinish, false);
-      await tap(tester, 'Open questionnaire');
+      await tap(tester, 'Svara på frågor');
       await tester.tap(find.byIcon(CupertinoIcons.xmark));
       await tester.pumpAndSettle();
       h.reader.result = Reader().result;
@@ -410,7 +410,7 @@ void main() {
       await steps.upload();
       await tester.pumpAndSettle();
       expect(h.container.read(homeStateProvider).canFinish, false);
-      await tap(tester, 'Open questionnaire');
+      await tap(tester, 'Svara på frågor');
       expect(find.text('Your answer'), findsOneWidget);
       await h.close(tester);
     },

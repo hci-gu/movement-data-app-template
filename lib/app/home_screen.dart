@@ -17,14 +17,14 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(homeStateProvider);
     return AppScaffold(
-      title: 'Your checklist',
+      title: 'Din checklista',
       noBackButton: true,
       trailing: const ParticipantMenu(),
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 24),
         children: [
           const Text(
-            'Complete these tasks in whichever order works for you.',
+            'Börja med frågorna om din behandling. Granska sedan din rörelsedata innan du skickar den.',
             style: AppTheme.body,
           ),
           const SizedBox(height: 24),
@@ -33,10 +33,13 @@ class HomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('Guardian approval', style: AppTheme.cardTitle),
+                  const Text(
+                    'Vårdnadshavares samtycke',
+                    style: AppTheme.cardTitle,
+                  ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Your guardian must approve participation before you can begin the tasks.',
+                    'Om du är under 15 år behöver samtliga vårdnadshavare samtycka innan du kan fortsätta. Du kan tacka nej även om de tackar ja.',
                     style: AppTheme.body,
                   ),
                   const SizedBox(height: 16),
@@ -51,7 +54,7 @@ class HomeScreen extends ConsumerWidget {
                         await ref.read(sessionProvider.notifier).refresh();
                       }
                     },
-                    child: const Text('Manage guardian approval'),
+                    child: const Text('Bjud in vårdnadshavare'),
                   ),
                 ],
               ),
@@ -64,21 +67,19 @@ class HomeScreen extends ConsumerWidget {
                   children: [
                     CupertinoActivityIndicator(),
                     SizedBox(width: 12),
-                    Expanded(child: Text('Loading questionnaires…')),
+                    Expanded(child: Text('Hämtar formulär…')),
                   ],
                 ),
               ),
               error: (_, _) => AppCard(
                 child: Column(
                   children: [
-                    const Text(
-                      'Questionnaires could not be loaded. Please try again.',
-                    ),
+                    const Text('Formulären kunde inte hämtas. Försök igen.'),
                     const SizedBox(height: 16),
                     CupertinoButton(
                       onPressed: () =>
                           ref.invalidate(questionnaireListProvider),
-                      child: const Text('Retry questionnaires'),
+                      child: const Text('Hämta formulär igen'),
                     ),
                   ],
                 ),
@@ -116,7 +117,7 @@ class HomeScreen extends ConsumerWidget {
                               const Padding(
                                 padding: EdgeInsets.only(top: 12),
                                 child: Text(
-                                  'This questionnaire is not supported by this app. Please contact the study team.',
+                                  'Formuläret kan inte visas i appen. Kontakta forskargruppen.',
                                 ),
                               )
                             else ...[
@@ -133,8 +134,8 @@ class HomeScreen extends ConsumerWidget {
                                 },
                                 child: Text(
                                   entry.completed
-                                      ? 'Review saved answers'
-                                      : 'Open questionnaire',
+                                      ? 'Visa sparade svar'
+                                      : 'Svara på frågor',
                                 ),
                               ),
                             ],
@@ -157,13 +158,13 @@ class HomeScreen extends ConsumerWidget {
                     }
                   }
                 : null,
-            child: const Text('Finish'),
+            child: const Text('Avsluta'),
           ),
           const SizedBox(height: 12),
           Text(
             state.canFinish
-                ? 'All tasks are complete. You can finish or review your answers.'
-                : 'Finish becomes available when every task is complete.',
+                ? 'Alla uppgifter är klara. Du kan avsluta eller läsa dina svar.'
+                : 'Du kan avsluta när frågorna och rörelsedatan är inskickade.',
             style: AppTheme.bodyMuted,
           ),
         ],

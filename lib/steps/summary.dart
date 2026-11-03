@@ -32,6 +32,7 @@ class StepImportSummary {
     final sources = <String>{};
 
     for (final entry in data) {
+      if (entry.type != HealthDataType.STEPS) continue;
       final json = entry.value.toJson();
       final rawValue = json['numericValue'];
       final numericValue = switch (rawValue) {

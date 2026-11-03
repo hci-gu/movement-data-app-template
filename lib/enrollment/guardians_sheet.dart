@@ -13,38 +13,38 @@ class GuardiansSheet extends HookConsumerWidget {
     final controller = ref.read(guardiansProvider.notifier);
     final first = useTextEditingController(),
         second = useTextEditingController();
-    final chosenCount = useState(1);
+    final chosenCount = useState(2);
     final copied = useState<int?>(null);
     final count = state.status.count == 0
         ? chosenCount.value
         : state.status.count;
     return AppScaffold(
-      title: 'Guardian permission',
+      title: 'Vårdnadshavares samtycke',
       leading: CupertinoButton(
         padding: EdgeInsets.zero,
         onPressed: () => Navigator.pop(context),
-        child: const Text('Close'),
+        child: const Text('Stäng'),
       ),
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 20),
         children: [
           const Text(
-            'Ask a legal guardian to sign',
+            'Be alla vårdnadshavare signera',
             style: AppTheme.sectionTitle,
           ),
           const SizedBox(height: 12),
           const Text(
-            'Guardian signatures are needed before you can complete the study tasks. Generate a link for each guardian and share it with that person.',
+            'Samtliga vårdnadshavare behöver samtycka. Skapa en länk för varje vårdnadshavare och dela den med den personen. Du kan tacka nej även om vårdnadshavarna tackar ja.',
             style: AppTheme.body,
           ),
           const SizedBox(height: 20),
-          const Text('Number of guardians', style: AppTheme.body),
+          const Text('Antal vårdnadshavare', style: AppTheme.body),
           const SizedBox(height: 12),
           CupertinoSlidingSegmentedControl<int>(
             groupValue: count,
             children: const {
-              1: Text('1', semanticsLabel: 'One guardian'),
-              2: Text('2', semanticsLabel: 'Two guardians'),
+              1: Text('1', semanticsLabel: 'En vårdnadshavare'),
+              2: Text('2', semanticsLabel: 'Två vårdnadshavare'),
             },
             onValueChanged: (value) {
               if (!state.busy && state.status.count == 0 && value != null) {
@@ -56,7 +56,7 @@ class GuardiansSheet extends HookConsumerWidget {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text(
-                'The number is fixed after the first link is created.',
+                'Antalet låses när den första länken skapas.',
                 style: AppTheme.bodyMuted,
               ),
             ),
@@ -67,17 +67,17 @@ class GuardiansSheet extends HookConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text('Guardian ${i + 1}', style: AppTheme.cardTitle),
+                    Text('Vårdnadshavare ${i + 1}', style: AppTheme.cardTitle),
                     const SizedBox(height: 12),
                     if (i < state.status.requests.length) ...[
                       Text(
-                        'Personal number ending ${state.status.requests[i].identitySuffix}',
+                        'Personnummer som slutar på ${state.status.requests[i].identitySuffix}',
                         style: AppTheme.bodyMuted,
                       ),
                       Text(
                         state.status.requests[i].signed
-                            ? 'Signed and verified'
-                            : 'Waiting for signature',
+                            ? 'Signerat och verifierat'
+                            : 'Väntar på signering',
                         style: AppTheme.body,
                       ),
                       if (!state.status.requests[i].signed) ...[
@@ -93,8 +93,8 @@ class GuardiansSheet extends HookConsumerWidget {
                           },
                           child: Text(
                             copied.value == i
-                                ? 'Link copied'
-                                : 'Copy signing link',
+                                ? 'Länken är kopierad'
+                                : 'Kopiera signeringslänk',
                           ),
                         ),
                       ],
@@ -115,7 +115,7 @@ class GuardiansSheet extends HookConsumerWidget {
                                 i == 0 ? first.text : second.text,
                                 count,
                               ),
-                        child: const Text('Generate signing link'),
+                        child: const Text('Skapa signeringslänk'),
                       ),
                     ],
                   ],
@@ -131,7 +131,7 @@ class GuardiansSheet extends HookConsumerWidget {
             const Padding(
               padding: EdgeInsets.only(top: 16),
               child: Text(
-                'Permission confirmed. You can return to your checklist.',
+                'Samtycket är bekräftat. Du kan återgå till checklistan.',
                 style: AppTheme.body,
               ),
             ),
@@ -140,7 +140,7 @@ class GuardiansSheet extends HookConsumerWidget {
             onPressed: state.busy ? null : controller.refresh,
             child: state.busy
                 ? const CupertinoActivityIndicator()
-                : const Text('Refresh signature status'),
+                : const Text('Kontrollera signeringar'),
           ),
         ],
       ),

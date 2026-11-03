@@ -31,6 +31,11 @@ func (c Config) endUserIP(r *http.Request) (string, error) {
 	if !c.trusted(addr) {
 		return addr.Unmap().String(), nil
 	}
+	// A local test server can be reached directly by the simulator as well as
+	// by its loopback tunnel. Public/production proxies still require a chain.
+	if c.Environment == "test" && addr.IsLoopback() && r.Header.Get("X-Forwarded-For") == "" {
+		return addr.Unmap().String(), nil
+	}
 	chain := strings.Split(r.Header.Get("X-Forwarded-For"), ",")
 	for i := len(chain) - 1; i >= 0; i-- {
 		if !c.trusted(addr) {

@@ -27,7 +27,7 @@ func (s *Service) registerGuardianRoutes(r *router.Router[*core.RequestEvent], g
 			GuardianCount  int    `json:"guardianCount"`
 		}
 		if err := e.BindBody(&input); err != nil {
-			return problem(400, "invalidRequest", "Invalid guardian request.")
+			return problem(400, "invalidRequest", "Ogiltig förfrågan för vårdnadshavare.")
 		}
 		status, err := s.createGuardianRequest(e.Auth, input.PersonalNumber, input.GuardianCount)
 		if err != nil {
@@ -47,14 +47,14 @@ func (s *Service) registerGuardianRoutes(r *router.Router[*core.RequestEvent], g
 		}
 		doc, err := currentDocument(s.App)
 		if err != nil {
-			return problem(503, "consentUnavailable", "Study consent is not available yet.")
+			return problem(503, "consentUnavailable", "Samtycket kunde inte hämtas. Försök igen eller kontakta forskargruppen.")
 		}
 		if s.guardianSigned(s.App, request, doc.Id) {
 			return guardianApprovedPage(e)
 		}
 		ip, err := s.Config.endUserIP(e.Request)
 		if err != nil {
-			return problem(400, "invalidIP", "Unable to establish your connection.")
+			return problem(400, "invalidIP", "Anslutningen kunde inte verifieras. Försök igen.")
 		}
 		a, err := s.startGuardian(e.Request.Context(), request, ip, e.Request.UserAgent())
 		if err != nil {
@@ -123,11 +123,11 @@ func (s *Service) registerGuardianRoutes(r *router.Router[*core.RequestEvent], g
 		}
 		ip, err := s.Config.endUserIP(e.Request)
 		if err != nil || !s.guardianReturnMatches(request.Id, e.Request.URL.Query().Get("nonce"), ip) {
-			return problem(400, "invalidReturn", "This BankID return does not match the signing request.")
+			return problem(400, "invalidReturn", "Återgången från BankID stämmer inte med signeringen.")
 		}
 		doc, err := currentDocument(s.App)
 		if err != nil {
-			return problem(503, "consentUnavailable", "Study consent is not available yet.")
+			return problem(503, "consentUnavailable", "Samtycket kunde inte hämtas. Försök igen eller kontakta forskargruppen.")
 		}
 		if s.guardianSigned(s.App, request, doc.Id) {
 			return guardianApprovedPage(e)
@@ -143,15 +143,15 @@ func guardianQRAvailable(a *Attempt, now time.Time) bool {
 func (s *Service) guardianPageAttempt(e *core.RequestEvent) (*Attempt, error) {
 	id := e.Request.PathValue("id")
 	if !signingRequestIDPattern.MatchString(id) {
-		return nil, problem(404, "invalidRequest", "Signing request not found.")
+		return nil, problem(404, "invalidRequest", "Signeringsförfrågan hittades inte.")
 	}
 	ip, err := s.Config.endUserIP(e.Request)
 	if err != nil {
-		return nil, problem(400, "invalidIP", "Unable to establish your connection.")
+		return nil, problem(400, "invalidIP", "Anslutningen kunde inte verifieras. Försök igen.")
 	}
 	a := s.guardianAttempt(id, e.Request.URL.Query().Get("nonce"), ip)
 	if a == nil {
-		return nil, problem(404, "invalidRequest", "Signing request not found or expired.")
+		return nil, problem(404, "invalidRequest", "Signeringsförfrågan hittades inte eller har gått ut.")
 	}
 	return a, nil
 }

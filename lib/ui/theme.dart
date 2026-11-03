@@ -1,11 +1,11 @@
 import 'package:flutter/cupertino.dart';
 
 class AppTheme {
-  static const Color ink = Color(0xFF183247);
-  static const Color ocean = Color(0xFF1C6E8C);
-  static const Color foam = Color(0xFFEAF6FA);
+  static const Color ink = Color(0xFF173A3D);
+  static const Color ocean = Color(0xFF086273);
+  static const Color foam = Color(0xFFE4F4EE);
   static const Color sand = Color(0xFFF6EFE4);
-  static const Color accent = Color(0xFFF28C48);
+  static const Color accent = Color(0xFFC17D44);
   static const Color border = Color(0x1F183247);
   static const Color navigationBackground = CupertinoColors.white;
 
@@ -99,7 +99,7 @@ class AppScaffold extends StatelessWidget {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF4FBFD), Color(0xFFF8F6F2)],
+            colors: [Color(0xFFF1F7F4), Color(0xFFFAF7F1)],
           ),
         ),
         child: SafeArea(child: paddedChild),

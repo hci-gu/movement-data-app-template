@@ -69,7 +69,7 @@ class HttpBankIdGateway implements BankIdGateway {
           reason,
           data is Map && data['message'] is String
               ? data['message'] as String
-              : 'This request could not start.',
+              : 'Förfrågan kunde inte startas.',
         );
       }
       rethrow;
@@ -113,10 +113,10 @@ class AttemptExpired implements Exception {
 String bankIdError(Object error) {
   if (error is BankIdStartRejected) return error.message;
   if (error is AttemptExpired) {
-    return 'This BankID request has expired or the server restarted. Start a new request.';
+    return 'Signeringen har gått ut eller servern har startats om. Starta en ny förfrågan.';
   }
   if (error is BankIdUnavailable) {
-    return 'BankID is currently unavailable. Please try again later.';
+    return 'BankID är inte tillgängligt just nu. Försök igen senare.';
   }
   if (error is DioException) {
     final data = error.response?.data;
@@ -125,7 +125,7 @@ String bankIdError(Object error) {
         error.response!.statusCode! < 500) {
       return data['message'] as String;
     }
-    return 'The service could not be reached. Check your connection and check the request status before starting again.';
+    return 'Tjänsten kunde inte nås. Kontrollera anslutningen och signeringens status innan du börjar om.';
   }
-  return 'The request could not be completed. Please try again.';
+  return 'Förfrågan kunde inte slutföras. Försök igen.';
 }

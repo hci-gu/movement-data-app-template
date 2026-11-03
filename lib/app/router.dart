@@ -135,10 +135,10 @@ class _StartupScreen extends ConsumerWidget {
           ? Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('The app could not start. Please try again.'),
+                const Text('Appen kunde inte starta. Försök igen.'),
                 CupertinoButton(
                   onPressed: () => ref.invalidate(startupProvider),
-                  child: const Text('Retry'),
+                  child: const Text('Försök igen'),
                 ),
               ],
             )

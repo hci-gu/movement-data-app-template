@@ -33,10 +33,14 @@ func generateSigningRequestID(app core.App) (string, error) {
 			return "", err
 		}
 	}
-	return "", problem(503, "busy", "No signing request ID is available. Please try again.")
+	return "", problem(503, "busy", "En signeringslänk kunde inte skapas. Försök igen.")
 }
 
 func adult(personalNumber string, now time.Time) bool {
+	return atLeastAge(personalNumber, now, 18)
+}
+
+func atLeastAge(personalNumber string, now time.Time, years int) bool {
 	if !personalNumberPattern.MatchString(personalNumber) {
 		return false
 	}
@@ -47,7 +51,7 @@ func adult(personalNumber string, now time.Time) bool {
 	if birth.Year() != year || int(birth.Month()) != month || birth.Day() != day || birth.After(now.UTC()) {
 		return false
 	}
-	return !now.UTC().Before(birth.AddDate(18, 0, 0))
+	return !now.UTC().Before(birth.AddDate(years, 0, 0))
 }
 
 func (s *Service) guardianRequests(app core.App, userID string) ([]*core.Record, error) {
@@ -80,11 +84,11 @@ func (s *Service) guardianSigned(app core.App, request *core.Record, version str
 }
 
 func guardianVisibleText(user, doc *core.Record) string {
-	return fmt.Sprintf("I approve participation for the person with personal number %s in %s (consent version %s).\n\n%s", user.GetString("personalNumber"), doc.GetString("title"), doc.GetString("version"), doc.GetString("text"))
+	return fmt.Sprintf("Jag samtycker som vårdnadshavare till att barnet med personnummer %s deltar i %s (samtyckesversion %s).\n\n%s", user.GetString("personalNumber"), doc.GetString("title"), doc.GetString("version"), doc.GetString("text"))
 }
 
 func (s *Service) guardianEligible(app core.App, user *core.Record) bool {
-	if adult(user.GetString("personalNumber"), s.now()) {
+	if atLeastAge(user.GetString("personalNumber"), s.now(), 15) {
 		return true
 	}
 	count := user.GetInt("guardianCount")
@@ -129,10 +133,10 @@ func (s *Service) guardianStatus(user *core.Record) (map[string]any, error) {
 
 func (s *Service) createGuardianRequest(user *core.Record, personalNumber string, count int) (map[string]any, error) {
 	if !personalNumberPattern.MatchString(personalNumber) || !adult(personalNumber, s.now()) || personalNumber == user.GetString("personalNumber") || count < 1 || count > 2 {
-		return nil, problem(400, "invalidGuardian", "Enter an adult guardian's 12-digit personal number and choose one or two guardians.")
+		return nil, problem(400, "invalidGuardian", "Ange en vuxen vårdnadshavares personnummer med 12 siffror och välj antal vårdnadshavare.")
 	}
-	if adult(user.GetString("personalNumber"), s.now()) {
-		return nil, problem(409, "alreadyEligible", "Guardian permission is not needed.")
+	if atLeastAge(user.GetString("personalNumber"), s.now(), 15) {
+		return nil, problem(409, "alreadyEligible", "Vårdnadshavares samtycke behövs inte.")
 	}
 	var created *core.Record
 	err := s.App.RunInTransaction(func(tx core.App) error {
@@ -141,7 +145,7 @@ func (s *Service) createGuardianRequest(user *core.Record, personalNumber string
 			return err
 		}
 		if !s.activeConsent(tx, fresh) {
-			return problem(403, "consentRequired", "Sign the current study consent first.")
+			return problem(403, "consentRequired", "Signera det aktuella samtycket först.")
 		}
 		requests, err := s.guardianRequests(tx, fresh.Id)
 		if err != nil {
@@ -149,14 +153,14 @@ func (s *Service) createGuardianRequest(user *core.Record, personalNumber string
 		}
 		configured := fresh.GetInt("guardianCount")
 		if configured != 0 && configured != count {
-			return problem(409, "guardianCountChanged", "The guardian count is already set for this participant.")
+			return problem(409, "guardianCountChanged", "Antalet vårdnadshavare är redan sparat för deltagaren.")
 		}
 		if len(requests) >= count {
-			return problem(409, "guardianLimit", "All guardian links have already been created.")
+			return problem(409, "guardianLimit", "Alla länkar till vårdnadshavare är redan skapade.")
 		}
 		for _, request := range requests {
 			if request.GetString("personalNumber") == personalNumber {
-				return problem(409, "duplicateGuardian", "This guardian already has a link.")
+				return problem(409, "duplicateGuardian", "Den här vårdnadshavaren har redan en länk.")
 			}
 		}
 		if configured == 0 {

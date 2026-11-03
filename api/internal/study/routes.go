@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"app/internal/bankid"
+	"app/internal/questionnaires"
 
 	"github.com/golang-jwt/jwt/v5"
 	validation "github.com/pocketbase/ozzo-validation/v4"
@@ -21,7 +22,7 @@ func problem(status int, reason, message string) error {
 	return apis.NewApiError(status, message, map[string]any{"reason": validation.NewError(reason, message)})
 }
 func restartRequired() error {
-	return problem(410, "attemptExpired", "This BankID request has expired or the server restarted. Start a new request.")
+	return problem(410, "attemptExpired", "Signeringen har gått ut eller servern har startats om. Starta en ny förfrågan.")
 }
 func bearer(e *core.RequestEvent) string {
 	return strings.TrimPrefix(e.Request.Header.Get("Authorization"), "Bearer ")
@@ -41,7 +42,7 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 	e.Response.Header().Set("Referrer-Policy", "no-referrer")
 	ip, err := s.Config.endUserIP(e.Request)
 	if err != nil {
-		return problem(400, "invalidIP", "Unable to establish your connection.")
+		return problem(400, "invalidIP", "Anslutningen kunde inte verifieras. Försök igen.")
 	}
 	s.rateMu.Lock()
 
@@ -65,7 +66,7 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 	v, ok := s.rates[key]
 	if !ok && len(s.rates) >= 4096 {
 		s.rateMu.Unlock()
-		return problem(429, "rateLimited", "Please wait and try again.")
+		return problem(429, "rateLimited", "Vänta en stund och försök igen.")
 	}
 	if !now.Before(v.reset) {
 		v = rateEntry{reset: now.Add(time.Minute)}
@@ -85,7 +86,7 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 	}
 	if v.count > limit {
 		e.Response.Header().Set("Retry-After", "60")
-		return problem(429, "rateLimited", "Please wait and try again.")
+		return problem(429, "rateLimited", "Vänta en stund och försök igen.")
 	}
 	return e.Next()
 }
@@ -100,17 +101,25 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		return e.Next()
 	})
 	s.registerGuardianRoutes(r, g)
+	g.GET("/movement/window", func(e *core.RequestEvent) error {
+		date, err := questionnaires.TreatmentDate(s.App, e.Auth.Id, s.now())
+		if err != nil {
+			return problem(409, "treatmentRequired", "Svara på frågorna om behandling och behandlingsdatum innan du hämtar rörelsedata.")
+		}
+		from, to := questionnaires.MovementWindow(date, s.now())
+		return e.JSON(200, map[string]any{"from": from.Format(time.RFC3339Nano), "to": to.Format(time.RFC3339Nano), "treatmentDate": date.Format("2006-01-02")})
+	}).BindFunc(s.RequireSession, s.RequireConsent)
 	g.GET("/consent/current", func(e *core.RequestEvent) error {
 		doc, err := currentDocument(s.App)
 		if err != nil {
-			return problem(503, "consentUnavailable", "Study consent is not available yet.")
+			return problem(503, "consentUnavailable", "Samtycket kunde inte hämtas. Försök igen eller kontakta forskargruppen.")
 		}
 		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil})
 	})
 	g.POST("/bankid/attempts", func(e *core.RequestEvent) error {
 		var in StartInput
 		if err := e.BindBody(&in); err != nil {
-			return problem(400, "invalidRequest", "Invalid request.")
+			return problem(400, "invalidRequest", "Ogiltig förfrågan.")
 		}
 		ip, err := s.Config.endUserIP(e.Request)
 		if err != nil {
@@ -139,7 +148,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 			return err
 		}
 		if a.Mode != "sameDevice" || subtle.ConstantTimeCompare([]byte(in.Nonce), []byte(a.Nonce)) != 1 {
-			return problem(400, "invalidReturn", "This BankID return does not match your request.")
+			return problem(400, "invalidReturn", "Återgången från BankID stämmer inte med din förfrågan.")
 		}
 		return s.attemptResponse(e, a)
 	}))
@@ -178,7 +187,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 	g.GET("/consent/receipt", func(e *core.RequestEvent) error {
 		sig, err := latestSignature(s.App, e.Auth.Id)
 		if err != nil || sig.GetString("user") != e.Auth.Id {
-			return problem(404, "receiptUnavailable", "No signed consent receipt is available.")
+			return problem(404, "receiptUnavailable", "Inget signerat samtyckeskvitto finns tillgängligt.")
 		}
 		doc, err := s.App.FindRecordById("consent_texts", sig.GetString("version"))
 		if err != nil {
@@ -208,7 +217,7 @@ func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) fun
 				return err
 			}
 			if ip != a.IP {
-				return problem(409, "connectionChanged", "Return to the original connection or start again.")
+				return problem(409, "connectionChanged", "Återgå till den ursprungliga anslutningen eller börja om.")
 			}
 		}
 		return next(e, a)

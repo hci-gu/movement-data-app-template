@@ -1,5 +1,11 @@
 # Building a study app from the template
 
+For this checkout, first read [the scoliosis study decisions](scoliosis-study.md).
+They specify the local database, published consent version, questionnaire,
+under-15 guardian threshold and six Health measures. The original consent form
+is retained for local testing by owner instruction; its release condition is
+recorded there.
+
 1. Read the supplied files in `context/` for the study purpose, participant groups,
    consent, questionnaire, data collection and branding. Record source locations,
    agreed decisions and unresolved questions in the study's documentation. Read

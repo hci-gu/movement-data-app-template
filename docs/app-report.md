@@ -107,6 +107,24 @@ the selected filename is recorded in the report.
 
 ## Where the scaffolding lives
 
+### Swedish participant-flow overview
+
+For the scoliosis study, a separate Swedish overview can be generated from the
+latest reviewed captures, without changing the complete report or rebuilding:
+
+```sh
+python3 scripts/build-flow-report.py
+```
+
+This produces `app_flow_sv.html`, with five numbered steps, selected questionnaire
+screens and an expandable guardian-consent branch for participants under 15.
+Only the successful participant flow is included. All report text is Swedish,
+images are embedded, and the image viewer works offline. This overview is an
+editorial selection, not a replacement for the full coverage report. Regenerate
+the full report first if app screens have changed.
+
+### Source files
+
 | File | Responsibility |
 | --- | --- |
 | `lib/main_demo.dart` | Separate native demo entry point; no native session/bootstrap/link startup. |
@@ -120,6 +138,7 @@ the selected filename is recorded in the report.
 | `test/report/` | Render cases, assert coverage/isolation and capture scrolling content. |
 | `scripts/build-app-report.py` | Run checks, capture browser pages, validate artifacts and assemble the single HTML file. |
 | `scripts/app-report-template.html` | Report presentation, search and image viewer. |
+| `scripts/build-flow-report.py` | Separate Swedish overview of the scoliosis participant flow, using reviewed captures. |
 
 `build/app-report/` contains command logs, the exported source snapshot, raw PNGs
 and a combined manifest. These intermediate files are disposable. The generated

@@ -88,7 +88,10 @@ Object sampleAnswer(QuestionDefinition q) => switch (q.type) {
         answers,
         participant,
       ).any((q) => q.id == target.id) ||
-      validateAnswers(form, answers, participant, now: demoNow).isNotEmpty) {
+      answers.entries.any(
+        (entry) =>
+            validateValue(byId[entry.key]!, entry.value, demoNow) != null,
+      )) {
     throw StateError('No valid preview context for ${target.id}.');
   }
   return (answers: answers, gender: gender);

@@ -14,7 +14,7 @@ class ParticipantMenu extends ConsumerWidget {
     padding: EdgeInsets.zero,
     child: const Icon(
       CupertinoIcons.ellipsis_circle,
-      semanticLabel: 'Study and account',
+      semanticLabel: 'Studie och konto',
     ),
     onPressed: () async {
       final action = await showCupertinoModalPopup<String>(
@@ -23,9 +23,9 @@ class ParticipantMenu extends ConsumerWidget {
           child: CupertinoActionSheet(
             actions: [
               for (final item in const [
-                ('information', 'Study information'),
-                ('consent', 'Signed consent'),
-                ('logout', 'Sign out'),
+                ('information', 'Om studien'),
+                ('consent', 'Ditt samtycke'),
+                ('logout', 'Logga ut'),
               ])
                 CupertinoActionSheetAction(
                   onPressed: () => Navigator.pop(context, item.$1),
@@ -34,7 +34,7 @@ class ParticipantMenu extends ConsumerWidget {
             ],
             cancelButton: CupertinoActionSheetAction(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
+              child: const Text('Avbryt'),
             ),
           ),
         ),

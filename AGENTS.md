@@ -14,6 +14,7 @@ Read [docs/design-guidelines.md](docs/design-guidelines.md) before adapting UI o
 
 | Resource | Use it for |
 | --- | --- |
+| [docs/scoliosis-study.md](docs/scoliosis-study.md) | Current study sources, owner decisions, six-measure collection contract, local backend and remaining release conditions. |
 | [docs/workflow.md](docs/workflow.md) | Primary setup and deployment workflow, consent publication from context, and study icon generation/export; start here. |
 | [README.md](README.md) | Project overview, quick-start commands, collections, and customization prerequisites. |
 | [docs/bankid-testing.md](docs/bankid-testing.md) | BankID configuration, evidence keyring setup, consent publication, local and OpenShift test deployment, API endpoints, and verification commands. Environment-specific values describe the documented test setup. |

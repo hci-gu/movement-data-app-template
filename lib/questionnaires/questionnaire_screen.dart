@@ -7,6 +7,7 @@ import '../ui/theme.dart';
 import 'controller.dart';
 import 'models.dart';
 import 'rules.dart';
+import 'scoliosis.dart';
 import 'widgets/question_card.dart';
 import 'widgets/question_field.dart';
 
@@ -513,7 +514,9 @@ class _QuestionPageState extends State<_QuestionPage> {
                 Text(
                   widget.readOnly
                       ? 'Dina sparade svar'
-                      : 'Du kan hoppa över frågor.',
+                      : isTreatmentQuestion(widget.question.id)
+                      ? 'Behövs för att bestämma perioden för rörelsedata.'
+                      : 'Du kan hoppa över den här frågan.',
                   style: AppTheme.bodyMuted,
                 ),
                 const SizedBox(height: 16),

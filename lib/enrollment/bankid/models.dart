@@ -91,41 +91,43 @@ class BankIdAttempt {
 
 String bankIdMessage(BankIdAttempt order) {
   if (order.accepted) {
-    return 'Your consent has been signed and saved.';
+    return 'Ditt samtycke har signerats och sparats.';
   }
   const messages = {
-    'outstandingTransaction': 'Open your BankID app.',
-    'noClient': 'Open your BankID app to continue.',
+    'ageIneligible':
+        'Studien omfattar personer mellan 10 och 30 år. Kontakta forskargruppen om du har frågor.',
+    'outstandingTransaction': 'Öppna BankID.',
+    'noClient': 'Öppna BankID för att fortsätta.',
     'started':
-        'Searching for your BankID. Check that you have a valid BankID in the app.',
-    'userSign': 'Review the request and confirm in your BankID app.',
-    'userMrtd': 'Follow the instructions in BankID to confirm your identity.',
-    'processing': 'Your request is being processed. Please wait.',
-    'expiredTransaction': 'The request expired. Start a new BankID request.',
+        'Söker efter ditt BankID. Kontrollera att du har ett giltigt BankID.',
+    'userSign': 'Läs och bekräfta förfrågan i BankID.',
+    'userMrtd': 'Följ instruktionerna i BankID för att bekräfta din identitet.',
+    'processing': 'Din förfrågan behandlas. Vänta en stund.',
+    'expiredTransaction': 'Förfrågan har gått ut. Starta en ny signering.',
     'certificateErr':
-        'Your BankID could not be used. Check its validity in the BankID app.',
-    'userCancel': 'You cancelled the BankID request.',
-    'cancelled': 'The BankID request was cancelled.',
+        'Ditt BankID kunde inte användas. Kontrollera giltigheten i BankID.',
+    'userCancel': 'Du avbröt signeringen.',
+    'cancelled': 'Signeringen avbröts.',
     'startFailed':
-        'BankID could not start. Check that it is installed and try again.',
-    'notSupportedByUserApp': 'Update the BankID app and try again.',
-    'alreadyInProgress':
-        'Another BankID request is in progress. Finish it before trying again.',
+        'BankID kunde inte startas. Kontrollera att appen är installerad och försök igen.',
+    'notSupportedByUserApp': 'Uppdatera BankID och försök igen.',
+    'alreadyInProgress': 'En annan BankID-förfrågan pågår. Avsluta den först.',
     'consentChanged':
-        'The consent has changed. Read the new version before signing.',
+        'Samtycket har ändrats. Läs den nya versionen innan du signerar.',
     'riskRejected':
-        'This request could not be accepted. Contact the study team if it happens again.',
-    'sessionExpired': 'Your BankID request expired. Start again.',
+        'Förfrågan kunde inte godkännas. Kontakta forskargruppen om det händer igen.',
+    'sessionExpired': 'Signeringen har gått ut. Börja om.',
     'unknownResult':
-        'We could not confirm the result. No access was granted. Start a new request.',
+        'Resultatet kunde inte bekräftas. Ingen åtkomst beviljades. Starta en ny signering.',
     'invalidEvidence':
-        'The signing evidence could not be confirmed. Start a new request.',
-    'temporarilyUnavailable': 'BankID is temporarily unavailable. Please wait.',
+        'Signeringen kunde inte verifieras. Starta en ny förfrågan.',
+    'temporarilyUnavailable':
+        'BankID är tillfälligt otillgängligt. Vänta en stund.',
     'certificateUnavailable':
-        'The service is temporarily unavailable. Please try later.',
+        'Tjänsten är tillfälligt otillgänglig. Försök senare.',
   };
   return messages[order.hintCode] ??
       (order.pending
-          ? 'Your request is being processed. Please wait.'
-          : 'The request could not be completed. Please try again.');
+          ? 'Din förfrågan behandlas. Vänta en stund.'
+          : 'Förfrågan kunde inte slutföras. Försök igen.');
 }

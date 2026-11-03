@@ -7,11 +7,11 @@ class StudyInformationSheet extends StatelessWidget {
   const StudyInformationSheet({super.key});
   @override
   Widget build(BuildContext context) => AppScaffold(
-    title: 'Study information',
+    title: 'Om studien',
     leading: CupertinoButton(
       padding: EdgeInsets.zero,
       onPressed: () => Navigator.pop(context),
-      child: const Text('Close'),
+      child: const Text('Stäng'),
     ),
     child: ListView(
       padding: const EdgeInsets.symmetric(vertical: 20),
@@ -22,10 +22,12 @@ class StudyInformationSheet extends StatelessWidget {
           Text(section.$2, style: AppTheme.body),
           const SizedBox(height: 24),
         ],
-        const Text('Support', style: AppTheme.cardTitle),
+        const Text('Olof Westin', style: AppTheme.cardTitle),
         const _EmailLink(StudyContent.supportEmail),
+        const Text('Sara Knutsson', style: AppTheme.cardTitle),
+        const _EmailLink('sara.knutsson@vgregion.se'),
         const SizedBox(height: 12),
-        const Text('Privacy contact', style: AppTheme.cardTitle),
+        const Text('Dataskyddsombud', style: AppTheme.cardTitle),
         const _EmailLink(StudyContent.privacyContact),
       ],
     ),

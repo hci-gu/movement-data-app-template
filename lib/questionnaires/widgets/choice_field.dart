@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import '../models.dart';
+import '../../ui/theme.dart';
 
 class ChoiceQuestionField extends StatelessWidget {
   final QuestionDefinition question;
@@ -31,9 +32,15 @@ class ChoiceQuestionField extends StatelessWidget {
                   value == option.value
                       ? CupertinoIcons.checkmark_circle_fill
                       : CupertinoIcons.circle,
+                  color: readOnly ? AppTheme.ocean : null,
                 ),
                 const SizedBox(width: 12),
-                Expanded(child: Text(option.label)),
+                Expanded(
+                  child: Text(
+                    option.label,
+                    style: readOnly ? AppTheme.body : null,
+                  ),
+                ),
               ],
             ),
           ),

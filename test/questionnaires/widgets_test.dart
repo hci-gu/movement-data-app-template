@@ -155,7 +155,7 @@ void main() {
       await tester.enterText(input, '');
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('Fråga 2 av 3'), findsOneWidget);
-      await tester.enterText(input, 'Complete');
+      await tester.enterText(input, 'Klart');
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pumpAndSettle();
       expect(find.text('Fråga 3 av 3'), findsOneWidget);
@@ -167,7 +167,7 @@ void main() {
         container
             .read(questionnaireControllerProvider('testfrm00000001'))
             .answers,
-        {'a': 7, 'b': 'Complete', 'c': 'Final answer'},
+        {'a': 7, 'b': 'Klart', 'c': 'Final answer'},
       );
     },
   );
@@ -212,12 +212,8 @@ void main() {
       ]);
     await form(tester, gateway);
     await tester.enterText(find.byType(CupertinoTextField).hitTestable(), 'A');
-    tester.binding.handleAppLifecycleStateChanged(
-      AppLifecycleState.inactive,
-    );
-    tester.binding.handleAppLifecycleStateChanged(
-      AppLifecycleState.resumed,
-    );
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('Fråga 1 av 2'), findsOneWidget);
     await tester.enterText(find.byType(CupertinoTextField).hitTestable(), 'B');

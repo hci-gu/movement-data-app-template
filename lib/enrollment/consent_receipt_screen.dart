@@ -12,7 +12,7 @@ class ConsentReceiptScreen extends ConsumerWidget {
     final controller = ref.read(consentProvider.notifier);
     final receipt = state.receipt;
     return AppScaffold(
-      title: 'Signed consent',
+      title: 'Ditt samtycke',
       child: AppScrollBody(
         centerContent: receipt == null,
         children: [
@@ -30,21 +30,21 @@ class ConsentReceiptScreen extends ConsumerWidget {
             if (receipt == null)
               CupertinoButton(
                 onPressed: controller.load,
-                child: const Text('Retry'),
+                child: const Text('Försök igen'),
               ),
           ],
           if (receipt != null) ...[
             Text(receipt.document.title, style: AppTheme.sectionTitle),
             const SizedBox(height: 12),
             Text(
-              'Version ${receipt.document.version}\nSigned: ${formatDateTime(receipt.receivedAt.toLocal())}\nStatus: ${receipt.status}',
+              'Version ${receipt.document.version}\nSignerat: ${formatDateTime(receipt.receivedAt.toLocal())}\nStatus: ${receipt.status == 'withdrawn' ? 'Återkallat' : 'Signerat'}',
               style: AppTheme.bodyMuted,
             ),
             const SizedBox(height: 16),
             AppCard(child: Text(receipt.document.text, style: AppTheme.body)),
             const SizedBox(height: 16),
             const Text(
-              'Withdrawing consent stops future participation. Contact the study team about data already submitted.',
+              'Om du återkallar ditt samtycke stoppas fortsatt deltagande. Kontakta forskargruppen om uppgifter som redan skickats in.',
               style: AppTheme.body,
             ),
             const SizedBox(height: 16),
@@ -56,19 +56,19 @@ class ConsentReceiptScreen extends ConsumerWidget {
                       final confirmed = await showCupertinoDialog<bool>(
                         context: context,
                         builder: (context) => CupertinoAlertDialog(
-                          title: const Text('Withdraw consent?'),
+                          title: const Text('Återkalla samtycket?'),
                           content: const Text(
-                            'This stops future participation and signs you out. Your signed consent record is retained.',
+                            'Ditt fortsatta deltagande stoppas och du loggas ut. Dokumentationen av ditt samtycke finns kvar.',
                           ),
                           actions: [
                             CupertinoDialogAction(
                               onPressed: () => Navigator.pop(context, false),
-                              child: const Text('Keep consent'),
+                              child: const Text('Behåll samtycket'),
                             ),
                             CupertinoDialogAction(
                               isDestructiveAction: true,
                               onPressed: () => Navigator.pop(context, true),
-                              child: const Text('Withdraw'),
+                              child: const Text('Återkalla'),
                             ),
                           ],
                         ),
@@ -79,7 +79,7 @@ class ConsentReceiptScreen extends ConsumerWidget {
                     },
               child: state.withdrawing
                   ? const CupertinoActivityIndicator()
-                  : const Text('Withdraw consent'),
+                  : const Text('Återkalla samtycket'),
             ),
           ],
         ],

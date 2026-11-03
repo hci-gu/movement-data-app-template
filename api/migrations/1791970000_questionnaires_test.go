@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestTemplateMigrationsLeaveQuestionnaireCollectionsEmpty(t *testing.T) {
+func TestStudyMigrationsSeedOnlyDefinitions(t *testing.T) {
 	app := pocketbase.NewWithConfig(pocketbase.Config{DefaultDataDir: t.TempDir()})
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
@@ -15,13 +15,13 @@ func TestTemplateMigrationsLeaveQuestionnaireCollectionsEmpty(t *testing.T) {
 	if err := app.RunAllMigrations(); err != nil {
 		t.Fatal(err)
 	}
-	for _, collection := range []string{"questionnaires", "questions", "questionOptions", "answers"} {
-		records, err := app.FindRecordsByFilter(collection, "", "", 1, 0)
+	for collection, count := range map[string]int{"questionnaires": 1, "questions": 13, "questionOptions": 2, "answers": 0} {
+		records, err := app.FindRecordsByFilter(collection, "", "", 0, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(records) != 0 {
-			t.Fatalf("template migration unexpectedly populated %s", collection)
+		if len(records) != count {
+			t.Fatalf("study seed %s: got %d, want %d", collection, len(records), count)
 		}
 	}
 }

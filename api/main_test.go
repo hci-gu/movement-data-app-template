@@ -1,6 +1,7 @@
 package main
 
 import (
+	"app/internal/questionnaires"
 	"app/internal/study"
 	"bytes"
 	"compress/gzip"
@@ -72,13 +73,14 @@ func TestAuthenticatedUploadIdentityGzipAndChunkOrdering(t *testing.T) {
 	if err := app.Save(user); err != nil {
 		t.Fatal(err)
 	}
+	seedTreatment(t, app, user.Id)
 	r, _ := apis.NewRouter(app)
 	registerDataRoutes(app, r, func(e *core.RequestEvent) error { e.Auth = user; return e.Next() }, func(e *core.RequestEvent) error { return e.Next() })
 	h, err := r.BuildMux()
 	if err != nil {
 		t.Fatal(err)
 	}
-	data := []DataItem{{Value: Value{"10"}, DateFrom: "2026-09-01T12:00:00Z", DateTo: "2026-09-01T12:01:00Z", DataType: "STEPS"}}
+	data := []DataItem{{Value: Value{"10"}, DateFrom: "2026-09-01T12:00:00Z", DateTo: "2026-09-01T12:01:00Z", DataType: "STEPS", Unit: "COUNT", PlatformType: "ios"}}
 	send := func(participant string, chunk int) int {
 		t.Helper()
 		raw, _ := json.Marshal(map[string]any{"userId": participant, "chunkIndex": chunk, "data": data})
@@ -125,5 +127,20 @@ func TestAuthenticatedUploadIdentityGzipAndChunkOrdering(t *testing.T) {
 	info, err := os.Stat(chunkFilePath(user.Id, state.SessionID, 0))
 	if err != nil || info.Mode().Perm() != 0o600 {
 		t.Fatal("private upload permissions", err)
+	}
+}
+
+func seedTreatment(t *testing.T, app core.App, user string) {
+	t.Helper()
+	c, err := app.FindCollectionByNameOrId("answers")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := core.NewRecord(c)
+	r.Set("user", user)
+	r.Set("questionnaire", questionnaires.ScoliosisID)
+	r.Set("answers", map[string]any{questionnaires.TreatmentID: "surgery", questionnaires.SurgeryDateID: "2025-01-15"})
+	if err := app.Save(r); err != nil {
+		t.Fatal(err)
 	}
 }

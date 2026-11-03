@@ -34,11 +34,11 @@ void main() {
       CupertinoButton button(String title) => tester.widget<CupertinoButton>(
         find.widgetWithText(CupertinoButton, title),
       );
-      expect(button('Sign with BankID').onPressed, isNull);
-      expect(button('Use BankID on another device').onPressed, isNull);
+      expect(button('Signera med BankID').onPressed, isNull);
+      expect(button('Använd BankID på en annan enhet').onPressed, isNull);
       await tester.tap(find.byType(CupertinoSwitch));
       await tester.pumpAndSettle();
-      expect(button('Sign with BankID').onPressed, isNotNull);
+      expect(button('Signera med BankID').onPressed, isNotNull);
       gateway.result = const BankIdAttempt(
         id: 'qr1',
         secret: 'secret',
@@ -50,12 +50,12 @@ void main() {
         qrData: 'bankid.token.0.hash',
         qrSecondsRemaining: 30,
       );
-      await tester.ensureVisible(find.text('Use BankID on another device'));
-      await tester.tap(find.text('Use BankID on another device'));
+      await tester.ensureVisible(find.text('Använd BankID på en annan enhet'));
+      await tester.tap(find.text('Använd BankID på en annan enhet'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(
-        find.text('Scan this code with BankID on your other device.'),
+        find.text('Skanna koden med BankID på din andra enhet.'),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
@@ -66,23 +66,23 @@ void main() {
       tester.platformDispatcher.textScaleFactorTestValue = 2;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       await tester.pump();
-      await tester.ensureVisible(find.text('Cancel request'));
+      await tester.ensureVisible(find.text('Avbryt signering'));
       await tester.pumpAndSettle();
-      expect(find.text('Cancel request').hitTestable(), findsOneWidget);
+      expect(find.text('Avbryt signering').hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await tester.tap(find.text('Cancel request'));
+      await tester.tap(find.text('Avbryt signering'));
       await tester.pumpAndSettle();
       expect(gateway.cancels, 1);
-      expect(find.text('You cancelled the BankID request.'), findsOneWidget);
-      await tester.ensureVisible(find.text('Review consent and try again'));
-      await tester.tap(find.text('Review consent and try again'));
+      expect(find.text('Du avbröt signeringen.'), findsOneWidget);
+      await tester.ensureVisible(find.text('Läs samtycket och försök igen'));
+      await tester.tap(find.text('Läs samtycket och försök igen'));
       await tester.pumpAndSettle();
       expect(store.value, isNull);
       expect(
         tester.widget<CupertinoSwitch>(find.byType(CupertinoSwitch)).value,
         false,
       );
-      expect(button('Sign with BankID').onPressed, isNull);
+      expect(button('Signera med BankID').onPressed, isNull);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(
         const SizedBox(),

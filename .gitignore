@@ -34,6 +34,7 @@ migrate_working_dir/
 /build/
 /app_report.html
 /app_report.html.tmp
+/app_flow_sv.html
 /output/playwright/
 
 # Symbolication related

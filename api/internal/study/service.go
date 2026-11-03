@@ -137,7 +137,7 @@ func (s *Service) alive(a *Attempt) bool { return s.now().Before(a.ExpiresAt.Add
 
 func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt, error) {
 	if !secretPattern.MatchString(in.ClientSecret) || (in.Mode != "sameDevice" && in.Mode != "qr") {
-		return nil, problem(400, "invalidRequest", "Invalid BankID request.")
+		return nil, problem(400, "invalidRequest", "Ogiltig BankID-förfrågan.")
 	}
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
@@ -154,10 +154,10 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 			return nil, restartRequired()
 		}
 		if a.InputHash != fingerprint {
-			return nil, problem(409, "requestChanged", "Start a new attempt for a changed request.")
+			return nil, problem(409, "requestChanged", "Starta en ny signering när förfrågan har ändrats.")
 		}
 		if a.Mode == "sameDevice" && a.IP != ip {
-			return nil, problem(409, "connectionChanged", "Return to the original connection or start again.")
+			return nil, problem(409, "connectionChanged", "Återgå till den ursprungliga anslutningen eller börja om.")
 		}
 		return a, nil
 	}
@@ -167,15 +167,15 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 		return nil, err
 	}
 	if s.provider == nil {
-		return nil, problem(503, "signingUnavailable", "BankID is currently unavailable.")
+		return nil, problem(503, "signingUnavailable", "BankID är inte tillgängligt just nu.")
 	}
 	a := &Attempt{ID: id, SecretHash: hash(in.ClientSecret), InputHash: fingerprint, Purpose: "sign", Mode: in.Mode, IP: ip, Nonce: randomSecret(), Status: "pending", StartedAt: s.now(), ExpiresAt: s.now().Add(AttemptLifetime)}
 	doc, err := currentDocument(s.App)
 	if err != nil {
-		return nil, problem(503, "consentUnavailable", "Study consent is not available yet.")
+		return nil, problem(503, "consentUnavailable", "Samtycket kunde inte hämtas. Försök igen eller kontakta forskargruppen.")
 	}
 	if in.Version != doc.Id || in.DocumentHash != doc.GetString("documentHash") {
-		return nil, problem(409, "consentChanged", "The consent has changed. Read the current version before signing.")
+		return nil, problem(409, "consentChanged", "Samtycket har ändrats. Läs den aktuella versionen innan du signerar.")
 	}
 	d := documentDTO(doc)
 	a.Document = &d
@@ -194,7 +194,7 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 	s.mu.Lock()
 	if len(s.attempts) >= MaxAttempts {
 		s.mu.Unlock()
-		return nil, problem(503, "busy", "Please wait before starting another BankID request.")
+		return nil, problem(503, "busy", "Vänta en stund innan du startar en ny BankID-förfrågan.")
 	}
 	s.attempts[id] = a
 	s.mu.Unlock()

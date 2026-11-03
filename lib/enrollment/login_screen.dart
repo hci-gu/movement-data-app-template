@@ -6,6 +6,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:research_steps_template/enrollment/bankid/controller.dart';
 import 'package:research_steps_template/enrollment/bankid/models.dart';
 import 'package:research_steps_template/ui/theme.dart';
+import '../study/information_sheet.dart';
+import '../ui/sheet.dart';
 
 class LoginScreen extends HookConsumerWidget {
   const LoginScreen({super.key});
@@ -37,7 +39,7 @@ class LoginScreen extends HookConsumerWidget {
     }, [order?.id, order?.accepted, state.busy]);
 
     return AppScaffold(
-      title: document != null ? 'Study consent' : 'Join the study',
+      title: document != null ? 'Samtycke' : 'Delta i studien',
       child: AppScrollBody(
         key: ValueKey(
           order == null ? 'consent-${document?.id}' : 'bankid-${order.id}',
@@ -60,16 +62,16 @@ class LoginScreen extends HookConsumerWidget {
               child: CupertinoActivityIndicator(),
             ),
           if (!state.begun) ...[
-            const Text('Review study consent', style: AppTheme.sectionTitle),
+            const Text('Läs samtycket', style: AppTheme.sectionTitle),
             const SizedBox(height: 12),
             const Text(
-              'Signing the consent with BankID also creates your account or signs you in.',
+              'När du signerar samtycket med BankID skapas ditt konto eller loggas du in.',
               style: AppTheme.body,
             ),
             const SizedBox(height: 16),
             CupertinoButton.filled(
               onPressed: disabled ? null : controller.begin,
-              child: const Text('Load consent'),
+              child: const Text('Hämta samtycke'),
             ),
           ] else if (order != null) ...[
             AppCard(
@@ -78,7 +80,9 @@ class LoginScreen extends HookConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    order.accepted ? 'Consent signed' : 'Continue with BankID',
+                    order.accepted
+                        ? 'Samtycket är signerat'
+                        : 'Fortsätt med BankID',
                     style: AppTheme.sectionTitle,
                   ),
                   const SizedBox(height: 12),
@@ -90,21 +94,21 @@ class LoginScreen extends HookConsumerWidget {
                     const SizedBox(height: 16),
                     Text(document.title, style: AppTheme.cardTitle),
                     Text(
-                      'Consent version ${document.version}',
+                      'Samtyckesversion ${document.version}',
                       style: AppTheme.bodyMuted,
                     ),
                   ],
                   if (order.qrData != null) ...[
                     const SizedBox(height: 20),
                     const Text(
-                      'Scan this code with BankID on your other device.',
+                      'Skanna koden med BankID på din andra enhet.',
                       style: AppTheme.body,
                     ),
                     const SizedBox(height: 12),
                     Center(
                       child: Semantics(
                         label:
-                            'BankID QR code. Scan with the BankID app on your other device.',
+                            'QR-kod för BankID. Skanna med BankID på din andra enhet.',
                         child: ExcludeSemantics(
                           child: QrImageView(
                             data: order.qrData!,
@@ -117,7 +121,7 @@ class LoginScreen extends HookConsumerWidget {
                     ExcludeSemantics(
                       child: Center(
                         child: Text(
-                          'Scan within ${order.qrSecondsRemaining} seconds',
+                          'Skanna inom ${order.qrSecondsRemaining} sekunder',
                           style: AppTheme.bodyMuted,
                         ),
                       ),
@@ -130,37 +134,43 @@ class LoginScreen extends HookConsumerWidget {
             if (order.accepted)
               CupertinoButton.filled(
                 onPressed: disabled ? null : controller.finish,
-                child: const Text('Continue'),
+                child: const Text('Fortsätt'),
               ),
             if (order.pending && order.mode == 'sameDevice')
               CupertinoButton.filled(
                 onPressed: disabled ? null : controller.openBankId,
-                child: const Text('Open BankID'),
+                child: const Text('Öppna BankID'),
               ),
             if (order.canExtendQR)
               CupertinoButton.filled(
                 onPressed: disabled ? null : controller.extendQR,
-                child: const Text('Show a new QR code'),
+                child: const Text('Visa en ny QR-kod'),
               ),
             if (order.pending)
               CupertinoButton(
                 onPressed: disabled ? null : controller.cancel,
-                child: const Text('Cancel request'),
+                child: const Text('Avbryt signering'),
               ),
             if (!order.pending && !order.accepted)
               CupertinoButton.filled(
                 onPressed: disabled ? null : controller.reviewAgain,
-                child: const Text('Review consent and try again'),
+                child: const Text('Läs samtycket och försök igen'),
               ),
             if (state.error != null)
               CupertinoButton(
                 onPressed: disabled ? null : controller.refresh,
-                child: const Text('Check request status'),
+                child: const Text('Kontrollera signeringen'),
               ),
           ] else if (document != null) ...[
             Text(document.title, style: AppTheme.sectionTitle),
             const SizedBox(height: 8),
             Text('Version ${document.version}', style: AppTheme.bodyMuted),
+            CupertinoButton(
+              key: const ValueKey('consent-information'),
+              onPressed: () =>
+                  showAppSheet(context, const StudyInformationSheet()),
+              child: const Text('Läs studieinformationen'),
+            ),
             const SizedBox(height: 16),
             AppCard(child: Text(document.text, style: AppTheme.body)),
             const SizedBox(height: 16),
@@ -173,7 +183,7 @@ class LoginScreen extends HookConsumerWidget {
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
-                    'I have read the consent above and want to sign it.',
+                    'Jag har läst studieinformationen och samtycket ovan och vill signera.',
                     style: AppTheme.body,
                   ),
                 ),
@@ -184,18 +194,18 @@ class LoginScreen extends HookConsumerWidget {
               onPressed: disabled || !state.reviewed
                   ? null
                   : () => controller.start('sameDevice'),
-              child: const Text('Sign with BankID'),
+              child: const Text('Signera med BankID'),
             ),
             CupertinoButton(
               onPressed: disabled || !state.reviewed
                   ? null
                   : () => controller.start('qr'),
-              child: const Text('Use BankID on another device'),
+              child: const Text('Använd BankID på en annan enhet'),
             ),
           ] else ...[
             CupertinoButton.filled(
               onPressed: disabled ? null : controller.reviewAgain,
-              child: const Text('Load study consent'),
+              child: const Text('Hämta samtycket'),
             ),
           ],
         ],

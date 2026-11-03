@@ -7,7 +7,7 @@ class DoneScreen extends StatelessWidget {
   const DoneScreen({super.key});
   @override
   Widget build(BuildContext context) => AppScaffold(
-    title: 'Complete',
+    title: 'Klart',
     noBackButton: true,
     trailing: const ParticipantMenu(),
     child: AppScrollBody(
@@ -20,20 +20,20 @@ class DoneScreen extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         const Text(
-          'All tasks complete',
+          'Allt är inskickat',
           textAlign: TextAlign.center,
           style: AppTheme.heroTitle,
         ),
         const SizedBox(height: 12),
         const Text(
-          'Your answers and step data have been received. Your checklist is complete.',
+          'Dina svar och din rörelsedata har tagits emot. Du kan läsa dina svar och ditt samtycke via checklistan.',
           textAlign: TextAlign.center,
           style: AppTheme.body,
         ),
         const SizedBox(height: 24),
         CupertinoButton.filled(
           onPressed: () => context.goNamed('home'),
-          child: const Text('Review checklist'),
+          child: const Text('Visa checklistan'),
         ),
       ],
     ),

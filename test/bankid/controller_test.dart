@@ -81,7 +81,7 @@ void main() {
     expect(controller.state.begun, false);
     expect(controller.state.attempt, isNull);
     expect(store.value, isNull);
-    expect(controller.state.error, contains('server restarted'));
+    expect(controller.state.error, contains('servern har startats om'));
     expect(grants, isEmpty);
   });
   test(

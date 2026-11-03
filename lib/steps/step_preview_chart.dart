@@ -49,7 +49,7 @@ class StepPreviewChart extends StatelessWidget {
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
-                        '${entry.date.month}/${entry.date.day}',
+                        '${entry.date.day}/${entry.date.month}',
                         maxLines: 1,
                         style: const TextStyle(
                           fontSize: 10,

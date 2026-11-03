@@ -50,7 +50,15 @@ class HttpUploadGateway implements UploadGateway {
                 'chunkIndex': chunk,
                 'data': samples
                     .sublist(index, min(index + size, samples.length))
-                    .map((p) => p.toJson())
+                    .map(
+                      (p) => {
+                        ...p.toJson(),
+                        // Preserve the native sample, with unambiguous instants
+                        // so the backend can enforce the study period.
+                        'date_from': p.dateFrom.toUtc().toIso8601String(),
+                        'date_to': p.dateTo.toUtc().toIso8601String(),
+                      },
+                    )
                     .toList(),
               }),
             ),

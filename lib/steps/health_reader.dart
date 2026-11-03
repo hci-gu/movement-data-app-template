@@ -1,9 +1,8 @@
 import 'dart:io';
 import 'package:health/health.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'movement.dart';
 
-String get healthSourceName =>
-    Platform.isIOS ? 'Apple Health' : 'your health app';
+String get healthSourceName => 'Apple Hälsa';
 
 class HealthRead {
   final bool authorized;
@@ -17,23 +16,26 @@ abstract class HealthReader {
 
 class NativeHealthReader implements HealthReader {
   final HealthFactory health;
-  NativeHealthReader([HealthFactory? health])
+  final Future<MovementWindow> Function() window;
+  NativeHealthReader(this.window, [HealthFactory? health])
     : health = health ?? HealthFactory();
   @override
   Future<HealthRead> read() async {
-    if (Platform.isAndroid) await Permission.activityRecognition.request();
+    if (!Platform.isIOS) {
+      throw UnsupportedError('Studien använder Apple Hälsa på iPhone.');
+    }
+    final period = await window();
     final authorized = await health.requestAuthorization(
-      [HealthDataType.STEPS],
-      permissions: [HealthDataAccess.READ],
+      movementTypes,
+      permissions: movementTypes.map((_) => HealthDataAccess.READ).toList(),
     );
     if (!authorized) return const HealthRead(false, []);
-    final now = DateTime.now();
     final samples = await health.getHealthDataFromTypes(
-      DateTime(now.year - 5, 1, 1),
-      now,
-      [HealthDataType.STEPS],
+      period.from,
+      period.to,
+      movementTypes,
     );
-    final steps = samples.where((p) => p.type == HealthDataType.STEPS).toList()
+    final steps = samples.where(period.contains).toList()
       ..sort((a, b) => a.dateFrom.compareTo(b.dateFrom));
     return HealthRead(true, steps);
   }

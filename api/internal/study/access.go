@@ -12,12 +12,12 @@ func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
 	user, err := s.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
 	if err != nil || user.Collection().Name != "users" {
-		return problem(401, "sessionExpired", "Sign in again with BankID.")
+		return problem(401, "sessionExpired", "Logga in igen med BankID.")
 	}
 	// The token was verified above; inspect the application scope claims.
 	claims, err := security.ParseUnverifiedJWT(token)
 	if err != nil || claims[core.TokenClaimRefreshable] != false {
-		return problem(401, "sessionExpired", "Sign in again with BankID.")
+		return problem(401, "sessionExpired", "Logga in igen med BankID.")
 	}
 	e.Auth = user
 	return nil
@@ -38,10 +38,10 @@ func (s *Service) RequireConsent(e *core.RequestEvent) error {
 // authorizeParticipant is shared by upload and questionnaire access.
 func (s *Service) authorizeParticipant(e *core.RequestEvent) error {
 	if e.Auth == nil || !s.activeConsent(s.App, e.Auth) {
-		return problem(403, "consentRequired", "Sign the current study consent before continuing.")
+		return problem(403, "consentRequired", "Signera det aktuella samtycket innan du fortsätter.")
 	}
 	if !s.guardianEligible(s.App, e.Auth) {
-		return problem(403, "guardianRequired", "Guardian signatures are required before continuing.")
+		return problem(403, "guardianRequired", "Samtliga vårdnadshavare behöver signera innan du fortsätter.")
 	}
 	return nil
 }
@@ -57,7 +57,7 @@ func ProtectRecords(app core.App) {
 		return problem(403, "managedRecord", "Study evidence and participants cannot be deleted here.")
 	})
 	app.OnRecordAuthRequest("users").BindFunc(func(e *core.RecordAuthRequestEvent) error {
-		return problem(403, "bankidRequired", "Use BankID to sign in.")
+		return problem(403, "bankidRequired", "Använd BankID för att logga in.")
 	})
 }
 

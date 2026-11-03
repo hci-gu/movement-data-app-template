@@ -3,10 +3,10 @@
 Run against the backend containing your questionnaire definitions:
 
 ```sh
-flutter run --dart-define=API_BASE_URL=http://YOUR_LAN_IP:8090
+flutter run --dart-define-from-file=deploy/flutter-local.json
 ```
 
-The default remains `http://192.168.10.144:8090`. BankID return settings, native
+The local default is `http://127.0.0.1:8091`. BankID return settings, native
 links and server configuration must agree; see [BankID testing](bankid-testing.md).
 
 - [ ] Fresh launch shows introduction, one Continue action and optional study information.
@@ -28,7 +28,7 @@ links and server configuration must agree; see [BankID testing](bankid-testing.m
 - [ ] Only the final page offers Submit. Invalid supplied answers return to their page. Network failure preserves draft/page for retry. Leaving a dirty form prompts; Previous does not.
 - [ ] Confirmed submission returns home. Completed rows open saved responses read-only.
 - [ ] On a physical device, allow/deny health permission, check empty data, preview details, explicitly upload, interrupt and retry. Only full success completes the task. Home itself never requests health access.
-- [ ] Complete questionnaire then steps; reverse the order with another test participant. Finish remains disabled until all tasks are confirmed.
+- [ ] Complete the questionnaire then movement upload. Attempting Health collection without saved treatment type/date must fail before native permissions or data access. Finish remains disabled until all tasks are confirmed.
 - [ ] Finish opens Done. Review returns home without a redirect loop; relaunch also opens home with scoped step completion restored.
 - [ ] Open information, receipt and sign-out from home and Done. Withdrawal signs out only after confirmed success.
 - [ ] An unavailable receipt centers both its message text and Retry action. Support and privacy email addresses are underlined links that open the mail app with the correct recipient.
@@ -40,3 +40,29 @@ Use test identities/data. Actual BankID handoff, guardian signing and native hea
 checks require device interaction; automated fake gateways do not substitute for
 them. The generated app report records automated verification results; record
 physical-device results separately and keep remaining checks explicit.
+
+## Scoliosis adaptation device checks
+
+Automated verification and screenshot coverage are recorded in the current
+`app_report.html`. The following checks require a physical iPhone and remain
+unverified by this rebuild:
+
+- Complete test BankID signing and return using `se.gu.skoliosrorelse`, and
+  verify the receipt against local consent `scoliosis-2026-10-26-v1`.
+- Check participants immediately below/at age 15 and all one/two-guardian paths.
+  Confirm that a child can decline and withdraw regardless of guardian approval.
+- Grant/deny each of the six Health permissions; inspect missing metrics and
+  actual fractional percentages, including phone/watch sources.
+- Check treatment-anchored date boundaries, preview, interrupted upload, retry,
+  logout isolation and the final receipt/checklist on a real device.
+- Check Swedish navigation, keyboard, safe areas, Dynamic Type and the installed
+  icon. Confirm mail links open the displayed recipients.
+
+Resolve the consent and production conditions in [the study notes](scoliosis-study.md)
+before recruitment. Android is a build check, not a supported collection device.
+
+The 2026-10-26 rebuild passed all automated checks and visual review recorded in
+[the study verification notes](scoliosis-study.md#verification). Simulator
+installation and launch were verified. Interactive Simulator automation was
+unavailable because the computer-use tool did not approve access to Simulator;
+this is separate from filesystem access.

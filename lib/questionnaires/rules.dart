@@ -1,4 +1,5 @@
 import 'models.dart';
+import 'scoliosis.dart';
 
 bool isUnanswered(Object? value) => value == null || value == '';
 
@@ -155,6 +156,9 @@ Map<String, String> validateAnswers(
   for (final q in visibleQuestions(definition, answers, participant)) {
     final error = validateValue(q, answers[q.id], now ?? DateTime.now());
     if (error != null) errors[q.id] = error;
+  }
+  if (definition.summary.id == scoliosisQuestionnaireId) {
+    errors.addAll(validateTreatment(answers, now ?? DateTime.now()));
   }
   return errors;
 }

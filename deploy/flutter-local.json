@@ -1,0 +1,4 @@
+{
+  "API_BASE_URL": "http://127.0.0.1:8091",
+  "BANKID_RETURN_URL": "researchsteps://bankid/return"
+}

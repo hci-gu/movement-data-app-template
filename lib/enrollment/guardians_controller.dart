@@ -48,7 +48,7 @@ class GuardiansController extends StateNotifier<GuardiansState> {
     if (personal.length != 12 || (count != 1 && count != 2)) {
       state = GuardiansState(
         status: state.status,
-        error: 'Enter a 12-digit personal number (YYYYMMDDXXXX).',
+        error: 'Ange personnummer med 12 siffror (ÅÅÅÅMMDDXXXX).',
       );
       return;
     }

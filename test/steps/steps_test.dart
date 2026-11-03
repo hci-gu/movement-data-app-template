@@ -239,7 +239,13 @@ void main() {
       expect(chunks.every((c) => c['userId'] == 'u'), true);
       expect(
         chunks.expand((c) => c['data'] as List),
-        samples.map((s) => s.toJson()),
+        samples.map(
+          (s) => {
+            ...s.toJson(),
+            'date_from': s.dateFrom.toUtc().toIso8601String(),
+            'date_to': s.dateTo.toUtc().toIso8601String(),
+          },
+        ),
       );
       expect(progress.last, 1);
       final summary = StepImportSummary.fromHealthData([

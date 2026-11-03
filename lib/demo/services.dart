@@ -21,6 +21,8 @@ import '../steps/health_reader.dart';
 import '../steps/upload_card.dart';
 import '../steps/upload_gateway.dart';
 import '../steps/upload_store.dart';
+import '../steps/movement.dart';
+import '../questionnaires/scoliosis.dart';
 import 'cases.dart';
 import 'data.dart';
 
@@ -60,12 +62,15 @@ class DemoForms implements QuestionnaireGateway {
         preview.answers,
       );
     }
-    if (preview.state == 'done') {
+    if (preview.state == 'done' || preview.state.startsWith('steps-')) {
       for (final form in study.forms) {
         saved[form.summary.id] = QuestionnaireResponse(
           'demo-response-${form.summary.id}',
           form.summary.id,
-          const {},
+          const {
+            treatmentQuestionId: 'surgery',
+            surgeryDateQuestionId: '2025-04-15',
+          },
         );
       }
     }
@@ -261,7 +266,7 @@ class DemoBankIdController extends BankIdController {
           : document,
       busy: kind == 'consent-loading',
       error: kind == 'consent-error'
-          ? 'Study consent could not be loaded. Please try again.'
+          ? 'Samtycket kunde inte hämtas. Försök igen.'
           : null,
       attempt: order
           ? BankIdAttempt(
@@ -297,18 +302,34 @@ class DemoBankIdController extends BankIdController {
 
 List<HealthDataPoint> demoSamples() => List.generate(14, (i) {
   final day = demoNow.subtract(Duration(days: 14 - i));
-  return HealthDataPoint(
-    NumericHealthValue((3200 + (i * 1379) % 7000).toDouble()),
-    HealthDataType.STEPS,
-    HealthDataUnit.COUNT,
-    DateTime(day.year, day.month, day.day),
-    DateTime(day.year, day.month, day.day, 23),
-    PlatformType.IOS,
-    'demo-device',
-    'demo-source',
-    'Demo iPhone',
+  return movementTypes.map(
+    (type) => HealthDataPoint(
+      NumericHealthValue(switch (type) {
+        HealthDataType.STEPS => (3200 + (i * 1379) % 7000).toDouble(),
+        HealthDataType.DISTANCE_WALKING_RUNNING => 1800.0 + i * 100,
+        HealthDataType.WALKING_STEP_LENGTH => .55 + i * .01,
+        HealthDataType.WALKING_SPEED => 1.0 + i * .02,
+        HealthDataType.WALKING_ASYMMETRY_PERCENTAGE => .01 + i * .001,
+        _ => .25 + i * .003,
+      }),
+      type,
+      switch (type) {
+        HealthDataType.STEPS => HealthDataUnit.COUNT,
+        HealthDataType.WALKING_SPEED => HealthDataUnit.METERS_PER_SECOND,
+        HealthDataType.WALKING_ASYMMETRY_PERCENTAGE ||
+        HealthDataType.WALKING_DOUBLE_SUPPORT_PERCENTAGE =>
+          HealthDataUnit.PERCENT,
+        _ => HealthDataUnit.METER,
+      },
+      DateTime(day.year, day.month, day.day),
+      DateTime(day.year, day.month, day.day, 23),
+      PlatformType.IOS,
+      'demo-device',
+      'demo-source',
+      'iPhone',
+    ),
   );
-});
+}).expand((samples) => samples).toList();
 
 class DemoHealthReader implements HealthReader {
   @override
@@ -363,7 +384,7 @@ class DemoStepsController extends StepsController {
           : const [],
       completedAt: phase == StepsPhase.complete ? demoNow : null,
       error: phase == StepsPhase.error
-          ? 'Upload could not be confirmed. Please retry.'
+          ? 'Uppladdningen kunde inte bekräftas. Försök igen.'
           : null,
     );
   }
@@ -442,7 +463,7 @@ class DemoRuntime {
         ),
         healthReaderProvider.overrideWithValue(DemoHealthReader()),
         openHealthSettingsProvider.overrideWithValue(() async => true),
-        healthSourceNameProvider.overrideWithValue('Apple Health'),
+        healthSourceNameProvider.overrideWithValue('Apple Hälsa'),
         stepsProvider.overrideWith((ref) {
           final session = ref.watch(sessionProvider);
           return DemoStepsController(

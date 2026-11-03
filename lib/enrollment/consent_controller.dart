@@ -34,7 +34,7 @@ class ConsentController extends StateNotifier<ReceiptState> {
     } catch (_) {
       if (mounted && isCurrent()) {
         state = const ReceiptState(
-          error: 'The consent receipt could not be loaded.',
+          error: 'Samtyckeskvittot kunde inte hämtas.',
         );
       }
     }
@@ -56,7 +56,7 @@ class ConsentController extends StateNotifier<ReceiptState> {
         state = ReceiptState(
           receipt: state.receipt,
           error:
-              'Withdrawal could not be confirmed. Please retry or contact the study team.',
+              'Återkallelsen kunde inte bekräftas. Försök igen eller kontakta forskargruppen.',
         );
       }
     }

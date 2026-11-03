@@ -9,7 +9,7 @@ class PreferencesUploadStore implements UploadStore {
   final SharedPreferences preferences;
   final String key;
   PreferencesUploadStore(this.preferences, String baseUrl, String participantId)
-    : key = '$baseUrl:steps:$participantId:completedAt';
+    : key = '$baseUrl:scoliosis-movement-v1:$participantId:completedAt';
 
   @override
   Future<DateTime?> read() async {

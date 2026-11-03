@@ -2,7 +2,7 @@
     <!-- API access is needed in every build, including release. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="research_steps_template"
+        android:label="Skolios och rörelse"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">

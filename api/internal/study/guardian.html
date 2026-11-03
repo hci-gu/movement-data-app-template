@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="sv">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Guardian signature</title>
+  <title>Vårdnadshavares samtycke</title>
   <style nonce="{{.StyleNonce}}">
-    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #1c2937; background: #f6f8fa; }
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #1c2937; background: #f1f7f4; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; padding: 32px 16px; line-height: 1.5; }
     main { width: 100%; max-width: 560px; margin: auto; padding: 28px; background: #fff; border: 1px solid #e3e8ed; border-radius: 12px; box-shadow: 0 3px 16px rgba(18, 42, 66, .05); }
@@ -16,10 +16,10 @@
     .option { padding: 18px 0; border-top: 1px solid #e9edf0; }
     .option:first-of-type { margin-top: 20px; }
     .option p { margin-bottom: 12px; }
-    .button { display: inline-block; padding: 9px 15px; border: 1px solid #164775; border-radius: 7px; background: #164775; color: #fff; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
-    .button:hover { background: #10395f; }
+    .button { display: inline-block; padding: 9px 15px; border: 1px solid #086273; border-radius: 7px; background: #086273; color: #fff; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+    .button:hover { background: #054c59; }
     .button:focus-visible { outline: 3px solid #86b5df; outline-offset: 2px; }
-    .button.secondary { color: #164775; background: #fff; }
+    .button.secondary { color: #086273; background: #fff; }
     .button.secondary:hover { background: #f0f6fb; }
     .qr { display: block; width: 280px; max-width: 100%; height: auto; margin: 8px auto; }
     .status { margin: 8px 0 14px; padding: 10px 12px; border-radius: 7px; background: #f0f6fb; color: #244564; }
@@ -32,30 +32,30 @@
 <body>
   {{if eq .Mode "signing"}}
   <main data-state-url="{{.StateURL}}" data-qr-url="{{.QRURL}}" data-done-url="{{.DoneURL}}">
-    <h1>Guardian signature</h1>
-    <p class="muted">Choose how you want to sign with BankID.</p>
+    <h1>Vårdnadshavares samtycke</h1>
+    <p class="muted">Välj hur du vill signera med BankID.</p>
 
     <section class="option">
-      <h2>On this computer</h2>
-      <p class="muted">Use BankID installed on this computer.</p>
-      <a class="button" href="{{.DesktopLink}}">Open BankID on this computer</a>
+      <h2>På den här datorn</h2>
+      <p class="muted">Använd BankID som är installerat på datorn.</p>
+      <a class="button" href="{{.DesktopLink}}">Öppna BankID på datorn</a>
     </section>
 
     <section class="option">
-      <h2>On this phone</h2>
-      <p class="muted">Open Mobile BankID on the phone you're using now.</p>
-      <a class="button" href="{{.MobileLink}}" referrerpolicy="origin">Open BankID on this phone</a>
+      <h2>På den här telefonen</h2>
+      <p class="muted">Öppna Mobilt BankID på telefonen du använder nu.</p>
+      <a class="button" href="{{.MobileLink}}" referrerpolicy="origin">Öppna BankID på telefonen</a>
     </section>
 
     <section class="option">
-      <h2>On another phone</h2>
-      <p class="muted">Open Mobile BankID on that phone and scan this changing QR code.</p>
-      <img class="qr" id="qr" src="{{.QRURL}}" alt="Changing BankID QR code" width="280" height="280">
-      <p class="muted" id="qr-message" hidden>The QR code has expired. Restart signing to get a new one.</p>
+      <h2>På en annan telefon</h2>
+      <p class="muted">Öppna Mobilt BankID på den andra telefonen och skanna QR-koden.</p>
+      <img class="qr" id="qr" src="{{.QRURL}}" alt="Rörlig QR-kod för BankID" width="280" height="280">
+      <p class="muted" id="qr-message" hidden>QR-koden har gått ut. Starta om signeringen för att få en ny.</p>
     </section>
 
-    <p class="status" id="status" role="status">Waiting for BankID…</p>
-    <form action="{{.RestartURL}}" method="post"><button class="button secondary" type="submit">Restart signing</button></form>
+    <p class="status" id="status" role="status">Väntar på BankID…</p>
+    <form action="{{.RestartURL}}" method="post"><button class="button secondary" type="submit">Starta om signeringen</button></form>
   </main>
   <script nonce="{{.StyleNonce}}">
     (() => {
@@ -75,7 +75,7 @@
             return;
           }
           if (state.status !== 'pending') {
-            status.textContent = 'Signing did not complete. Restart to try again.';
+            status.textContent = 'Signeringen slutfördes inte. Starta om för att försöka igen.';
             qr.hidden = true;
             qrMessage.hidden = true;
             return;
@@ -84,16 +84,16 @@
             qr.hidden = false;
             qrMessage.hidden = true;
             qr.src = page.dataset.qrUrl + '&frame=' + Date.now();
-            status.textContent = 'Waiting for BankID…';
+            status.textContent = 'Väntar på BankID…';
           } else {
             qr.hidden = true;
             qrMessage.hidden = state.pickedUp;
             status.textContent = state.pickedUp
-              ? 'Continue signing in BankID.'
-              : 'Restart to get a new QR code.';
+              ? 'Fortsätt signeringen i BankID.'
+              : 'Starta om för att få en ny QR-kod.';
           }
         } catch (_) {
-          status.textContent = 'Could not check signing status. Retrying…';
+          status.textContent = 'Kunde inte kontrollera signeringen. Försöker igen…';
         }
         setTimeout(refresh, 1000);
       }
@@ -104,14 +104,14 @@
   {{else if eq .Mode "approved"}}
   <main>
     <span class="mark" aria-hidden="true">✓</span>
-    <h1>Signature received</h1>
-    <p class="muted">Your guardian signature has been approved. You can close this page.</p>
+    <h1>Signeringen har tagits emot</h1>
+    <p class="muted">Ditt samtycke som vårdnadshavare är bekräftat. Du kan stänga sidan.</p>
   </main>
   {{else}}
   <main>
     <span class="mark pending" aria-hidden="true">…</span>
-    <h1>Checking your signature</h1>
-    <p class="muted">Your signature is being checked. You can close this page; the participant can refresh the study app.</p>
+    <h1>Kontrollerar din signering</h1>
+    <p class="muted">Din signering kontrolleras. Du kan stänga sidan. Deltagaren kan uppdatera statusen i appen.</p>
   </main>
   {{end}}
 </body>

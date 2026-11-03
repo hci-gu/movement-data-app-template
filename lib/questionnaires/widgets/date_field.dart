@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import '../models.dart';
+import '../../ui/theme.dart';
 
 class DateQuestionField extends StatelessWidget {
   final QuestionDefinition question;
@@ -101,6 +102,7 @@ class DateQuestionField extends StatelessWidget {
                     : question.placeholder.isNotEmpty
                     ? question.placeholder
                     : 'Välj datum'),
+            style: readOnly ? AppTheme.body : null,
           ),
         ),
       ),

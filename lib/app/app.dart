@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../enrollment/bankid/controller.dart';
 import '../enrollment/guardians_controller.dart';
@@ -80,6 +81,9 @@ class AppView extends ConsumerWidget {
     onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
     child: CupertinoApp.router(
       debugShowCheckedModeBanner: false,
+      locale: const Locale('sv'),
+      supportedLocales: const [Locale('sv')],
+      localizationsDelegates: GlobalCupertinoLocalizations.delegates,
       title: StudyContent.appName,
       theme: AppTheme.cupertinoTheme,
       routerConfig: ref.watch(routerProvider),

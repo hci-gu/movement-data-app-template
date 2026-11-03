@@ -179,7 +179,7 @@ class BankIdController extends StateNotifier<SigningState> {
     if (!await launch(uri) && mounted) {
       state = state.copyWith(
         error:
-            'BankID could not open. Install and set up the BankID app, then try again.',
+            'BankID kunde inte öppnas. Installera och aktivera BankID och försök igen.',
       );
     }
   }
@@ -295,7 +295,8 @@ class BankIdController extends StateNotifier<SigningState> {
     }
     if (nonce == null || nonce != a.nonce) {
       state = state.copyWith(
-        error: 'This BankID return does not match your current request.',
+        error:
+            'Återgången från BankID stämmer inte med din pågående signering.',
       );
       return;
     }

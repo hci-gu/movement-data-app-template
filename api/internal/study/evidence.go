@@ -40,6 +40,8 @@ func (s *Service) finalize(a *Attempt) error {
 				outcome, hint = "rejected", "riskRejected"
 			} else if !s.now().Before(a.ExpiresAt) {
 				outcome, hint = "rejected", "sessionExpired"
+			} else if a.Purpose != "guardian" && (!atLeastAge(completion.User.PersonalNumber, s.now(), 10) || atLeastAge(completion.User.PersonalNumber, s.now(), 31)) {
+				outcome, hint = "rejected", "ageIneligible"
 			}
 			if outcome == "accepted" && a.Purpose == "guardian" {
 				outcome, hint, user, err = s.guardianCompletion(tx, a, completion)

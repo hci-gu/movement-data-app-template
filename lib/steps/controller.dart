@@ -10,6 +10,7 @@ import 'health_reader.dart';
 import 'summary.dart';
 import 'upload_gateway.dart';
 import 'upload_store.dart';
+import 'movement.dart';
 
 enum StepsPhase {
   restoring,
@@ -74,7 +75,7 @@ class StepsController extends StateNotifier<StepsState> {
       if (active) {
         state = const StepsState(
           phase: StepsPhase.error,
-          error: 'Could not restore upload status. Try again.',
+          error: 'Status för inskickad data kunde inte hämtas. Försök igen.',
         );
       }
     }
@@ -94,11 +95,18 @@ class StepsController extends StateNotifier<StepsState> {
             : StepsPhase.ready,
         samples: List.unmodifiable(result.samples),
       );
-    } catch (_) {
+    } catch (error) {
       if (active) {
-        state = const StepsState(
+        final body = error is DioException ? error.response?.data : null;
+        state = StepsState(
           phase: StepsPhase.error,
-          error: 'Step data could not be read. Please try again.',
+          error: error is UnsupportedError
+              ? 'Studien använder Apple Hälsa på iPhone.'
+              : body is Map &&
+                    error is DioException &&
+                    error.response?.statusCode == 409
+              ? 'Svara på frågorna om behandling och behandlingsdatum innan du hämtar rörelsedata.'
+              : 'Rörelsedata kunde inte hämtas. Försök igen.',
         );
       }
     }
@@ -138,7 +146,7 @@ class StepsController extends StateNotifier<StepsState> {
           phase: StepsPhase.error,
           samples: samples,
           error:
-              'Upload could not be confirmed. Your checklist is not complete. Please retry.',
+              'Uppladdningen kunde inte bekräftas. Checklistan är inte klar. Försök igen.',
         );
       }
     } finally {
@@ -153,9 +161,19 @@ class StepsController extends StateNotifier<StepsState> {
   }
 }
 
-final healthReaderProvider = Provider<HealthReader>(
-  (ref) => NativeHealthReader(),
-);
+final healthReaderProvider = Provider<HealthReader>((ref) {
+  final client = ref.watch(httpClientProvider);
+  final token = ref.watch(sessionProvider.select((s) => s?.token));
+  return NativeHealthReader(() async {
+    final response = await client.get(
+      '/api/movement/window',
+      options: Options(headers: {'Authorization': 'Bearer $token'}),
+    );
+    return MovementWindow.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+  });
+});
 final stepsProvider = StateNotifierProvider<StepsController, StepsState>((ref) {
   final scope = ref.watch(
     sessionProvider.select(

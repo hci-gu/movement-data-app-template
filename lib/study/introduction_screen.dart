@@ -14,14 +14,17 @@ class IntroductionScreen extends StatelessWidget {
     child: ListView(
       padding: const EdgeInsets.symmetric(vertical: 32),
       children: [
-        const Center(
+        Center(
           child: SizedBox(
             width: 112,
             height: 112,
-            child: Icon(
-              CupertinoIcons.heart_circle,
-              size: 72,
-              color: AppTheme.ocean,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(26),
+              child: Image.asset(
+                'assets/icon/app-icon-1024.png',
+                fit: BoxFit.contain,
+                semanticLabel: 'Skolios och rörelse',
+              ),
             ),
           ),
         ),
@@ -34,10 +37,10 @@ class IntroductionScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Taking part', style: AppTheme.cardTitle),
+              Text('Så deltar du', style: AppTheme.cardTitle),
               SizedBox(height: 12),
               Text(
-                '1. Read the consent and sign with BankID.\n2. Complete the tasks on your checklist.\n3. Finish when everything is submitted.',
+                '1. Läs informationen och samtycket.\n2. Svara på frågor om din behandling.\n3. Granska och dela din rörelsedata.',
                 style: AppTheme.body,
               ),
             ],
@@ -46,12 +49,12 @@ class IntroductionScreen extends StatelessWidget {
         const SizedBox(height: 24),
         CupertinoButton.filled(
           onPressed: () => context.goNamed('login'),
-          child: const Text('Continue with BankID'),
+          child: const Text('Läs samtycke och fortsätt'),
         ),
         CupertinoButton(
           key: const ValueKey('show-information'),
           onPressed: () => showAppSheet(context, const StudyInformationSheet()),
-          child: const Text('Study information and contact'),
+          child: const Text('Studieinformation och kontakt'),
         ),
       ],
     ),

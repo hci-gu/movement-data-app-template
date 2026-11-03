@@ -151,7 +151,7 @@ def guardian_captures(checks: list[dict]) -> list[dict]:
             run(command + ["goto", f"http://127.0.0.1:{server.server_port}/{mode}.html"], f"browser-{mode}-open", checks, WORK)
             # Wait for the page's own JavaScript to consume its local response.
             if mode in ("signing", "expired", "failed"):
-                expected = {"signing": "Waiting for BankID…", "expired": "Restart to get a new QR code.", "failed": "Signing did not complete. Restart to try again."}[mode]
+                expected = {"signing": "Väntar på BankID…", "expired": "Starta om för att få en ny QR-kod.", "failed": "Signeringen slutfördes inte. Starta om för att försöka igen."}[mode]
                 code = "await page.waitForFunction(text => document.querySelector('#status').textContent === text, " + json.dumps(expected) + "); await page.locator('main').waitFor();"
                 if mode == "signing":
                     code += " await page.waitForFunction(() => document.querySelector('#qr').complete && document.querySelector('#qr').naturalWidth > 0);"

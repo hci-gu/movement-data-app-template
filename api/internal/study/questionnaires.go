@@ -19,7 +19,7 @@ func (s *Service) registerAnswerWrites(guard func(*core.RequestEvent) error) {
 			return err
 		}
 		if id := e.Record.GetString("user"); id != "" && id != e.Auth.Id {
-			return problem(403, "wrongParticipant", "Answers must belong to the authenticated participant.")
+			return problem(403, "wrongParticipant", "Svaren måste tillhöra den inloggade deltagaren.")
 		}
 		e.Record.Set("user", e.Auth.Id)
 		formID := e.Record.GetString("questionnaire")
@@ -34,6 +34,11 @@ func (s *Service) registerAnswerWrites(guard func(*core.RequestEvent) error) {
 				return problem(400, "invalidAnswers", "Svaren måste vara ett JSON-objekt.")
 			}
 			messages := d.Validate(answers, Gender(e.Auth.GetString("personalNumber")), s.now())
+			if formID == questionnaires.ScoliosisID {
+				for id, message := range questionnaires.ValidateTreatment(answers, s.now()) {
+					messages[id] = message
+				}
+			}
 			if len(messages) > 0 {
 				fields := validation.Errors{}
 				for id, message := range messages {

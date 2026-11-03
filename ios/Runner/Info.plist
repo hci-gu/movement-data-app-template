@@ -11,7 +11,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Research Steps</string>
+	<string>Skolios och rörelse</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -19,7 +19,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>research_steps_template</string>
+	<string>skolios_rorelse</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -31,9 +31,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
-	<string>This app reads Apple Health step data so it can be uploaded for research use.</string>
+	<string>Appen läser antal steg, steglängd, gång- och löpsträcka, gånghastighet, gångasymmetri och tid med båda fötterna på marken för forskning om skolios. Du granskar datan innan du skickar den.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>This app reads Apple Health step data so it can be uploaded for research use.</string>
+	<string>Appen läser antal steg, steglängd, gång- och löpsträcka, gånghastighet, gångasymmetri och tid med båda fötterna på marken för forskning om skolios. Du granskar datan innan du skickar den.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

@@ -37,7 +37,7 @@ func TestGuardianSignaturesGateParticipant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := &fakeProvider{result: guardianResult("201001012384")}
+	f := &fakeProvider{result: guardianResult("201301012384")}
 	now := time.Date(2026, 9, 23, 12, 0, 0, 0, time.UTC)
 	s := &Service{App: app, Config: cfg, provider: f, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: func() time.Time { return now }}
 	participant, err := s.Start(context.Background(), StartInput{ClientSecret: randomSecret(), Mode: "qr", Version: doc.Id, DocumentHash: doc.GetString("documentHash")}, "192.0.2.1")
@@ -88,7 +88,7 @@ func TestGuardianSignaturesGateParticipant(t *testing.T) {
 	openLink.RemoteAddr = "192.0.2.2:1234"
 	handoff := httptest.NewRecorder()
 	handler.ServeHTTP(handoff, openLink)
-	if handoff.Code != 200 || !strings.Contains(handoff.Body.String(), `href="https://app.bankid.com/?autostarttoken=auto"`) || !strings.Contains(handoff.Body.String(), "Open BankID") || strings.Contains(handoff.Body.String(), "#ZgotmplZ") || handoff.Header().Get("Location") != "" {
+	if handoff.Code != 200 || !strings.Contains(handoff.Body.String(), `href="https://app.bankid.com/?autostarttoken=auto"`) || !strings.Contains(handoff.Body.String(), "Öppna BankID") || strings.Contains(handoff.Body.String(), "#ZgotmplZ") || handoff.Header().Get("Location") != "" {
 		t.Fatalf("guardian handoff: %d %s", handoff.Code, handoff.Body.String())
 	}
 	if !strings.Contains(handoff.Body.String(), `href="bankid:///?autostarttoken=auto"`) || !strings.Contains(handoff.Body.String(), "/guardian/"+requests[0].Id+"/qr?nonce=") {
@@ -141,7 +141,7 @@ func TestGuardianSignaturesGateParticipant(t *testing.T) {
 	returnRequest.RemoteAddr = "192.0.2.2:1234"
 	matchingDevice := httptest.NewRecorder()
 	handler.ServeHTTP(matchingDevice, returnRequest)
-	if matchingDevice.Code != 200 || !strings.Contains(matchingDevice.Body.String(), "Checking your signature") {
+	if matchingDevice.Code != 200 || !strings.Contains(matchingDevice.Body.String(), "Kontrollerar din signering") {
 		t.Fatalf("return from signing device: %d %s", matchingDevice.Code, matchingDevice.Body.String())
 	}
 	f.result = guardianResult("198001012384")
@@ -153,7 +153,7 @@ func TestGuardianSignaturesGateParticipant(t *testing.T) {
 	}
 	approved := httptest.NewRecorder()
 	handler.ServeHTTP(approved, openLink)
-	if approved.Code != 200 || !strings.Contains(approved.Body.String(), "Signature received") || strings.Contains(approved.Body.String(), "Open BankID on this phone") {
+	if approved.Code != 200 || !strings.Contains(approved.Body.String(), "Signeringen har tagits emot") || strings.Contains(approved.Body.String(), "Öppna BankID på telefonen") {
 		t.Fatalf("guardian approval page: %d %s", approved.Code, approved.Body.String())
 	}
 	stateAfterSigning := httptest.NewRecorder()
@@ -181,7 +181,7 @@ func TestGuardianSignaturesGateParticipant(t *testing.T) {
 	missingURLRequest.RemoteAddr = "192.0.2.3:1234"
 	missingURLResponse := httptest.NewRecorder()
 	handler.ServeHTTP(missingURLResponse, missingURLRequest)
-	if missingURLResponse.Code != 503 || !strings.Contains(missingURLResponse.Body.String(), "BANKID_PUBLIC_URL") {
+	if missingURLResponse.Code != 503 || !strings.Contains(missingURLResponse.Body.String(), "publicURLMissing") {
 		t.Fatalf("missing public URL should be explained: %d %s", missingURLResponse.Code, missingURLResponse.Body.String())
 	}
 	s.Config.PublicURL = cfg.PublicURL
@@ -224,7 +224,7 @@ func TestGuardianSignaturesGateParticipant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.result = guardianResult("201001012384")
+	f.result = guardianResult("201301012384")
 	renewal, err := s.Start(context.Background(), StartInput{ClientSecret: randomSecret(), Mode: "qr", Version: newDoc.Id, DocumentHash: newDoc.GetString("documentHash")}, "192.0.2.1")
 	if err != nil {
 		t.Fatal(err)

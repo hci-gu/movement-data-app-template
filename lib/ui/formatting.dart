@@ -1,6 +1,6 @@
 String formatDate(DateTime? value) {
   if (value == null) {
-    return 'Not available';
+    return 'Saknas';
   }
 
   final month = value.month.toString().padLeft(2, '0');
@@ -10,7 +10,7 @@ String formatDate(DateTime? value) {
 
 String formatDateTime(DateTime? value) {
   if (value == null) {
-    return 'Not available';
+    return 'Saknas';
   }
 
   final hour = value.hour.toString().padLeft(2, '0');
@@ -20,10 +20,10 @@ String formatDateTime(DateTime? value) {
 
 String formatDateRange(DateTime? start, DateTime? end) {
   if (start == null || end == null) {
-    return 'No date coverage available';
+    return 'Datumuppgifter saknas';
   }
 
-  return '${formatDate(start)} to ${formatDate(end)}';
+  return '${formatDate(start)} – ${formatDate(end)}';
 }
 
 String formatInteger(num value) {

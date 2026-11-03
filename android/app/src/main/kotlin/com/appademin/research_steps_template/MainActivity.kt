@@ -1,4 +1,4 @@
-package com.appademin.research_steps_template
+package se.gu.skoliosrorelse
 
 import io.flutter.embedding.android.FlutterActivity
 
