@@ -18,8 +18,10 @@ import (
 )
 
 func main() {
-	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
-		log.Fatal(err)
+	if os.Getenv("STUDY_SKIP_DOTENV") != "1" {
+		if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Fatal(err)
+		}
 	}
 	app := pocketbase.New()
 	isGoRun := strings.HasPrefix(os.Args[0], os.TempDir())

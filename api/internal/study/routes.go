@@ -7,9 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"app/internal/bankid"
-
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/pocketbase/dbx"
 	validation "github.com/pocketbase/ozzo-validation/v4"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -73,7 +72,7 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 	v.count++
 	s.rates[key] = v
 	s.rateMu.Unlock()
-	limit := 120
+	limit := 240 // Status plus animated QR image are polled once per second.
 	if e.Request.Method == http.MethodPost {
 		limit = 20
 	}
@@ -105,8 +104,23 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return problem(503, "consentUnavailable", "Study consent is not available yet.")
 		}
-		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil})
-	})
+		return e.JSON(200, map[string]any{"document": documentDTO(doc)})
+	}).BindFunc(s.RequireSession)
+	g.POST("/consent/accept", func(e *core.RequestEvent) error {
+		var in AcceptanceInput
+		if err := e.BindBody(&in); err != nil {
+			return err
+		}
+		claims, err := security.ParseUnverifiedJWT(bearer(e))
+		if err != nil {
+			return err
+		}
+		authentication, _ := claims["authentication"].(string)
+		if _, err := s.acceptConsent(e.Auth, authentication, in); err != nil {
+			return err
+		}
+		return e.JSON(200, s.userDTO(e.Auth))
+	}).BindFunc(s.RequireSession)
 	g.POST("/bankid/attempts", func(e *core.RequestEvent) error {
 		var in StartInput
 		if err := e.BindBody(&in); err != nil {
@@ -125,6 +139,13 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		return s.attemptResponse(e, a)
 	})
 	g.GET("/bankid/attempts/{id}", s.withAttempt(s.attemptResponse))
+	g.GET("/bankid/attempts/{id}/qr", s.withAttempt(func(e *core.RequestEvent, a *Attempt) error {
+		value, err := s.qrImage(e.Request.Context(), a)
+		if err != nil {
+			return err
+		}
+		return e.JSON(200, map[string]string{"image": value})
+	}))
 	g.POST("/bankid/attempts/{id}/cancel", s.withAttempt(func(e *core.RequestEvent, a *Attempt) error {
 		if err := s.cancel(e.Request.Context(), a); err != nil {
 			return err
@@ -157,18 +178,18 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 			if err != nil {
 				return err
 			}
-			sig, err := latestSignature(tx, user.Id)
+			acceptances, err := tx.FindRecordsByFilter("consent_acceptances", "user={:user} && withdrawnAt=0", "", 0, 0, dbx.Params{"user": user.Id})
 			if err != nil {
 				return err
 			}
-			if sig.GetInt("withdrawnAt") != 0 {
-				return nil
+			for _, acceptance := range acceptances {
+				acceptance.Set("withdrawnAt", s.now().Unix())
+				if err := tx.Save(acceptance); err != nil {
+					return err
+				}
 			}
-			sig.Set("withdrawnAt", s.now().Unix())
-			if err := tx.Save(sig); err != nil {
-				return err
-			}
-			return nil
+			user.RefreshTokenKey()
+			return tx.Save(user)
 		})
 		if err != nil {
 			return err
@@ -176,19 +197,22 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		return e.NoContent(204)
 	}).BindFunc(s.RequireSession)
 	g.GET("/consent/receipt", func(e *core.RequestEvent) error {
-		sig, err := latestSignature(s.App, e.Auth.Id)
-		if err != nil || sig.GetString("user") != e.Auth.Id {
-			return problem(404, "receiptUnavailable", "No signed consent receipt is available.")
-		}
-		doc, err := s.App.FindRecordById("consent_texts", sig.GetString("version"))
+		sig, err := s.activeAcceptance(s.App, e.Auth)
 		if err != nil {
-			return err
+			sig, err = latestConsent(s.App, e.Auth.Id)
+		}
+		if err != nil || sig.GetString("user") != e.Auth.Id {
+			return problem(404, "receiptUnavailable", "No consent receipt is available.")
+		}
+		var evidence ConsentEvidence
+		if s.Config.Open("consent:"+sig.Id, sig.GetString("evidenceCipher"), &evidence) != nil || evidence.Method != "inAppAcceptance" || evidence.ParticipantID != e.Auth.Id || evidence.Document.ID != sig.GetString("version") || evidence.AcceptedAt != int64(sig.GetInt("acceptedAt")) {
+			return problem(503, "receiptUnavailable", "The consent receipt could not be verified.")
 		}
 		status := "accepted"
 		if sig.GetInt("withdrawnAt") != 0 {
 			status = "withdrawn"
 		}
-		return e.JSON(200, map[string]any{"signatureId": sig.Id, "receivedAt": sig.GetInt("receivedAt"), "status": status, "document": documentDTO(doc)})
+		return e.JSON(200, map[string]any{"acceptanceId": sig.Id, "acceptedAt": sig.GetInt("acceptedAt"), "status": status, "document": evidence.Document})
 	}).BindFunc(s.RequireSession)
 }
 func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) func(*core.RequestEvent) error {
@@ -215,26 +239,18 @@ func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) fun
 	}
 }
 func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
-	response := map[string]any{"id": a.ID, "status": a.Status, "hintCode": a.Hint, "purpose": a.Purpose, "mode": a.Mode, "signatureId": a.SignatureID, "pickedUp": a.PickedUp, "expiresAt": a.ExpiresAt.Add(ResultLifetime).Unix(), "nonce": a.Nonce}
-	if a.Document != nil {
-		response["document"] = a.Document
-	}
+	response := map[string]any{"id": a.ID, "status": a.Status, "hintCode": a.Hint, "purpose": a.Purpose, "mode": a.Mode, "expiresAt": a.ExpiresAt.Unix(), "nonce": a.Nonce}
 	if a.Status == "pending" && a.Terminal == "" {
 		if a.Mode == "sameDevice" {
 			response["launchUrl"] = "https://app.bankid.com/?autostarttoken=" + url.QueryEscape(a.Order.AutoStartToken)
 		}
-		if a.Mode == "qr" && !a.PickedUp {
-			remaining := 30 - int(s.now().Sub(a.ReceivedAt).Seconds())
-			if remaining < 0 {
-				remaining = 0
-			}
-			response["qrSecondsRemaining"] = remaining
-			if remaining > 0 {
-				response["qrData"] = bankid.QRPayload(a.Order, a.ReceivedAt, s.now())
-			}
+		remaining := int(a.ExpiresAt.Sub(s.now()).Seconds())
+		if remaining < 0 {
+			remaining = 0
 		}
+		response["qrSecondsRemaining"] = remaining
 	}
-	if a.Status == "accepted" {
+	if a.Status == "accepted" && a.Purpose == "participant" {
 		user, err := s.App.FindRecordById("users", a.UserID)
 		if err != nil {
 			return err
@@ -242,22 +258,19 @@ func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 		if user.TokenKey() != a.TokenKey {
 			return restartRequired()
 		}
-		if !s.activeConsent(s.App, user) {
-			response["consentRequired"] = true
-		} else {
-			if a.Grant == nil {
-				expires := a.FinishedAt.Add(SessionLifetime)
-				token, err := security.NewJWT(jwt.MapClaims{core.TokenClaimType: core.TokenTypeAuth, core.TokenClaimId: user.Id, core.TokenClaimCollectionId: user.Collection().Id, core.TokenClaimRefreshable: false, "exp": expires.Unix()}, user.TokenKey()+user.Collection().AuthToken.Secret, expires.Sub(s.now()))
-				if err != nil {
-					return err
-				}
-				a.Grant = &grant{Token: token, ExpiresAt: expires.Unix(), Record: s.userDTO(user)}
+		if a.Grant == nil {
+			expires := a.FinishedAt.Add(SessionLifetime)
+			token, err := security.NewJWT(jwt.MapClaims{core.TokenClaimType: core.TokenTypeAuth, core.TokenClaimId: user.Id, core.TokenClaimCollectionId: user.Collection().Id, core.TokenClaimRefreshable: false, "authentication": a.AuthenticationID, "exp": expires.Unix()}, user.TokenKey()+user.Collection().AuthToken.Secret, expires.Sub(s.now()))
+			if err != nil {
+				return err
 			}
-			if a.Grant.ExpiresAt <= s.now().Unix() {
-				return restartRequired()
-			}
-			response["grant"] = a.Grant
+			a.Grant = &grant{Token: token, ExpiresAt: expires.Unix()}
 		}
+		if a.Grant.ExpiresAt <= s.now().Unix() {
+			return restartRequired()
+		}
+		a.Grant.Record = s.userDTO(user)
+		response["grant"] = a.Grant
 	}
 	return e.JSON(200, response)
 }

@@ -14,14 +14,55 @@ spec:
             labels:
                 app: movement-api
         spec:
+            automountServiceAccountToken: false
             volumes:
                 - name: movement-api-persistent-storage
                   persistentVolumeClaim:
                       claimName: movement-api-pv-claim
+                - name: study-keys
+                  secret:
+                      secretName: movement-study-keys-test
+                      defaultMode: 0440
+                - name: test-consent
+                  configMap:
+                      name: movement-test-consent
+            initContainers:
+                - name: publish-test-consent
+                  image: 'registry.k8s.gu.se/appademin/movement-api:0.0.3-kontoapi-test'
+                  imagePullPolicy: Always
+                  command: [/pb/app]
+                  args:
+                    - bankid
+                    - publish-consent
+                    - --file=/pb/consent/test-consent.txt
+                    - --version=kontoapi-technical-v1
+                    - --title=KontoAPI technical test
+                    - --if-missing
+                    - --dir=/pb/pb_data
+                  env:
+                    - name: STUDY_SKIP_DOTENV
+                      value: "1"
+                  volumeMounts:
+                    - mountPath: /pb/pb_data
+                      name: movement-api-persistent-storage
+                    - mountPath: /pb/consent
+                      name: test-consent
+                      readOnly: true
+                  securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                          drop: [ALL]
             containers:
                 - name: movement-api
-                  image: 'registry.k8s.gu.se/appademin/movement-api:0.0.2-bankid-test-20260930'
+                  image: 'registry.k8s.gu.se/appademin/movement-api:0.0.3-kontoapi-test'
                   imagePullPolicy: Always
+                  startupProbe:
+                      httpGet:
+                          path: /api/health
+                          port: web
+                      periodSeconds: 5
+                      failureThreshold: 24
+                      timeoutSeconds: 3
                   readinessProbe:
                       httpGet:
                           path: /api/health
@@ -29,6 +70,22 @@ spec:
                       initialDelaySeconds: 5
                       periodSeconds: 5
                       timeoutSeconds: 3
+                  livenessProbe:
+                      httpGet:
+                          path: /api/health
+                          port: web
+                      periodSeconds: 30
+                      timeoutSeconds: 3
+                  resources:
+                      requests:
+                          cpu: 100m
+                          memory: 128Mi
+                      limits:
+                          memory: 512Mi
+                  securityContext:
+                      allowPrivilegeEscalation: false
+                      capabilities:
+                          drop: [ALL]
                   ports:
                       - containerPort: 8080
                         name: web
@@ -36,26 +93,19 @@ spec:
                   volumeMounts:
                       - mountPath: /pb/pb_data
                         name: movement-api-persistent-storage
+                      - mountPath: /pb/secrets
+                        name: study-keys
+                        readOnly: true
+                  envFrom:
+                    - configMapRef:
+                        name: movement-kontoapi-config
+                    - secretRef:
+                        name: movement-kontoapi-test
                   env:
-                    - name: BANKID_ENVIRONMENT
-                      value: test
-                    - name: BANKID_APP_IDENTIFIER
-                      value: com.appademin.swedHeart
-                    - name: BANKID_RETURN_URL
-                      value: researchsteps://bankid/return
-                    - name: BANKID_CERT_FILE
-                      value: /pb/secrets/client.pem
-                    - name: BANKID_KEY_FILE
-                      value: /pb/secrets/client-key.pem
-                    - name: BANKID_CA_FILE
-                      value: /pb/secrets/bankid-server-ca.pem
+                    - name: STUDY_SKIP_DOTENV
+                      value: "1"
                     - name: STUDY_SECRETS_FILE
                       value: /pb/secrets/study-keys.json
-                    - name: TRUSTED_PROXY_CIDRS
-                      # Exact ingress peers observed on this cluster; recheck after ingress changes.
-                      value: "10.128.2.2/32,10.129.2.2/32,10.131.0.2/32"
-                    - name: BANKID_PUBLIC_URL
-                      value: https://movement-api.test.appadem.in
 ---         
 apiVersion: v1
 kind: Service
@@ -67,6 +117,7 @@ spec:
     ports:
         - protocol: TCP
           port: 8080
+          targetPort: web
 ---
 kind: Route
 apiVersion: route.openshift.io/v1

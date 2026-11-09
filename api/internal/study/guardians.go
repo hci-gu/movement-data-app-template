@@ -3,8 +3,6 @@ package study
 import (
 	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -12,28 +10,26 @@ import (
 	"strconv"
 	"time"
 
-	"app/internal/bankid"
-
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
-var signingRequestIDPattern = regexp.MustCompile(`^[0-9]{3}-[0-9]{3}$`)
+var guardianRequestIDPattern = regexp.MustCompile(`^[0-9]{3}-[0-9]{3}$`)
 
-func generateSigningRequestID(app core.App) (string, error) {
+func generateGuardianRequestID(app core.App) (string, error) {
 	for range 100 {
 		n, err := rand.Int(rand.Reader, big.NewInt(1000000))
 		if err != nil {
 			return "", err
 		}
 		id := fmt.Sprintf("%03d-%03d", n.Int64()/1000, n.Int64()%1000)
-		if _, err := app.FindRecordById("signingRequests", id); errors.Is(err, sql.ErrNoRows) {
+		if _, err := app.FindRecordById("guardian_requests", id); errors.Is(err, sql.ErrNoRows) {
 			return id, nil
 		} else if err != nil {
 			return "", err
 		}
 	}
-	return "", problem(503, "busy", "No signing request ID is available. Please try again.")
+	return "", problem(503, "busy", "No guardian request ID is available. Please try again.")
 }
 
 func adult(personalNumber string, now time.Time) bool {
@@ -51,32 +47,28 @@ func adult(personalNumber string, now time.Time) bool {
 }
 
 func (s *Service) guardianRequests(app core.App, userID string) ([]*core.Record, error) {
-	return app.FindRecordsByFilter("signingRequests", "user={:user}", "slot", 3, 0, dbx.Params{"user": userID})
+	return app.FindRecordsByFilter("guardian_requests", "user={:user}", "slot", 3, 0, dbx.Params{"user": userID})
 }
 
-func (s *Service) guardianSigned(app core.App, request *core.Record, version string) bool {
-	id := request.GetString("signature")
-	if id == "" {
+func (s *Service) guardianApproved(app core.App, request *core.Record, version string) bool {
+	user, err := app.FindRecordById("users", request.GetString("user"))
+	if err != nil {
 		return false
 	}
-	sig, err := app.FindRecordById("signatures", id)
-	if err != nil || sig.GetString("user") != request.GetString("user") || sig.GetString("purpose") != "guardian" || sig.GetString("outcome") != "accepted" || sig.GetString("version") != version || sig.GetString("evidenceCipher") == "" {
+	consent, err := s.activeAcceptance(app, user)
+	if err != nil || consent.GetString("version") != version {
 		return false
 	}
-	var evidence Evidence
-	if s.Config.Open("signature:"+sig.Id, sig.GetString("evidenceCipher"), &evidence) != nil {
+	approval, err := app.FindFirstRecordByFilter("guardian_approvals", "request={:request} && consent={:consent}", dbx.Params{"request": request.Id, "consent": consent.Id})
+	if err != nil {
+		return false
+	}
+	var evidence ConsentEvidence
+	if s.Config.Open("guardian:"+approval.Id, approval.GetString("evidenceCipher"), &evidence) != nil {
 		return false
 	}
 	doc, err := app.FindRecordById("consent_texts", version)
-	if err != nil || evidence.Document == nil || evidence.Document.ID != doc.Id || evidence.Document.DocumentHash != doc.GetString("documentHash") || evidence.Document.Text != doc.GetString("text") {
-		return false
-	}
-	user, err := app.FindRecordById("users", request.GetString("user"))
-	if err != nil || evidence.Request.UserVisibleData != base64.StdEncoding.EncodeToString([]byte(guardianVisibleText(user, doc))) {
-		return false
-	}
-	var result bankid.Result
-	return json.Unmarshal(evidence.Completion, &result) == nil && result.CompletionData != nil && result.CompletionData.User.PersonalNumber == request.GetString("personalNumber") && adult(result.CompletionData.User.PersonalNumber, time.Unix(int64(sig.GetInt("receivedAt")), 0)) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
+	return err == nil && evidence.Method == "guardianWebApproval" && evidence.Document == documentDTO(doc) && evidence.ParticipantID == user.Id && evidence.ParticipantConsentID == consent.Id && evidence.GuardianRequestID == request.Id && evidence.PersonalNumber == request.GetString("personalNumber") && adult(evidence.PersonalNumber, time.Unix(evidence.AcceptedAt, 0)) && evidence.AuthenticationID == approval.GetString("authentication") && evidence.AcceptedAt == int64(approval.GetInt("acceptedAt"))
 }
 
 func guardianVisibleText(user, doc *core.Record) string {
@@ -100,7 +92,7 @@ func (s *Service) guardianEligible(app core.App, user *core.Record) bool {
 		return false
 	}
 	for _, request := range requests {
-		if !s.guardianSigned(app, request, doc.Id) {
+		if !s.guardianApproved(app, request, doc.Id) {
 			return false
 		}
 	}
@@ -122,7 +114,7 @@ func (s *Service) guardianStatus(user *core.Record) (map[string]any, error) {
 	}
 	items := make([]map[string]any, 0, len(requests))
 	for _, request := range requests {
-		items = append(items, map[string]any{"id": request.Id, "personalNumber": request.GetString("personalNumber"), "signed": s.guardianSigned(s.App, request, doc.Id), "link": s.Config.PublicURL + "/guardian/" + request.Id})
+		items = append(items, map[string]any{"id": request.Id, "personalNumber": request.GetString("personalNumber"), "approved": s.guardianApproved(s.App, request, doc.Id), "link": s.Config.PublicURL + "/guardian/" + request.Id})
 	}
 	return map[string]any{"eligible": s.activeConsent(s.App, user) && s.guardianEligible(s.App, user), "adult": adult(user.GetString("personalNumber"), s.now()), "guardianCount": user.GetInt("guardianCount"), "requests": items}, nil
 }
@@ -141,7 +133,7 @@ func (s *Service) createGuardianRequest(user *core.Record, personalNumber string
 			return err
 		}
 		if !s.activeConsent(tx, fresh) {
-			return problem(403, "consentRequired", "Sign the current study consent first.")
+			return problem(403, "consentRequired", "Accept the current study consent first.")
 		}
 		requests, err := s.guardianRequests(tx, fresh.Id)
 		if err != nil {
@@ -165,11 +157,11 @@ func (s *Service) createGuardianRequest(user *core.Record, personalNumber string
 				return err
 			}
 		}
-		created, err = newRecord(tx, "signingRequests")
+		created, err = newRecord(tx, "guardian_requests")
 		if err != nil {
 			return err
 		}
-		id, err := generateSigningRequestID(tx)
+		id, err := generateGuardianRequestID(tx)
 		if err != nil {
 			return err
 		}

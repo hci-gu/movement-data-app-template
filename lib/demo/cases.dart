@@ -68,6 +68,7 @@ List<PreviewCase> previewCases(DemoStudy study) {
       actions: ['show-information'],
     ),
     for (final state in [
+      'authentication',
       'consent',
       'consent-loading',
       'consent-error',
@@ -80,19 +81,20 @@ List<PreviewCase> previewCases(DemoStudy study) {
       PreviewCase(
         state,
         {
+          'authentication': 'Identify with BankID',
           'consent': 'Review consent',
           'consent-loading': 'Loading consent',
           'consent-error': 'Consent unavailable',
           'bankid-pending': 'Continue in BankID',
-          'bankid-qr': 'BankID QR signing',
+          'bankid-qr': 'BankID QR authentication',
           'bankid-expired': 'Expired QR code',
-          'bankid-cancelled': 'Cancelled signing',
-          'bankid-accepted': 'Consent signed',
+          'bankid-cancelled': 'Stopped authentication',
+          'bankid-accepted': 'Identity verified',
         }[state]!,
         'Joining the study',
-        '/introduction/login',
+        state.startsWith('consent') ? '/consent' : '/introduction/login',
         state: state,
-        signedIn: false,
+        signedIn: state.startsWith('consent'),
       ),
     const PreviewCase('home', 'Checklist', 'Checklist', '/home'),
     for (final state in ['forms-loading', 'forms-error', 'forms-empty'])
@@ -191,7 +193,7 @@ List<PreviewCase> previewCases(DemoStudy study) {
     ),
     const PreviewCase(
       'receipt',
-      'Signed consent receipt',
+      'Consent acceptance receipt',
       'Account',
       '/consent-receipt',
     ),

@@ -6,8 +6,10 @@
    [design and copy guidelines](design-guidelines.md) before adapting any screen.
 2. Set up the Go/PocketBase server in `api/` using
    [BankID setup and testing](bankid-testing.md). Configure the intended database,
-   BankID environment, certificates, evidence keyring and return links.
-3. **Populate and verify the study's BankID consent in PocketBase**, following
+   KontoAPI credentials, evidence keyring and public guardian URL.
+   For the existing OpenShift test target, use [remote test deployment](test-deployment.md)
+   to configure storage, initialize technical consent and run the phone against HTTPS.
+3. **Populate and verify the study's consent in PocketBase**, following
    [Publish study consent](#publish-study-consent) below. Updating app copy or
    adding a text file alone does not populate the consent record.
 4. Populate questionnaire definitions from `context/` with a reproducible Go
@@ -62,7 +64,7 @@ and real state, never an agent's assumption about readiness.
 The report's `--study` mode rejects template source content, known default study
 copy, example contacts and explicit draft markers. It does not establish ethical
 approval, recognize all unfinished wording or verify a live backend. Review all
-copy and assets, verify `/api/consent/current` and a complete signing flow against
+copy and assets, verify `/api/consent/current` and a complete authentication and explicit acceptance flow against
 the intended environment, and record physical-device results separately.
 
 ## Publish study consent
@@ -71,8 +73,8 @@ Find the relevant consent text in `context/`, including attachments to ethics
 applications, participant information and any guardian material. Read the actual
 documents; filenames and the template's example text are insufficient. Preserve
 the source wording and record which file, section/pages and version it came from.
-Check that the text covers the intended signing audience and data collection.
-The template currently publishes one consent document used by its signing flow;
+Check that the text covers the intended consent audience and data collection.
+The template currently publishes one consent document used by its acceptance flow;
 if the study requires distinct participant/guardian texts or a different consent
 process, adapt that flow before use.
 
@@ -108,25 +110,26 @@ database does not configure the app's backend.
 The command creates the immutable `consent_texts` record, computes its
 `documentHash`, sets `current: true`, and retires the previous current version.
 Never hand-edit a published text or its hash. Use a new version when wording
-changes; existing participants must sign the new version before further uploads.
+changes; existing participants must accept the new version before further uploads.
 
 Verify all of the following before calling consent setup complete:
 
 - PocketBase contains the intended `version`, `title`, full `text` and
   `documentHash`, with exactly one current consent record.
-- `GET /api/consent/current` on the app's configured `API_BASE_URL` returns that
-  same document, and `bankidAvailable` is true when BankID is configured.
-- The app displays the full study consent before signing and a test signing
-  produces a receipt for that version.
+- Authenticated `GET /api/consent/current` on the app's configured `API_BASE_URL`
+  returns that same document.
+- KontoAPI authenticates a test identity; the app then displays the full consent.
+  An explicit acceptance produces a receipt for that version. Authentication alone
+  must leave study tasks blocked.
 
-Record the published version and environment. If publication or signing could
+Record the published version and environment. If publication or authentication/acceptance could
 not be performed, state exactly what remains; a prepared file or command is not
 evidence that PocketBase was populated.
 
 ## Age and consent routing
 
 Determine participant age on the backend from the personal number in the
-successful, verified BankID response (`completionData.user.personalNumber`).
+successful KontoAPI authentication result (`personalNumber:givenName:surname`).
 Use that identity to apply the study's age thresholds and guardian requirements.
 Do not ask participants whether they are under 15, under 18, or in another age
 group, or ask for their birth date to establish those facts. The app follows the
@@ -139,13 +142,11 @@ decision on the backend. Verify identities on both sides of the threshold and
 on the relevant birthday.
 
 For a new participant, verified age becomes available when BankID completes.
-The current template presents a shared consent document before that signature,
-then determines guardian requirements from the returned identity. If a study
-requires different age-specific documents **before signing**, adapt the sequence
-to establish the verified identity before selecting and presenting the document
-for consent signing. Do not solve that sequencing problem with an age toggle.
-Keep the recorded consent tied to the exact text shown and signed; discovering
-the participant's age does not turn a signature into consent to a different text.
+The template then presents its shared consent document for explicit acceptance.
+If a study requires age-specific participant or guardian texts, select them using
+that verified identity and adapt the shared-document model before use. Keep the
+acceptance tied to the exact displayed text and version. KontoAPI authentication
+does not sign that text or create consent by itself.
 
 ## Study app icon
 

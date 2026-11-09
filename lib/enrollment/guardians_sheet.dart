@@ -29,12 +29,12 @@ class GuardiansSheet extends HookConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: 20),
         children: [
           const Text(
-            'Ask a legal guardian to sign',
+            'Ask a legal guardian to approve',
             style: AppTheme.sectionTitle,
           ),
           const SizedBox(height: 12),
           const Text(
-            'Guardian signatures are needed before you can complete the study tasks. Generate a link for each guardian and share it with that person.',
+            'Guardian approvals are needed before you can complete the study tasks. Generate a link for each guardian and share it with that person.',
             style: AppTheme.body,
           ),
           const SizedBox(height: 20),
@@ -75,12 +75,12 @@ class GuardiansSheet extends HookConsumerWidget {
                         style: AppTheme.bodyMuted,
                       ),
                       Text(
-                        state.status.requests[i].signed
-                            ? 'Signed and verified'
-                            : 'Waiting for signature',
+                        state.status.requests[i].approved
+                            ? 'Approved after identification'
+                            : 'Waiting for approval',
                         style: AppTheme.body,
                       ),
-                      if (!state.status.requests[i].signed) ...[
+                      if (!state.status.requests[i].approved) ...[
                         const SizedBox(height: 16),
                         CupertinoButton(
                           onPressed: () async {
@@ -94,7 +94,7 @@ class GuardiansSheet extends HookConsumerWidget {
                           child: Text(
                             copied.value == i
                                 ? 'Link copied'
-                                : 'Copy signing link',
+                                : 'Copy approval link',
                           ),
                         ),
                       ],
@@ -115,7 +115,7 @@ class GuardiansSheet extends HookConsumerWidget {
                                 i == 0 ? first.text : second.text,
                                 count,
                               ),
-                        child: const Text('Generate signing link'),
+                        child: const Text('Generate approval link'),
                       ),
                     ],
                   ],
@@ -140,7 +140,7 @@ class GuardiansSheet extends HookConsumerWidget {
             onPressed: state.busy ? null : controller.refresh,
             child: state.busy
                 ? const CupertinoActivityIndicator()
-                : const Text('Refresh signature status'),
+                : const Text('Refresh approval status'),
           ),
         ],
       ),

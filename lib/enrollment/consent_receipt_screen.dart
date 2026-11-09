@@ -12,7 +12,7 @@ class ConsentReceiptScreen extends ConsumerWidget {
     final controller = ref.read(consentProvider.notifier);
     final receipt = state.receipt;
     return AppScaffold(
-      title: 'Signed consent',
+      title: 'Consent receipt',
       child: AppScrollBody(
         centerContent: receipt == null,
         children: [
@@ -37,7 +37,7 @@ class ConsentReceiptScreen extends ConsumerWidget {
             Text(receipt.document.title, style: AppTheme.sectionTitle),
             const SizedBox(height: 12),
             Text(
-              'Version ${receipt.document.version}\nSigned: ${formatDateTime(receipt.receivedAt.toLocal())}\nStatus: ${receipt.status}',
+              'Version ${receipt.document.version}\nAccepted: ${formatDateTime(receipt.receivedAt.toLocal())}\nStatus: ${receipt.status}',
               style: AppTheme.bodyMuted,
             ),
             const SizedBox(height: 16),
@@ -58,7 +58,7 @@ class ConsentReceiptScreen extends ConsumerWidget {
                         builder: (context) => CupertinoAlertDialog(
                           title: const Text('Withdraw consent?'),
                           content: const Text(
-                            'This stops future participation and signs you out. Your signed consent record is retained.',
+                            'This stops future participation and signs you out. Your consent acceptance record is retained.',
                           ),
                           actions: [
                             CupertinoDialogAction(

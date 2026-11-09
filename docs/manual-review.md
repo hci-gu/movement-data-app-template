@@ -1,24 +1,36 @@
-# Manual review of the restructured app
+# Manual review of KontoAPI authentication and consent
 
-Run against the backend containing your questionnaire definitions:
+Run against the backend containing your questionnaire definitions. For the
+[remote test deployment](test-deployment.md), use:
 
 ```sh
-flutter run --dart-define=API_BASE_URL=http://YOUR_LAN_IP:8090
+PATH="$(xcode-select -p)/usr/bin:$PATH" \
+  flutter run --dart-define-from-file=deploy/flutter-test.json
 ```
 
-The default remains `http://192.168.10.144:8090`. BankID return settings, native
-links and server configuration must agree; see [BankID testing](bankid-testing.md).
+For a local backend reachable from the phone:
+
+```sh
+PATH="$(xcode-select -p)/usr/bin:$PATH" \
+  flutter run --dart-define=API_BASE_URL=http://YOUR_LAN_IP:8090
+```
+
+The default remains `http://192.168.10.144:8090`. Connect the backend to the GU VPN for KontoAPI. Return manually after BankID;
+ see [BankID testing](bankid-testing.md).
 
 - [ ] Fresh launch shows introduction, one Continue action and optional study information.
 - [ ] Apply [design and copy guidelines](design-guidelines.md): introduction artwork is centered in its size constraint; study, consent and checklist titles sit in a distinct navigation bar with a visible bottom separator before scrolling. Copy is factual and source-backed, without invented slogans or duplicated checklist headings.
-- [ ] Final study copy, contacts, assets and consent contain no unfinished placeholders. There are no invented “not open yet”, draft or coming-soon notices and no inactive enrollment workaround. Resolve missing inputs/configuration as delivery requirements; verify signing against the intended backend. Genuine runtime failures retain useful retry actions.
+- [ ] Final study copy, contacts, assets and consent contain no unfinished placeholders. There are no invented “not open yet”, draft or coming-soon notices and no inactive enrollment workaround. Resolve missing inputs/configuration as delivery requirements; verify authentication and acceptance against the intended backend. Genuine runtime failures retain useful retry actions.
 - [ ] Generate/install the study icon using [the icon guide](app-icons.md), run `prepare-app-icons.py --check`, inspect the small exports and installed Home Screen icon, and verify the App Store icon in the release archive before upload.
-- [ ] Review consent, enable signing, cancel/retry and complete same-device BankID return. Confirmed signing opens home automatically. Also try QR signing.
-- [ ] Pending, QR, expired, cancelled and accepted BankID states center their entire content/action group below the navigation bar. Cancel request is the only cancellation action; no Start over appears. QR renewal and consent-review retry work, and retry requires reviewing consent again. Short Done and guardian browser states are centered too.
-- [ ] Enrollment has no self-reported age-group toggle or birth-date question for routing. BankID test identities below, at and above the study's age threshold receive the backend-derived consent/guardian requirements. Any age-specific document is selected using verified identity and matches the text actually signed.
+- [ ] Authenticate with same-device BankID and return manually. Confirm that identity verification alone creates no consent and opens review. Accept explicitly, then reach home. Repeat with QR authentication; leave consent review without accepting and confirm no study access.
+- [ ] Pending, QR, expired, cancelled and accepted BankID states center their entire content/action group below the navigation bar. Stop this request is the only stop action; no Start over appears. Stop prevents that attempt granting a session even if BankID completes later. QR renewal, failed-start retry and expired attempts work. Short Done and guardian browser states are centered too.
+- [ ] Enrollment has no self-reported age-group toggle or birth-date question for routing. BankID test identities below, at and above the study's age threshold receive the backend-derived consent/guardian requirements. Any age-specific document is selected using verified identity and matches the text explicitly accepted.
 - [ ] Relaunch during BankID: enrollment resumes and verifies status; a link alone grants nothing.
+- [ ] Restore an authenticated session awaiting consent: review returns without re-identification. A new document version resets the acknowledgement. Lost acceptance responses can be retried without duplicate records.
+- [ ] Guardian links reject the wrong identity, underage identities, invalid CSRF, stale participant consent and stale document versions. Withdrawal/rejoin requires new approvals. Browser refresh after approval records no duplicate.
+- [ ] Withdraw, verify old sessions lose access, authenticate again and explicitly re-consent. Network failures must never display a false acceptance/approval.
 - [ ] Home lists each questionnaire directly beside step upload. No forms is valid after successful discovery; discovery errors show Retry and disable Finish.
-- [ ] For a guardian participant, tasks and questionnaire deep links are blocked. Generate/sign guardian links, refresh or resume, and confirm tasks unlock only after verification.
+- [ ] For a guardian participant, tasks and questionnaire deep links are blocked. Generate guardian links, authenticate as each requested adult and explicitly approve after reviewing consent. Identity verification alone must not approve. Refresh or resume, and confirm tasks unlock only after all selected approvals.
 - [ ] Guardian approval and comparable cards/sheets have at least 16 logical pixels between explanatory text and their action buttons.
 - [ ] Answer a question: after 0.5 seconds without another edit, a valid nonempty answer advances to the next visible question. Choice taps and confirmed dates advance; opening/cancelling the picker, cleared answers and invalid numbers do not. Typing another character restarts the delay. The last answer never submits automatically.
 - [ ] Swipe questions vertically and use Previous/Next to skip or revisit questions. Manual navigation, touching another control, leaving the form and backgrounding the app cancel pending automatic navigation. Saved responses never advance by themselves.
@@ -36,7 +48,7 @@ links and server configuration must agree; see [BankID testing](bankid-testing.m
 - [ ] Generate `app_report.html` using [the report guide](app-report.md) after the last UI change. Review every image and long-content continuation, including all questionnaire branches, saved answers, sheets/dialogs and guardian browser pages. Test search, image enlargement and offline opening; include the report in the final delivery.
 - [ ] Report headings are outside screenshot frames with a clear margin. Rounded borders/shadows belong only to screenshots, including continuations. No route labels or case-ID footers resemble app UI.
 
-Use test identities/data. Actual BankID handoff, guardian signing and native health
+Use test identities/data. Actual BankID handoff, guardian approval and native health
 checks require device interaction; automated fake gateways do not substitute for
 them. The generated app report records automated verification results; record
 physical-device results separately and keep remaining checks explicit.

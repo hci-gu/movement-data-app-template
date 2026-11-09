@@ -26,35 +26,27 @@ class ConsentDocument {
 
 class BankIdAttempt {
   final String id, secret, status, hintCode, purpose, mode;
-  final String? launchUrl, nonce, qrData, signatureId;
+  final String? launchUrl, nonce;
   final int expiresAt;
   final int? qrSecondsRemaining;
-  final bool pickedUp, consentRequired;
-  final ConsentDocument? document;
   final Map<String, dynamic>? grant;
   const BankIdAttempt({
     required this.id,
     required this.secret,
     this.status = 'pending',
     this.hintCode = '',
-    this.purpose = 'sign',
+    this.purpose = 'participant',
     this.mode = 'sameDevice',
     required this.expiresAt,
     this.launchUrl,
     this.nonce,
-    this.qrData,
-    this.signatureId,
     this.qrSecondsRemaining,
-    this.pickedUp = false,
-    this.consentRequired = false,
-    this.document,
     this.grant,
   });
   String get authorization => '$id.$secret';
   bool get pending => status == 'pending';
   bool get accepted => status == 'accepted';
-  bool get canExtendQR =>
-      pending && mode == 'qr' && !pickedUp && qrSecondsRemaining == 0;
+  bool get canExtendQR => pending && mode == 'qr' && qrSecondsRemaining == 0;
   bool expired(DateTime now) => now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
   factory BankIdAttempt.fromJson(Map<String, dynamic> json, String secret) =>
       BankIdAttempt(
@@ -63,20 +55,11 @@ class BankIdAttempt {
         expiresAt: json['expiresAt'] as int,
         status: json['status'] as String? ?? 'pending',
         hintCode: json['hintCode'] as String? ?? '',
-        purpose: json['purpose'] as String? ?? 'sign',
+        purpose: json['purpose'] as String? ?? 'participant',
         mode: json['mode'] as String? ?? 'sameDevice',
         launchUrl: json['launchUrl'] as String?,
         nonce: json['nonce'] as String?,
-        qrData: json['qrData'] as String?,
-        signatureId: json['signatureId'] as String?,
         qrSecondsRemaining: json['qrSecondsRemaining'] as int?,
-        pickedUp: json['pickedUp'] == true,
-        consentRequired: json['consentRequired'] == true,
-        document: json['document'] == null
-            ? null
-            : ConsentDocument.fromJson(
-                Map<String, dynamic>.from(json['document'] as Map),
-              ),
         grant: json['grant'] == null
             ? null
             : Map<String, dynamic>.from(json['grant'] as Map),
@@ -85,13 +68,13 @@ class BankIdAttempt {
   Map<String, dynamic> toStorage() => {
     'id': id,
     'secret': secret,
-    'expiresAt': expiresAt,
+    'expiresAt': expiresAt + 600,
   };
 }
 
 String bankIdMessage(BankIdAttempt order) {
   if (order.accepted) {
-    return 'Your consent has been signed and saved.';
+    return 'Your identity has been verified. Continue to the study.';
   }
   const messages = {
     'outstandingTransaction': 'Open your BankID app.',
@@ -104,22 +87,25 @@ String bankIdMessage(BankIdAttempt order) {
     'expiredTransaction': 'The request expired. Start a new BankID request.',
     'certificateErr':
         'Your BankID could not be used. Check its validity in the BankID app.',
-    'userCancel': 'You cancelled the BankID request.',
-    'cancelled': 'The BankID request was cancelled.',
+    'userCancel':
+        'This app has stopped the request. If BankID is still open, cancel it there too.',
+    'cancelled': 'This app has stopped the request.',
+    'invalidIdentity':
+        'Your identity could not be confirmed. Start a new request.',
     'startFailed':
         'BankID could not start. Check that it is installed and try again.',
     'notSupportedByUserApp': 'Update the BankID app and try again.',
     'alreadyInProgress':
         'Another BankID request is in progress. Finish it before trying again.',
     'consentChanged':
-        'The consent has changed. Read the new version before signing.',
+        'The consent has changed. Read the new version before accepting.',
     'riskRejected':
         'This request could not be accepted. Contact the study team if it happens again.',
     'sessionExpired': 'Your BankID request expired. Start again.',
     'unknownResult':
         'We could not confirm the result. No access was granted. Start a new request.',
     'invalidEvidence':
-        'The signing evidence could not be confirmed. Start a new request.',
+        'The authentication evidence could not be confirmed. Start a new request.',
     'temporarilyUnavailable': 'BankID is temporarily unavailable. Please wait.',
     'certificateUnavailable':
         'The service is temporarily unavailable. Please try later.',

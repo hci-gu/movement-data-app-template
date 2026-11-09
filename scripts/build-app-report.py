@@ -145,15 +145,15 @@ def guardian_captures(checks: list[dict]) -> list[dict]:
     out = WORK / "captures"
     cases = []
     try:
-        run(command + ["open", f"http://127.0.0.1:{server.server_port}/signing.html"], "browser-open", checks, WORK)
+        run(command + ["open", f"http://127.0.0.1:{server.server_port}/authenticating.html"], "browser-open", checks, WORK)
         run(command + ["resize", "390", "844"], "browser-size", checks, WORK)
-        for mode, title in [("signing", "Guardian BankID handoff"), ("expired", "Guardian QR expired"), ("failed", "Guardian signing failed"), ("checking", "Checking guardian signature"), ("approved", "Guardian signature received")]:
+        for mode, title in [("authenticating", "Guardian BankID handoff"), ("expired", "Guardian authentication expired"), ("failed", "Guardian authentication failed"), ("checking", "Checking guardian identity"), ("consent", "Guardian consent review"), ("approved", "Guardian approval received"), ("error", "Guardian approval unavailable")]:
             run(command + ["goto", f"http://127.0.0.1:{server.server_port}/{mode}.html"], f"browser-{mode}-open", checks, WORK)
             # Wait for the page's own JavaScript to consume its local response.
-            if mode in ("signing", "expired", "failed"):
-                expected = {"signing": "Waiting for BankID…", "expired": "Restart to get a new QR code.", "failed": "Signing did not complete. Restart to try again."}[mode]
+            if mode in ("authenticating", "expired", "failed"):
+                expected = "Waiting for BankID. Return here after confirming your identity." if mode == "authenticating" else "Identity verification did not complete. Start a new request to try again."
                 code = "await page.waitForFunction(text => document.querySelector('#status').textContent === text, " + json.dumps(expected) + "); await page.locator('main').waitFor();"
-                if mode == "signing":
+                if mode == "authenticating":
                     code += " await page.waitForFunction(() => document.querySelector('#qr').complete && document.querySelector('#qr').naturalWidth > 0);"
                 run(command + ["run-code", "async (page) => { " + code + " }"], f"browser-{mode}-ready", checks, WORK)
             name = f"guardian-browser-{mode}.png"

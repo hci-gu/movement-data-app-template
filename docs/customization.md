@@ -10,7 +10,7 @@ content, and leave space between explanations and actions. Use factual,
 source-backed copy and the [delivery readiness requirements](workflow.md#delivery-readiness);
 unfinished setup must never become an invented closed-study screen.
 
-The journey is **Introduction → BankID / consent → Home checklist → Done**.
+The journey is **Introduction → BankID identity → Consent → Home checklist → Done**.
 Home lists enabled questionnaires and step upload in either task order. Guardian
 approval is a conditional prerequisite on home. Information, guardian links and
 step charts use optional sheets. The account menu includes consent and withdrawal.
@@ -20,7 +20,7 @@ step charts use optional sheets. The account menu includes consent and withdrawa
 | Introduction, explanation, contacts | `lib/study/` | Publish approved consent; review native/store metadata. |
 | Navigation and startup | `lib/app/router.dart`, `app.dart` | Preserve return links and access guards. |
 | Checklist tasks/completion | `lib/app/home_state.dart`, `home_screen.dart` | Compose feature state directly; operations stay in their feature. |
-| Backend/return URL | `lib/app/environment.dart` | `API_BASE_URL` / `BANKID_RETURN_URL` build overrides; native schemes and associated domains must match. |
+| Backend/return URL | `lib/app/environment.dart` | `API_BASE_URL` build override; KontoAPI uses manual return. Optional native links only trigger status verification. |
 | Collection window, summaries, charts | `lib/steps/` | Read-only steps since January 1 five years before the current year; chart shows last 14 available days. |
 | Replace steps with another measurement | Collection feature | Also change native permissions, approved consent, upload validation/storage/export and tests. |
 | New questionnaire input | `lib/questionnaires/models.dart`, `widgets/`, `rules.dart` | Match backend validation in `api/internal/questionnaires/`; update data guide/fixtures. |
@@ -42,12 +42,15 @@ ignore late async results. Routine `/api/me` refreshes preserve questionnaire
 drafts. Gateways pin requests to the token that started them.
 
 Shared Dio transport owns authentication headers and access-denial handling.
-Public consent and attempt-secret BankID calls never inherit participant tokens.
+Attempt-secret BankID calls never inherit participant tokens. Consent retrieval
+and acceptance pin the authenticated participant token.
 An old request's 401/403 cannot revoke or restrict a newer session. Server
 verification precedes restored access. Return links trigger verification and never
 grant access alone. See [BankID architecture](bankid-signing-plan.md).
 
-Consent and guardian authorization remain server-enforced. Guardian approval
+Authenticated sessions can have `consentRequired` access: preserve them and route
+to `/consent`, where explicit acceptance is required. Never treat authentication
+as consent. Consent and guardian authorization remain server-enforced. Guardian approval
 refreshes verified session facts; confirmed withdrawal invalidates the session.
 Session changes dispose feature state, cancel pending chunks and prevent late
 reads/uploads from marking completion. Participant detail sheets dismiss.
@@ -83,7 +86,8 @@ chunks never complete the task. Health reading requires an explicit action.
 Finish requires verified access, successful questionnaire discovery, saved form
 responses and successful step upload. Loading, discovery errors and unsupported
 recurring forms keep Finish disabled. There is no overall completion flag.
-Restored sessions land on home, including completed participants. Done is entered
+Restored sessions land on consent review when required, otherwise home (including
+completed participants). Done is entered
 explicitly and protected against direct navigation.
 
 ## Local storage compatibility
@@ -91,7 +95,7 @@ explicitly and protected against direct navigation.
 | Storage | Key | Handling |
 | --- | --- | --- |
 | Secure session | `${API_BASE_URL}:authSessionV2` | Existing `token`, Unix `expiresAt`, `record` format retained; verify `/api/me` before access. Only needed participant facts are persisted. |
-| Secure BankID attempt | `${API_BASE_URL}:bankidAttempt` | Existing attempt/credential format retained and verified with server. |
+| Secure BankID attempt | `${API_BASE_URL}:kontoapiAttempt` | New attempt/credential key; restored results must be verified with the server. |
 | Step completion | `${API_BASE_URL}:steps:${participantId}:completedAt` | ISO timestamp; retained across logout/relaunch for this backend/participant only. |
 | Legacy preferences | `userId`, `hasUploadedData`, `lastUploadAt` | Removed during step-status restoration. No backend identity, so they cannot safely prove completion. Existing installations with only these flags must upload again. |
 

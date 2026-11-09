@@ -92,6 +92,7 @@ func AddStudyFields(app core.App) error {
 		return err
 	}
 	users.Fields.Add(&core.TextField{Name: "personalNumber", Min: 12, Max: 12, Required: true})
+	users.Fields.Add(&core.NumberField{Name: "guardianCount"})
 	users.Indexes = append(users.Indexes, "CREATE UNIQUE INDEX idx_user_personal_number ON users (personalNumber)")
 	users.PasswordAuth.Enabled = false
 	users.OAuth2.Enabled = false
@@ -118,19 +119,18 @@ func AddStudyFields(app core.App) error {
 			},
 		},
 		{
-			name: "signatures",
+			name: "authentications",
 			fields: []core.Field{
 				textField("attemptId", 100), textField("orderHash", 64),
 				&core.RelationField{Name: "user", CollectionId: users.Id, MaxSelect: 1},
-				textField("version", 15), textField("purpose", 10), textField("providerStatus", 30),
+				textField("purpose", 20), textField("providerStatus", 30),
 				textField("outcome", 30), textField("reason", 100),
 				privateTextField("evidenceCipher", 4000000),
 				&core.NumberField{Name: "startedAt"}, &core.NumberField{Name: "receivedAt"},
-				&core.NumberField{Name: "withdrawnAt"},
 			},
 			indexes: []string{
-				"CREATE UNIQUE INDEX idx_signature_attempt ON signatures (attemptId)",
-				"CREATE UNIQUE INDEX idx_signatures_order ON signatures (orderHash) WHERE orderHash != ''",
+				"CREATE UNIQUE INDEX idx_auth_attempt ON authentications (attemptId)",
+				"CREATE UNIQUE INDEX idx_auth_order ON authentications (orderHash) WHERE orderHash != ''",
 			},
 		},
 	}
@@ -143,7 +143,51 @@ func AddStudyFields(app core.App) error {
 			return err
 		}
 	}
+	if err := addConsentCollections(app, users.Id); err != nil {
+		return err
+	}
 	return SetAccessRules(app)
+}
+
+func addConsentCollections(app core.App, usersID string) error {
+	auth, err := app.FindCollectionByNameOrId("authentications")
+	if err != nil {
+		return err
+	}
+	consents, err := app.FindCollectionByNameOrId("consent_texts")
+	if err != nil {
+		return err
+	}
+	acceptances := core.NewBaseCollection("consent_acceptances")
+	acceptances.Fields.Add(
+		&core.RelationField{Name: "user", CollectionId: usersID, MaxSelect: 1, Required: true},
+		&core.RelationField{Name: "authentication", CollectionId: auth.Id, MaxSelect: 1, Required: true},
+		&core.RelationField{Name: "version", CollectionId: consents.Id, MaxSelect: 1, Required: true},
+		textField("documentHash", 64), textField("requestKey", 100), privateTextField("evidenceCipher", 4000000),
+		&core.NumberField{Name: "acceptedAt", Required: true}, &core.NumberField{Name: "withdrawnAt"},
+		&core.AutodateField{Name: "created", OnCreate: true},
+	)
+	acceptances.Indexes = []string{"CREATE UNIQUE INDEX idx_acceptance_request ON consent_acceptances (requestKey)"}
+	if err := app.Save(acceptances); err != nil {
+		return err
+	}
+	requests := core.NewBaseCollection("guardian_requests")
+	id := requests.Fields.GetByName("id").(*core.TextField)
+	id.Min, id.Max, id.Pattern, id.AutogeneratePattern = 7, 7, `^[0-9]{3}-[0-9]{3}$`, ""
+	requests.Fields.Add(&core.RelationField{Name: "user", CollectionId: usersID, MaxSelect: 1, Required: true}, &core.NumberField{Name: "slot", Required: true}, privateTextField("personalNumber", 12))
+	requests.Indexes = []string{"CREATE UNIQUE INDEX idx_guardian_person ON guardian_requests (user,personalNumber)", "CREATE UNIQUE INDEX idx_guardian_slot ON guardian_requests (user,slot)"}
+	if err := app.Save(requests); err != nil {
+		return err
+	}
+	approvals := core.NewBaseCollection("guardian_approvals")
+	approvals.Fields.Add(
+		&core.RelationField{Name: "request", CollectionId: requests.Id, MaxSelect: 1, Required: true},
+		&core.RelationField{Name: "consent", CollectionId: acceptances.Id, MaxSelect: 1, Required: true},
+		&core.RelationField{Name: "authentication", CollectionId: auth.Id, MaxSelect: 1, Required: true},
+		textField("requestKey", 100), privateTextField("evidenceCipher", 4000000), &core.NumberField{Name: "acceptedAt", Required: true},
+	)
+	approvals.Indexes = []string{"CREATE UNIQUE INDEX idx_guardian_approval_request ON guardian_approvals (requestKey)", "CREATE UNIQUE INDEX idx_guardian_consent ON guardian_approvals (request,consent)"}
+	return app.Save(approvals)
 }
 
 func SetAccessRules(app core.App) error {
@@ -178,16 +222,13 @@ func SetAccessRules(app core.App) error {
 
 // Verify rejects partial conversions and unexpected application collections.
 func Verify(app core.App) error {
-	expected := map[string]bool{"users": true, "answers": true, "dataUploads": true, "signatures": true, "consent_texts": true, "questionnaires": true, "questions": true, "questionOptions": true}
+	expected := map[string]bool{"users": true, "answers": true, "dataUploads": true, "authentications": true, "consent_acceptances": true, "guardian_requests": true, "guardian_approvals": true, "consent_texts": true, "questionnaires": true, "questions": true, "questionOptions": true}
 	cs, err := app.FindAllCollections()
 	if err != nil {
 		return err
 	}
 	for _, c := range cs {
 		if c.System {
-			continue
-		}
-		if c.Name == "signingRequests" {
 			continue
 		}
 		if !expected[c.Name] {

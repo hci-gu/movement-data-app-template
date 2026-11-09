@@ -9,7 +9,7 @@ import (
 
 func init() {
 	m.Register(func(app core.App) error {
-		if _, err := app.FindCollectionByNameOrId("signatures"); err == nil {
+		if _, err := app.FindCollectionByNameOrId("authentications"); err == nil {
 			return schema.Verify(app)
 		}
 		collections, err := app.FindAllCollections()
@@ -18,7 +18,7 @@ func init() {
 		}
 		for _, c := range collections {
 			if !c.System && c.Name != "users" {
-				return fmt.Errorf("run the offline cutover command on a database copy before starting this release")
+				return fmt.Errorf("KontoAPI requires a fresh database; reset the disposable test database before starting")
 			}
 		}
 		if err := schema.CreateBase(app); err != nil {

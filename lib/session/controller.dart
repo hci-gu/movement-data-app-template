@@ -44,8 +44,7 @@ class SessionController extends StateNotifier<Session?> {
       connection.token = session.token;
       final participant = await gateway.current(session.token);
       if (!_current(generation)) return;
-      if (participant.id != session.participant.id ||
-          participant.consentRequired) {
+      if (participant.id != session.participant.id) {
         await invalidate();
         return;
       }
@@ -57,8 +56,7 @@ class SessionController extends StateNotifier<Session?> {
 
   Future<void> accept(Map<String, dynamic> grant) async {
     final session = Session.fromJson(grant);
-    if (!session.expiresAt.isAfter(now()) ||
-        session.participant.consentRequired) {
+    if (!session.expiresAt.isAfter(now())) {
       throw StateError('The server did not grant an active session.');
     }
     final generation = ++_generation;
@@ -84,7 +82,6 @@ class SessionController extends StateNotifier<Session?> {
       final participant = await gateway.current(current.token);
       if (!_current(generation)) return;
       if (participant.id != current.participant.id ||
-          participant.consentRequired ||
           !current.expiresAt.isAfter(now())) {
         await invalidate();
         return;
@@ -97,8 +94,10 @@ class SessionController extends StateNotifier<Session?> {
 
   Future<void> handleAccessDenied(String token, String reason) async {
     if (!mounted || token != connection.token) return;
-    if (reason == 'sessionExpired' || reason == 'consentRequired') {
+    if (reason == 'sessionExpired') {
       await invalidate();
+    } else if (reason == 'consentRequired' && state != null) {
+      state = state!.withParticipant(state!.participant.requiringConsent());
     } else if (reason == 'guardianRequired' && state != null) {
       state = state!.withParticipant(state!.participant.requiringGuardian());
     }

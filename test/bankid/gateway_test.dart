@@ -31,7 +31,7 @@ class Transport implements HttpClientAdapter {
 
 void main() {
   test(
-    'attempt result preserves credential, consent document and grant',
+    'authentication result preserves credential and session grant',
     () async {
       final transport = Transport();
       final dio = Dio(BaseOptions(baseUrl: 'https://example.test'));
@@ -46,16 +46,9 @@ void main() {
         'id': 'attempt',
         'expiresAt': 4102444800,
         'status': 'accepted',
-        'purpose': 'sign',
+        'purpose': 'participant',
         'mode': 'sameDevice',
-        'grant': {'token': 'signed-token'},
-        'document': {
-          'id': 'doc',
-          'version': 'v1',
-          'title': 'Consent',
-          'text': 'Exact text',
-          'documentHash': 'hash',
-        },
+        'grant': {'token': 'authenticated-token'},
       };
       final result = await gateway.status(a);
       expect(transport.request!.path, '/api/bankid/attempts/attempt');
@@ -64,24 +57,23 @@ void main() {
         'Bearer attempt.private-secret',
       );
       expect(result.secret, a.secret);
-      expect(result.grant!['token'], 'signed-token');
-      expect(result.document!.text, 'Exact text');
+      expect(result.grant!['token'], 'authenticated-token');
       transport.status = 410;
       transport.body = {'message': 'Expired'};
       await expectLater(gateway.status(a), throwsA(isA<AttemptExpired>()));
     },
   );
   test(
-    'start rejection decodes PocketBase reason code for re-review',
+    'start rejection decodes PocketBase reason code',
     () async {
       final transport = Transport()
         ..status = 409
         ..body = {
-          'message': 'Read the current consent.',
+          'message': 'Start a new authentication request.',
           'data': {
             'reason': {
-              'code': 'consentChanged',
-              'message': 'Read the current consent.',
+              'code': 'requestChanged',
+              'message': 'Start a new authentication request.',
             },
           },
         };
@@ -99,7 +91,7 @@ void main() {
           isA<BankIdStartRejected>().having(
             (e) => e.reason,
             'reason',
-            'consentChanged',
+            'requestChanged',
           ),
         ),
       );

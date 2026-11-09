@@ -19,6 +19,11 @@ func (s *Service) validateSession(e *core.RequestEvent) error {
 	if err != nil || claims[core.TokenClaimRefreshable] != false {
 		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
+	authentication, _ := claims["authentication"].(string)
+	event, err := s.App.FindRecordById("authentications", authentication)
+	if err != nil || event.GetString("user") != user.Id || event.GetString("purpose") != "participant" || event.GetString("outcome") != "accepted" {
+		return problem(401, "sessionExpired", "Sign in again with BankID.")
+	}
 	e.Auth = user
 	return nil
 }
@@ -38,15 +43,15 @@ func (s *Service) RequireConsent(e *core.RequestEvent) error {
 // authorizeParticipant is shared by upload and questionnaire access.
 func (s *Service) authorizeParticipant(e *core.RequestEvent) error {
 	if e.Auth == nil || !s.activeConsent(s.App, e.Auth) {
-		return problem(403, "consentRequired", "Sign the current study consent before continuing.")
+		return problem(403, "consentRequired", "Accept the current study consent before continuing.")
 	}
 	if !s.guardianEligible(s.App, e.Auth) {
-		return problem(403, "guardianRequired", "Guardian signatures are required before continuing.")
+		return problem(403, "guardianRequired", "Guardian approvals are required before continuing.")
 	}
 	return nil
 }
 func ProtectRecords(app core.App) {
-	managed := []string{"consent_texts", "signatures", "signingRequests", "users"}
+	managed := []string{"consent_texts", "authentications", "consent_acceptances", "guardian_requests", "guardian_approvals", "users"}
 	app.OnRecordCreateRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
 		return problem(403, "managedRecord", "Use the study administration or BankID flow.")
 	})

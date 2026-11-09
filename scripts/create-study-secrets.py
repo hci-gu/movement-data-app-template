@@ -19,4 +19,4 @@ with os.fdopen(fd, 'w') as output:
     output.write('\n')
     output.flush()
     os.fsync(output.fileno())
-print(f'Created {args.out}. Back it up securely; it is required to read signing evidence.')
+print(f'Created {args.out}. Back it up securely; it is required to read authentication and consent evidence.')

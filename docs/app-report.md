@@ -126,6 +126,12 @@ and a combined manifest. These intermediate files are disposable. The generated
 Dart snapshot is tracked so the demo works on a fresh checkout; regenerate it
 and include its update when delivering a study adaptation.
 
+For this template's KontoAPI replacement, use an ordinary synthetic report. The
+report covers identity-first enrollment, explicit participant consent and guardian
+authentication/review/approval/error pages. It does not establish live connectivity
+or study-specific ethical readiness. Run `--study` when delivering an actual study
+adaptation with approved content.
+
 ## Adding coverage
 
 Add a `PreviewCase` with a stable ID, title, group, real route, sample state and
@@ -148,7 +154,7 @@ removing any user-visible surface, update the cases in the same change. This
 small preview list is development tooling, not a production workflow registry.
 
 Captures use bounded frame advancement rather than waiting indefinitely on
-loading indicators. Transient states such as accepted signing and active uploads
+loading indicators. Transient states such as accepted authentication and active uploads
 are held for inspection. Long pages are captured in overlapping viewport sections;
 date wheels and questionnaire page navigation are excluded from that scrolling.
 Every required case needs at least one valid PNG. The builder clears only its own
@@ -168,5 +174,5 @@ demo toggle, age selector, backend authorization bypass or live data upload.
 Flutter screenshots use the real widgets with portable font rendering; they are
 not screenshots of a signed-in physical iPhone. Guardian pages are captured by
 Chrome from the real Go HTML template with sample responses. External BankID UI,
-system permission dialogs and real HealthKit/signing behavior remain in the
+system permission dialogs and real HealthKit/authentication behavior remain in the
 [physical-device checklist](manual-review.md).

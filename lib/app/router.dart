@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../enrollment/bankid/controller.dart';
 import '../enrollment/login_screen.dart';
 import '../enrollment/consent_receipt_screen.dart';
+import '../enrollment/consent_screen.dart';
 import '../questionnaires/questionnaire_screen.dart';
 import '../session/controller.dart';
 import '../study/introduction_screen.dart';
@@ -25,6 +26,7 @@ String? participantRedirect({
   required bool pendingBankId,
   required bool eligible,
   required bool canFinish,
+  bool consentRequired = false,
 }) {
   if (!ready) return path == '/loading' ? null : '/loading';
   final public = path == '/introduction' || path == '/introduction/login';
@@ -35,7 +37,8 @@ String? participantRedirect({
         ? '/introduction/login'
         : '/introduction';
   }
-  if (public || path == '/loading') return '/home';
+  if (consentRequired) return path == '/consent' ? null : '/consent';
+  if (public || path == '/loading' || path == '/consent') return '/home';
   if (!eligible && path.startsWith('/questionnaires/')) return '/home';
   if (path == '/done' && !canFinish) return '/home';
   return null;
@@ -70,6 +73,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: state.uri.path,
         ready: startup.hasValue && !startup.isLoading && !startup.hasError,
         signedIn: session != null,
+        consentRequired: session?.participant.consentRequired == true,
         pendingBankId: ref.read(bankIdProvider).begun,
         eligible: session?.participant.canParticipate == true,
         canFinish: ref.read(homeStateProvider).canFinish,
@@ -96,6 +100,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/done',
         name: 'done',
         builder: (_, _) => const DoneScreen(),
+      ),
+      GoRoute(
+        path: '/consent',
+        name: 'consent',
+        builder: (_, _) => const ConsentScreen(),
       ),
       GoRoute(
         path: '/consent-receipt',

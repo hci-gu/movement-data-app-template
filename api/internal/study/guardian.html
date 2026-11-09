@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Guardian signature</title>
+  <title>Guardian consent</title>
   <style nonce="{{.StyleNonce}}">
     :root { color-scheme: light; font-family: system-ui, sans-serif; color: #1c2937; background: #f6f8fa; }
     * { box-sizing: border-box; }
@@ -13,6 +13,9 @@
     h2 { margin: 0 0 4px; font-size: 1rem; }
     p { margin: 0 0 14px; }
     .muted { color: #596a79; }
+    main.consent { max-width: 680px; margin: 0 auto; }
+    .document { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 24px; }
+    .after-action { margin-top: 20px; }
     .option { padding: 18px 0; border-top: 1px solid #e9edf0; }
     .option:first-of-type { margin-top: 20px; }
     .option p { margin-bottom: 12px; }
@@ -30,89 +33,63 @@
   </style>
 </head>
 <body>
-  {{if eq .Mode "signing"}}
+  {{if eq .Mode "authenticating"}}
   <main data-state-url="{{.StateURL}}" data-qr-url="{{.QRURL}}" data-done-url="{{.DoneURL}}">
-    <h1>Guardian signature</h1>
-    <p class="muted">Choose how you want to sign with BankID.</p>
-
-    <section class="option">
-      <h2>On this computer</h2>
-      <p class="muted">Use BankID installed on this computer.</p>
-      <a class="button" href="{{.DesktopLink}}">Open BankID on this computer</a>
-    </section>
-
-    <section class="option">
-      <h2>On this phone</h2>
-      <p class="muted">Open Mobile BankID on the phone you're using now.</p>
-      <a class="button" href="{{.MobileLink}}" referrerpolicy="origin">Open BankID on this phone</a>
-    </section>
-
-    <section class="option">
-      <h2>On another phone</h2>
-      <p class="muted">Open Mobile BankID on that phone and scan this changing QR code.</p>
-      <img class="qr" id="qr" src="{{.QRURL}}" alt="Changing BankID QR code" width="280" height="280">
-      <p class="muted" id="qr-message" hidden>The QR code has expired. Restart signing to get a new one.</p>
-    </section>
-
+    <h1>Verify your identity</h1>
+    <p>Use BankID to identify yourself. You will then review the consent and choose whether to approve participation.</p>
+    <section class="option"><h2>On this phone</h2><p>After confirming your identity, return to this page.</p><a class="button" href="{{.MobileLink}}" referrerpolicy="origin">Open BankID on this phone</a></section>
+    <section class="option"><h2>On this computer</h2><a class="button" href="{{.DesktopLink}}">Open BankID on this computer</a></section>
+    <section class="option"><h2>On another phone</h2><p>Scan this changing code with the BankID app.</p><img class="qr" id="qr" src="{{.QRURL}}" alt="Changing BankID QR code" width="280" height="280"></section>
     <p class="status" id="status" role="status">Waiting for BankID…</p>
-    <form action="{{.RestartURL}}" method="post"><button class="button secondary" type="submit">Restart signing</button></form>
+    <a class="button" id="continue" href="{{.DoneURL}}" hidden>Continue to consent</a>
+    <form action="{{.RestartURL}}" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="button secondary" type="submit">Start a new request</button></form>
   </main>
   <script nonce="{{.StyleNonce}}">
     (() => {
-      const page = document.querySelector('main');
-      const qr = document.getElementById('qr');
-      const qrMessage = document.getElementById('qr-message');
-      const status = document.getElementById('status');
-
+      const page = document.querySelector('main'), qr = document.getElementById('qr'), status = document.getElementById('status');
       async function refresh() {
         try {
           const response = await fetch(page.dataset.stateUrl, { cache: 'no-store' });
           if (!response.ok) throw new Error('status unavailable');
           const state = await response.json();
-
           if (state.status === 'accepted') {
-            window.location.assign(page.dataset.doneUrl);
-            return;
+            document.getElementById('continue').hidden = false;
+            window.location.assign(page.dataset.doneUrl); return;
           }
-          if (state.status !== 'pending') {
-            status.textContent = 'Signing did not complete. Restart to try again.';
-            qr.hidden = true;
-            qrMessage.hidden = true;
-            return;
-          }
-          if (state.qrAvailable) {
-            qr.hidden = false;
-            qrMessage.hidden = true;
-            qr.src = page.dataset.qrUrl + '&frame=' + Date.now();
-            status.textContent = 'Waiting for BankID…';
-          } else {
-            qr.hidden = true;
-            qrMessage.hidden = state.pickedUp;
-            status.textContent = state.pickedUp
-              ? 'Continue signing in BankID.'
-              : 'Restart to get a new QR code.';
-          }
-        } catch (_) {
-          status.textContent = 'Could not check signing status. Retrying…';
-        }
+          if (state.status !== 'pending') { status.textContent = 'Identity verification did not complete. Start a new request to try again.'; qr.hidden = true; return; }
+          qr.hidden = !state.qrAvailable;
+          if (state.qrAvailable) qr.src = page.dataset.qrUrl + (page.dataset.qrUrl.includes('?') ? '&' : '?') + 'frame=' + Date.now();
+          status.textContent = 'Waiting for BankID. Return here after confirming your identity.';
+        } catch (_) { status.textContent = 'Could not check authentication status. Reopen the invitation if this continues.'; }
         setTimeout(refresh, 1000);
       }
-
       refresh();
     })();
   </script>
+  {{else if eq .Mode "consent"}}
+  <main class="consent">
+    <h1>Review guardian consent</h1>
+    <p>Your identity has been verified with BankID. Review the information below before approving participation for the person whose personal number ends in <strong>{{.ParticipantSuffix}}</strong>.</p>
+    <h2>{{.Document.Title}}</h2><p class="muted">Version {{.Document.Version}}</p>
+    <div class="document">{{.Document.Text}}</div>
+    <form action="{{.ApproveURL}}" method="post">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="consentTextId" value="{{.Document.ID}}">
+      <input type="hidden" name="documentHash" value="{{.Document.DocumentHash}}">
+      <input type="hidden" name="participantConsentId" value="{{.ConsentID}}">
+      <p><label><input type="checkbox" required> I have read the information and consent to this person's participation as their guardian.</label></p>
+      <button class="button" type="submit" name="accept" value="yes">Approve participation</button>
+    </form>
+    <p class="muted after-action">To leave without approving, close this page. No approval is recorded until you press the button above.</p>
+  </main>
   {{else if eq .Mode "approved"}}
-  <main>
-    <span class="mark" aria-hidden="true">✓</span>
-    <h1>Signature received</h1>
-    <p class="muted">Your guardian signature has been approved. You can close this page.</p>
-  </main>
+  <main><span class="mark" aria-hidden="true">✓</span><h1>Approval received</h1><p>Your consent has been recorded after BankID identification. You can close this page.</p></main>
+  {{else if eq .Mode "error"}}
+  <main><h1>Approval not recorded</h1><p>{{.Message}}</p>
+  {{if .RestartURL}}<form action="{{.RestartURL}}" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="button" type="submit">Try again</button></form>
+  {{else if .DoneURL}}<a class="button" href="{{.DoneURL}}">Review invitation</a>{{end}}</main>
   {{else}}
-  <main>
-    <span class="mark pending" aria-hidden="true">…</span>
-    <h1>Checking your signature</h1>
-    <p class="muted">Your signature is being checked. You can close this page; the participant can refresh the study app.</p>
-  </main>
+  <main><span class="mark pending" aria-hidden="true">…</span><h1>Checking your identity</h1><p>Keep this page open. Consent still needs your explicit approval after identity verification.</p></main>
   {{end}}
 </body>
 </html>

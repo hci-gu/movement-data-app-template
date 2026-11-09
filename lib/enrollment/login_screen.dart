@@ -1,28 +1,23 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart' show Colors;
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:qr_flutter/qr_flutter.dart';
-import 'package:research_steps_template/enrollment/bankid/controller.dart';
-import 'package:research_steps_template/enrollment/bankid/models.dart';
-import 'package:research_steps_template/ui/theme.dart';
+import '../ui/theme.dart';
+import 'bankid/controller.dart';
+import 'bankid/models.dart';
 
 class LoginScreen extends HookConsumerWidget {
   const LoginScreen({super.key});
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(bankIdProvider);
     final controller = ref.read(bankIdProvider.notifier);
     useEffect(() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.initialize();
+        if (controller.mounted) controller.initialize();
       });
       return null;
     }, const []);
     final order = state.attempt;
-    final document = state.document;
-    final disabled = state.busy;
     final finishing = useRef<String?>(null);
     useEffect(() {
       if (order?.accepted == true &&
@@ -35,14 +30,10 @@ class LoginScreen extends HookConsumerWidget {
       }
       return null;
     }, [order?.id, order?.accepted, state.busy]);
-
     return AppScaffold(
-      title: document != null ? 'Study consent' : 'Join the study',
+      title: 'Identify with BankID',
       child: AppScrollBody(
-        key: ValueKey(
-          order == null ? 'consent-${document?.id}' : 'bankid-${order.id}',
-        ),
-        centerContent: order != null || document == null,
+        centerContent: true,
         children: [
           if (state.error != null) ...[
             AppCard(
@@ -59,26 +50,37 @@ class LoginScreen extends HookConsumerWidget {
               padding: EdgeInsets.all(12),
               child: CupertinoActivityIndicator(),
             ),
-          if (!state.begun) ...[
-            const Text('Review study consent', style: AppTheme.sectionTitle),
+          if (order == null) ...[
+            const Text('Verify your identity', style: AppTheme.sectionTitle),
             const SizedBox(height: 12),
             const Text(
-              'Signing the consent with BankID also creates your account or signs you in.',
+              'Use BankID to sign in. You will then review the study consent and choose whether to participate.',
               style: AppTheme.body,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             CupertinoButton.filled(
-              onPressed: disabled ? null : controller.begin,
-              child: const Text('Load consent'),
+              onPressed: state.busy
+                  ? null
+                  : () => controller.start('sameDevice'),
+              child: const Text('Open BankID'),
             ),
-          ] else if (order != null) ...[
+            const SizedBox(height: 12),
+            CupertinoButton(
+              onPressed: state.busy ? null : () => controller.start('qr'),
+              child: const Text('Use BankID on another device'),
+            ),
+          ] else ...[
             AppCard(
-              backgroundColor: order.accepted ? AppTheme.foam : Colors.white,
+              backgroundColor: order.accepted
+                  ? AppTheme.foam
+                  : CupertinoColors.white,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    order.accepted ? 'Consent signed' : 'Continue with BankID',
+                    order.accepted
+                        ? 'Identity verified'
+                        : 'Continue with BankID',
                     style: AppTheme.sectionTitle,
                   ),
                   const SizedBox(height: 12),
@@ -86,15 +88,14 @@ class LoginScreen extends HookConsumerWidget {
                     liveRegion: true,
                     child: Text(bankIdMessage(order), style: AppTheme.body),
                   ),
-                  if (order.accepted && document != null) ...[
-                    const SizedBox(height: 16),
-                    Text(document.title, style: AppTheme.cardTitle),
-                    Text(
-                      'Consent version ${document.version}',
+                  if (order.pending && order.mode == 'sameDevice') ...[
+                    const SizedBox(height: 12),
+                    const Text(
+                      'After confirming your identity in BankID, return to this app.',
                       style: AppTheme.bodyMuted,
                     ),
                   ],
-                  if (order.qrData != null) ...[
+                  if (order.pending && order.mode == 'qr') ...[
                     const SizedBox(height: 20),
                     const Text(
                       'Scan this code with BankID on your other device.',
@@ -102,25 +103,24 @@ class LoginScreen extends HookConsumerWidget {
                     ),
                     const SizedBox(height: 12),
                     Center(
-                      child: Semantics(
-                        label:
-                            'BankID QR code. Scan with the BankID app on your other device.',
-                        child: ExcludeSemantics(
-                          child: QrImageView(
-                            data: order.qrData!,
-                            size: 240,
-                            backgroundColor: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                    ExcludeSemantics(
-                      child: Center(
-                        child: Text(
-                          'Scan within ${order.qrSecondsRemaining} seconds',
-                          style: AppTheme.bodyMuted,
-                        ),
-                      ),
+                      child: order.canExtendQR
+                          ? const Text(
+                              'This QR code has expired.',
+                              style: AppTheme.bodyMuted,
+                            )
+                          : state.qrImage == null
+                          ? const Padding(
+                              padding: EdgeInsets.all(24),
+                              child: CupertinoActivityIndicator(),
+                            )
+                          : Image.memory(
+                              state.qrImage!,
+                              width: 240,
+                              height: 240,
+                              gaplessPlayback: true,
+                              semanticLabel:
+                                  'BankID QR code. Scan with the BankID app on your other device.',
+                            ),
                     ),
                   ],
                 ],
@@ -129,74 +129,34 @@ class LoginScreen extends HookConsumerWidget {
             const SizedBox(height: 16),
             if (order.accepted)
               CupertinoButton.filled(
-                onPressed: disabled ? null : controller.finish,
+                onPressed: state.busy ? null : controller.finish,
                 child: const Text('Continue'),
               ),
             if (order.pending && order.mode == 'sameDevice')
               CupertinoButton.filled(
-                onPressed: disabled ? null : controller.openBankId,
+                onPressed: state.busy ? null : controller.openBankId,
                 child: const Text('Open BankID'),
               ),
             if (order.canExtendQR)
               CupertinoButton.filled(
-                onPressed: disabled ? null : controller.extendQR,
+                onPressed: state.busy ? null : controller.extendQR,
                 child: const Text('Show a new QR code'),
               ),
             if (order.pending)
               CupertinoButton(
-                onPressed: disabled ? null : controller.cancel,
-                child: const Text('Cancel request'),
+                onPressed: state.busy ? null : controller.cancel,
+                child: const Text('Stop this request'),
               ),
             if (!order.pending && !order.accepted)
               CupertinoButton.filled(
-                onPressed: disabled ? null : controller.reviewAgain,
-                child: const Text('Review consent and try again'),
+                onPressed: state.busy ? null : controller.restart,
+                child: const Text('Try again'),
               ),
             if (state.error != null)
               CupertinoButton(
-                onPressed: disabled ? null : controller.refresh,
+                onPressed: state.busy ? null : controller.refresh,
                 child: const Text('Check request status'),
               ),
-          ] else if (document != null) ...[
-            Text(document.title, style: AppTheme.sectionTitle),
-            const SizedBox(height: 8),
-            Text('Version ${document.version}', style: AppTheme.bodyMuted),
-            const SizedBox(height: 16),
-            AppCard(child: Text(document.text, style: AppTheme.body)),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                CupertinoSwitch(
-                  value: state.reviewed,
-                  onChanged: disabled ? null : controller.setReviewed,
-                ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'I have read the consent above and want to sign it.',
-                    style: AppTheme.body,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            CupertinoButton.filled(
-              onPressed: disabled || !state.reviewed
-                  ? null
-                  : () => controller.start('sameDevice'),
-              child: const Text('Sign with BankID'),
-            ),
-            CupertinoButton(
-              onPressed: disabled || !state.reviewed
-                  ? null
-                  : () => controller.start('qr'),
-              child: const Text('Use BankID on another device'),
-            ),
-          ] else ...[
-            CupertinoButton.filled(
-              onPressed: disabled ? null : controller.reviewAgain,
-              child: const Text('Load study consent'),
-            ),
           ],
         ],
       ),

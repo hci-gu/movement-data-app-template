@@ -24,7 +24,7 @@ class ParticipantMenu extends ConsumerWidget {
             actions: [
               for (final item in const [
                 ('information', 'Study information'),
-                ('consent', 'Signed consent'),
+                ('consent', 'Consent receipt'),
                 ('logout', 'Sign out'),
               ])
                 CupertinoActionSheetAction(

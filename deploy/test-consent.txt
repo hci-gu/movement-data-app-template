@@ -1,7 +1,9 @@
-TEST ENVIRONMENT ONLY - BANKID SIGNING TEST
+TEST ENVIRONMENT ONLY - KONTOAPI AUTHENTICATION AND CONSENT TEST
 
-I understand that this is a technical test of the app's BankID signing and account flow. Signing this document does not enrol me in a research study or constitute consent to participate in research.
+This is a technical test of the app's identity verification and consent flow. Accepting this text does not enrol me in a research study or constitute consent to participate in research.
 
-I will use a test BankID identity and synthetic data. My test identity, signature and any data I choose to upload will be stored in this test environment to verify the app's functionality. A test signature creates or accesses a test account. Test accounts and data may be reset.
+BankID verifies my identity through KontoAPI. It does not sign this text. After verification, I can choose whether to accept this technical test consent in the app. A guardian also verifies their identity before choosing whether to approve on the invitation page.
 
-I can stop testing at any time. This text must be replaced with approved study consent before the app is used for a real study.
+I will use a test BankID identity and synthetic data. My test identity, authentication result, consent acceptance and any data I choose to upload will be stored in this test environment to verify the app's functionality. Test accounts and data may be reset.
+
+I can leave without accepting or withdraw an acceptance later. This text must be replaced with approved study consent before the app is used for a real study.

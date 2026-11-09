@@ -10,6 +10,8 @@ import 'package:research_steps_template/app/home_state.dart';
 import 'package:research_steps_template/app/router.dart';
 import 'package:research_steps_template/enrollment/bankid/controller.dart';
 import 'package:research_steps_template/enrollment/bankid/models.dart';
+import 'package:research_steps_template/enrollment/consent_review_controller.dart';
+import 'package:research_steps_template/session/models.dart';
 import 'package:research_steps_template/session/controller.dart';
 import 'package:research_steps_template/questionnaires/controller.dart';
 import 'package:research_steps_template/questionnaires/models.dart';
@@ -30,6 +32,17 @@ class Forms extends FakeQuestionnaireGateway {
     if (fail) throw Exception('discovery failed');
     if (empty) return [];
     return super.list();
+  }
+}
+
+class ReviewConsent implements ConsentReviewGateway {
+  final SessionApi sessions;
+  ReviewConsent(this.sessions);
+  @override
+  Future<ConsentDocument> current() async => bankid.document;
+  @override
+  Future<void> accept(ConsentDocument document, String requestId) async {
+    sessions.participant = const Participant(id: 'u', gender: 'female');
   }
 }
 
@@ -59,6 +72,9 @@ class Harness {
       overrides: [
         sessionStoreProvider.overrideWithValue(sessions),
         sessionGatewayProvider.overrideWithValue(sessionApi),
+        consentReviewGatewayProvider.overrideWithValue(
+          ReviewConsent(sessionApi),
+        ),
         bankIdProvider.overrideWith((ref) {
           ref.watch(sessionProvider.select((s) => s?.token));
           return BankIdController(
@@ -255,7 +271,7 @@ void main() {
   );
   for (final stepsFirst in [false, true]) {
     testWidgets(
-      'introduction, signing, both task orders, Done and review (steps first: $stepsFirst)',
+      'authentication, explicit consent, both task orders, Done and review (steps first: $stepsFirst)',
       (tester) async {
         tester.view.physicalSize = const Size(430, 932);
         tester.view.devicePixelRatio = 1;
@@ -266,18 +282,31 @@ void main() {
         await h.preview(tester, 'introduction');
         expect(find.text('Continue with BankID'), findsOneWidget);
         await tap(tester, 'Continue with BankID');
-        expect(find.text(bankid.document.text), findsOneWidget);
-        await tester.tap(find.byType(CupertinoSwitch));
-        await tester.pumpAndSettle();
+        expect(find.text(bankid.document.text), findsNothing);
+        h.sessionApi.participant = const Participant(
+          id: 'u',
+          gender: 'female',
+          consentRequired: true,
+        );
         h.signingApi.result = BankIdAttempt(
           id: 'accepted',
           secret: 'secret',
           expiresAt: 4102444800,
           status: 'accepted',
-          document: bankid.document,
-          grant: grant(),
+          grant: grant(consentRequired: true),
         );
-        await tap(tester, 'Sign with BankID');
+        await tap(tester, 'Open BankID');
+        expect(find.text(bankid.document.text), findsOneWidget);
+        expect(h.forms.lists, 0);
+        expect(h.reader.reads, 0);
+        expect(
+          h.container.read(sessionProvider)!.participant.canParticipate,
+          false,
+        );
+        await tester.ensureVisible(find.byType(CupertinoSwitch));
+        await tester.tap(find.byType(CupertinoSwitch));
+        await tester.pumpAndSettle();
+        await tap(tester, 'Accept consent and continue');
         expect(find.text('Your checklist'), findsOneWidget);
         await h.preview(tester, 'home');
         expect(h.reader.reads, 0);

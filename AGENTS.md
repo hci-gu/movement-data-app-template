@@ -2,7 +2,7 @@
 
 ## Purpose and starting point
 
-This repository is a reusable research-app template. Its current implementation is an iOS-focused Flutter app for reviewing study consent, signing with BankID, reading Apple Health step data, previewing it, and uploading it to a Go/PocketBase backend. A specific application is created by adding application context and adapting the template to those requirements.
+This repository is a reusable research-app template. Its current implementation is an iOS-focused Flutter app for authenticating with BankID through KontoAPI, explicitly accepting study consent, reading Apple Health step data, previewing it, and uploading it to a Go/PocketBase backend. A specific application is created by adding application context and adapting the template to those requirements.
 
 **Read [docs/workflow.md](docs/workflow.md) first for setup and deployment work.** It is the primary workflow guide (VIP), covering PocketBase setup, publishing consent from `context/`, questionnaire seeding, study app icons, builds and verification. Use the detailed resources below for operational details.
 
@@ -17,7 +17,8 @@ Read [docs/design-guidelines.md](docs/design-guidelines.md) before adapting UI o
 | [docs/workflow.md](docs/workflow.md) | Primary setup and deployment workflow, consent publication from context, and study icon generation/export; start here. |
 | [README.md](README.md) | Project overview, quick-start commands, collections, and customization prerequisites. |
 | [docs/bankid-testing.md](docs/bankid-testing.md) | BankID configuration, evidence keyring setup, consent publication, local and OpenShift test deployment, API endpoints, and verification commands. Environment-specific values describe the documented test setup. |
-| [docs/bankid-signing-plan.md](docs/bankid-signing-plan.md) | Current BankID architecture, collection relationships, participant and guardian signing, consent state, and signing-attempt persistence. |
+| [docs/test-deployment.md](docs/test-deployment.md) | Remote OpenShift test rollout, runtime secrets, existing storage, automatic technical consent, container/provider checks and the remote iPhone command. |
+| [docs/bankid-signing-plan.md](docs/bankid-signing-plan.md) | KontoAPI architecture, collection relationships, explicit participant/guardian consent and authentication-attempt persistence. |
 | [docs/questionnaire-data.md](docs/questionnaire-data.md) | Turning source questionnaire material into PocketBase definitions, option sets, answer settings, reproducible seed migrations, and verification. |
 | [docs/customization.md](docs/customization.md) | Source-editing map, module ownership, session isolation, questionnaire/upload invariants and storage compatibility. |
 | [docs/design-guidelines.md](docs/design-guidelines.md) | Required navigation, artwork alignment, status layouts, spacing, factual copy and visual acceptance criteria. |
@@ -40,13 +41,13 @@ Keep this index updated when adding or moving template documentation. Applicatio
 | `lib/study/` | Introduction, optional information sheet, study copy and contacts. |
 | `lib/main_demo.dart`, `lib/demo/` | Separate demo entry point and shared preview cases; real screens with in-memory sample services. Never imported by production startup. |
 | `lib/ui/` | Shared theme, scaffold, card, sheet and formatting helpers. |
-| `lib/enrollment/` | BankID consent/signing, guardian sheet, consent receipt/withdrawal; network operations belong in gateways/controllers. |
+| `lib/enrollment/` | BankID authentication, explicit consent, guardian sheet, consent receipt/withdrawal; network operations belong in gateways/controllers. |
 | `lib/questionnaires/` | Questionnaire models, rules, gateway, controller, and input widgets. |
 | `lib/session/`, `lib/infrastructure/` | Typed sessions, verified access, expiry and persistence; shared provider-owned Dio and storage primitives. No feature-reset imports in session. |
 | `lib/steps/` | Health reader, summary/chart, compressed upload, scoped completion persistence and home card. |
 | `api/main.go` | PocketBase entry point, migrations, study service, and route registration. |
-| `api/internal/study/` | Consent, participant sessions, guardians, encrypted signing evidence, administration, and configuration. |
-| `api/internal/bankid/` | BankID provider client. |
+| `api/internal/study/` | Consent, participant sessions, guardians, encrypted authentication and consent evidence, administration, and configuration. |
+| `api/internal/kontoapi/` | ADFS/KontoAPI authentication and QR provider client. |
 | `api/internal/questionnaires/` | Questionnaire definition parsing and validation; `testdata/` contains synthetic test fixtures only. |
 | `api/internal/schema/`, `api/migrations/` | Collection schema, schema/data migrations, and questionnaire seeds. |
 | `api/upload_routes.go`, `api/upload_storage.go` | Upload authorization, metadata, raw chunk storage, and researcher export. |
@@ -58,18 +59,18 @@ Keep this index updated when adding or moving template documentation. Applicatio
 
 The Flutter app uses Riverpod/hooks for state, GoRouter for navigation, Dio for API calls and typed sessions with secure storage. PocketBase runs on the backend; there is no global client/token mirror. Dependency and toolchain declarations live in `pubspec.yaml` / `pubspec.lock` and `api/go.mod` / `api/go.sum`.
 
-Edit source directly and keep related behavior within its feature. Avoid registries, configurable workflows and mandatory layers. The main flow is Introduction → BankID/consent → Home checklist → Done. Home combines questionnaire discovery/completion and step upload; guardian approval is a conditional prerequisite. Questionnaires use one route with vertical pages; settings are presentation-only. Read the customization guide before changing completion, storage or authorization behavior.
+Edit source directly and keep related behavior within its feature. Avoid registries, configurable workflows and mandatory layers. The main flow is Introduction → BankID identity → Consent → Home checklist → Done. Home combines questionnaire discovery/completion and step upload; guardian approval is a conditional prerequisite. Questionnaires use one route with vertical pages; settings are presentation-only. Read the customization guide before changing completion, storage or authorization behavior.
 
 ## Current behavior to preserve when adapting the template
 
-- One backend serves one study. Collections cover users, signatures, guardian signing requests, consent texts, answers, uploads, and questionnaire definitions; see the architecture guide for relationships.
+- One backend serves one study. Collections cover users, authentication events, consent acceptances, guardian requests/approvals, consent texts, answers, uploads, and questionnaire definitions; see the architecture guide for relationships.
 - Baseline migrations leave questionnaire content empty. Application-specific seed migrations are added when adapting the template; shared synthetic questionnaire fixtures are loaded only by tests.
-- The app presents consent before BankID signing. Successful signing creates or finds the participant and grants a session. Consent and withdrawal state are derived from signature records.
-- Derive participant age and age-based consent/guardian requirements on the backend from the verified BankID response's personal number. Do not add an age, date-of-birth or "under 15/18" question to establish the participant's age group. The app follows the backend's verified participation state. If age-specific text must be selected before signing, follow the identity/document sequencing guidance in [the workflow](docs/workflow.md#age-and-consent-routing).
-- Participants under 18 need the selected one or two guardian signatures before uploading. The backend enforces consent as well as session authorization.
+- KontoAPI authenticates the participant and grants a restricted session before consent review. Explicit in-app acceptance records the exact document/version; authentication alone never creates consent. Consent and withdrawal state derive from acceptance records.
+- Derive participant age and age-based consent/guardian requirements on the backend from the verified KontoAPI authentication result's personal number. Do not add an age, date-of-birth or "under 15/18" question to establish the participant's age group. The app follows the backend's verified participation state. If age-specific text must be selected before acceptance, follow the identity/document sequencing guidance in [the workflow](docs/workflow.md#age-and-consent-routing).
+- Participants under 18 need the selected one or two guardian approvals, each explicitly recorded after guardian authentication, before uploading. The backend enforces consent as well as session authorization.
 - Step data is read from Apple Health, previewed locally, and uploaded in compressed chunks linked to the authenticated user.
-- Pending BankID attempts live in process memory, so the backend runs as one replica and restarts interrupt pending attempts. Persisted signatures and users survive.
-- Existing encrypted evidence depends on the original study keyring. Follow the setup guide's backup and migration instructions when upgrading an existing installation.
+- Pending BankID attempts live in process memory, so the backend runs as one replica and restarts interrupt pending attempts. Persisted authentication/consent records and users survive.
+- Existing encrypted evidence depends on the original study keyring. Retain it with any retained data. The KontoAPI schema replacement requires a fresh database; legacy signature data is not migrated.
 
 ## Adding application-specific context
 

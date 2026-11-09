@@ -37,7 +37,7 @@ class IntroductionScreen extends StatelessWidget {
               Text('Taking part', style: AppTheme.cardTitle),
               SizedBox(height: 12),
               Text(
-                '1. Read the consent and sign with BankID.\n2. Complete the tasks on your checklist.\n3. Finish when everything is submitted.',
+                '1. Identify with BankID, then read and accept the consent.\n2. Complete the tasks on your checklist.\n3. Finish when everything is submitted.',
                 style: AppTheme.body,
               ),
             ],

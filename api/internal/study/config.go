@@ -1,6 +1,7 @@
 package study
 
 import (
+	"app/internal/kontoapi"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,30 +16,30 @@ import (
 const SessionLifetime = 2 * time.Hour
 
 type Config struct {
-	Environment               string
-	AppID                     string
-	IOSAppID                  string
-	ReturnURL                 string
-	PublicURL                 string
-	CertFile, KeyFile, CAFile string
-	ActiveKey                 string
-	EncryptionKeys            map[string][]byte
-	TrustedProxies            []netip.Prefix
+	Environment    string
+	AppID          string
+	IOSAppID       string
+	ReturnURL      string
+	PublicURL      string
+	KontoAPI       kontoapi.Config
+	ActiveKey      string
+	EncryptionKeys map[string][]byte
+	TrustedProxies []netip.Prefix
 }
 
 func LoadConfig() (Config, error) {
 	c := Config{
-		Environment: env("BANKID_ENVIRONMENT", "disabled"),
-		AppID:       os.Getenv("BANKID_APP_IDENTIFIER"),
-		IOSAppID:    os.Getenv("BANKID_IOS_APP_ID"),
-		ReturnURL:   os.Getenv("BANKID_RETURN_URL"),
-		PublicURL:   strings.TrimRight(os.Getenv("BANKID_PUBLIC_URL"), "/"),
-		CertFile:    os.Getenv("BANKID_CERT_FILE"), KeyFile: os.Getenv("BANKID_KEY_FILE"), CAFile: os.Getenv("BANKID_CA_FILE"),
+		Environment:    env("KONTOAPI_ENVIRONMENT", "disabled"),
+		AppID:          os.Getenv("BANKID_APP_IDENTIFIER"),
+		IOSAppID:       os.Getenv("BANKID_IOS_APP_ID"),
+		ReturnURL:      os.Getenv("BANKID_RETURN_URL"),
+		PublicURL:      strings.TrimRight(os.Getenv("BANKID_PUBLIC_URL"), "/"),
+		KontoAPI:       kontoapi.Config{BaseURL: os.Getenv("KONTOAPI_URL"), TokenURL: os.Getenv("KONTOAPI_TOKEN_URL"), ClientID: os.Getenv("KONTOAPI_CLIENT_ID"), ClientSecret: os.Getenv("KONTOAPI_CLIENT_SECRET"), APIKey: os.Getenv("KONTOAPI_API_KEY")},
 		ActiveKey:      os.Getenv("STUDY_ACTIVE_ENCRYPTION_KEY"),
 		EncryptionKeys: map[string][]byte{},
 	}
 	if c.Environment != "disabled" && c.Environment != "test" && c.Environment != "production" {
-		return c, errors.New("BANKID_ENVIRONMENT must be disabled, test or production")
+		return c, errors.New("KONTOAPI_ENVIRONMENT must be disabled, test or production")
 	}
 	var keys map[string]string
 	if file := os.Getenv("STUDY_SECRETS_FILE"); file != "" {
@@ -81,30 +82,32 @@ func LoadConfig() (Config, error) {
 		c.TrustedProxies = append(c.TrustedProxies, prefix)
 	}
 	if c.Environment != "disabled" {
-		if c.CertFile == "" || c.KeyFile == "" || c.CAFile == "" || c.AppID == "" {
-			return c, errors.New("configure BANKID_CERT_FILE, BANKID_KEY_FILE, BANKID_CA_FILE and BANKID_APP_IDENTIFIER")
+		if _, err := kontoapi.NewClient(c.KontoAPI); err != nil {
+			return c, err
 		}
 		if err := c.ValidateSecrets(); err != nil {
 			return c, err
 		}
-		u, err := url.Parse(c.ReturnURL)
-		if err != nil || u.Fragment != "" || u.RawQuery != "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "researchsteps") || u.Host == "" {
-			return c, errors.New("BANKID_RETURN_URL must be an HTTPS universal link or researchsteps://bankid/return, without query or fragment")
-		}
-		if u.Scheme == "researchsteps" && (u.Host != "bankid" || u.Path != "/return") {
-			return c, errors.New("custom return URL must be researchsteps://bankid/return")
-		}
-		if c.Environment == "production" && u.Scheme != "https" {
-			return c, errors.New("production requires an HTTPS universal return link")
-		}
-		if u.Scheme == "https" && (u.Path != "/bankid/return" || c.IOSAppID == "" || !strings.HasSuffix(c.IOSAppID, "."+c.AppID)) {
-			return c, errors.New("HTTPS returns require /bankid/return and BANKID_IOS_APP_ID as Apple app ID prefix plus '.' plus BANKID_APP_IDENTIFIER")
-		}
-		if len(c.ReturnURL)+60 > 512 {
-			return c, errors.New("BANKID_RETURN_URL is too long")
-		}
-		if c.PublicURL == "" && u.Scheme == "https" {
-			c.PublicURL = "https://" + u.Host
+		if c.ReturnURL != "" {
+			u, err := url.Parse(c.ReturnURL)
+			if err != nil || u.Fragment != "" || u.RawQuery != "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "researchsteps") || u.Host == "" {
+				return c, errors.New("BANKID_RETURN_URL must be an HTTPS universal link or researchsteps://bankid/return, without query or fragment")
+			}
+			if u.Scheme == "researchsteps" && (u.Host != "bankid" || u.Path != "/return") {
+				return c, errors.New("custom return URL must be researchsteps://bankid/return")
+			}
+			if c.Environment == "production" && u.Scheme != "https" {
+				return c, errors.New("production requires an HTTPS universal return link")
+			}
+			if u.Scheme == "https" && (u.Path != "/bankid/return" || c.IOSAppID == "" || !strings.HasSuffix(c.IOSAppID, "."+c.AppID)) {
+				return c, errors.New("HTTPS returns require /bankid/return and BANKID_IOS_APP_ID as Apple app ID prefix plus '.' plus BANKID_APP_IDENTIFIER")
+			}
+			if len(c.ReturnURL)+60 > 512 {
+				return c, errors.New("BANKID_RETURN_URL is too long")
+			}
+			if c.PublicURL == "" && u.Scheme == "https" {
+				c.PublicURL = "https://" + u.Host
+			}
 		}
 		if c.PublicURL != "" {
 			public, err := url.Parse(c.PublicURL)

@@ -23,7 +23,7 @@ the layout and interaction principles.
 
 ## Status screens and actions
 
-Center short BankID, signing-result and completion content vertically in the
+Center short BankID, authentication-result and completion content vertically in the
 available body below the navigation bar and inside safe areas. Center the whole
 group of status, explanation, QR code and actions. Do not center only its heading
 or position it using a fixed top spacer. `AppScrollBody(centerContent: true)`
@@ -36,11 +36,12 @@ Vertical centering alone does not center the text. Paragraphs inside cards and
 long documents can remain left-aligned.
 
 Use one clear primary action and only the secondary actions needed for that
-state. During BankID signing, Cancel request is sufficient to cancel; do not add
-a second Start over action. An expired QR code can offer renewal. A cancelled or
-failed request offers Review consent and try again. Successful signing still
-opens the checklist automatically; its briefly visible status follows the same
-layout. Keep long consent review separate from the centered status treatment.
+state. During BankID authentication, Stop this request stops local polling; explain that
+the upstream request may remain open. Do not add a second Start over action.
+An expired QR code can offer renewal. A stopped or failed request offers Try again.
+Successful authentication opens consent review when required, otherwise home.
+Keep long consent review separate from the centered status treatment, with an
+explicit acceptance action and a way to leave without consenting.
 
 Use a consistent spacing rhythm: 8–12 logical pixels between related labels,
 16 between explanatory text and its button, and 24 between sections. In
