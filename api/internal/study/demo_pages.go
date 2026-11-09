@@ -11,7 +11,7 @@ import (
 
 // WriteGuardianPreviews is used only by the offline export command. Pages share
 // the production HTML template; all links and status responses stay local.
-func WriteGuardianPreviews(dir string) error {
+func WriteGuardianPreviews(dir string, document Document) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -22,10 +22,10 @@ func WriteGuardianPreviews(dir string) error {
 	if err := os.WriteFile(filepath.Join(dir, "qr.png"), qr, 0644); err != nil {
 		return err
 	}
-	for _, mode := range []string{"signing", "expired", "failed", "checking", "approved"} {
-		page := guardianPageView{Mode: mode, StyleNonce: "demo", MobileLink: "#demo", DesktopLink: "#demo", QRURL: "qr.png?demo=1", StateURL: mode + ".json", RestartURL: "#demo", DoneURL: "approved.html"}
+	for _, mode := range []string{"authenticating", "expired", "failed", "checking", "consent", "approved", "error"} {
+		page := guardianPageView{Mode: mode, StyleNonce: "demo", MobileLink: "#demo", DesktopLink: "#demo", QRURL: "qr.png?demo=1", StateURL: mode + ".json", RestartURL: "#demo", DoneURL: "consent.html", Document: &document, ParticipantSuffix: "2384", ConsentID: "demo", CSRF: "demo", ApproveURL: "#demo", Message: "Samtycket registrerades inte. Öppna inbjudan och läs det aktuella samtycket igen."}
 		if mode == "expired" || mode == "failed" {
-			page.Mode = "signing"
+			page.Mode = "authenticating"
 		}
 		var body bytes.Buffer
 		if err := guardianPageTemplate.Execute(&body, page); err != nil {
@@ -35,10 +35,10 @@ func WriteGuardianPreviews(dir string) error {
 			return err
 		}
 		status := "pending"
-		if mode == "failed" {
-			status = "failed"
+		if mode == "failed" || mode == "expired" {
+			status = mode
 		}
-		data, err := json.Marshal(map[string]any{"status": status, "qrAvailable": mode == "signing", "pickedUp": false})
+		data, err := json.Marshal(map[string]any{"status": status, "qrAvailable": mode == "authenticating"})
 		if err != nil {
 			return err
 		}

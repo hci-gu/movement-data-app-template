@@ -1,81 +1,215 @@
-# Setup and testing
+# KontoAPI setup and testing
 
-Generate the evidence keyring from the repository root:
+Start with [the workflow](workflow.md). The integration authenticates through
+GU KontoAPI, then records explicit consent in the app or guardian browser page.
+It does not sign arbitrary text in BankID. See [architecture](bankid-signing-plan.md).
 
-```bash
-python3 scripts/create-study-secrets.py --out api/secrets/study-keys.json
+## Local test setup
+
+Connect this computer to the GU VPN before live testing. ADFS authentication was
+verified during implementation; the KontoAPI test host on port 9444 timed out
+without VPN. The [remote test deployment](test-deployment.md#deployed-verification--2026-11-03)
+has since verified live order creation, QR retrieval and pending status from the
+cluster; completing a BankID identity and accepting consent remain manual checks.
+
+The ignored root `test-env.txt` uses these keys, one per line:
+
+```text
+ak-test:API_KEY
+cid-test:CLIENT_ID
+cs-test:CLIENT_SECRET
 ```
 
-Set BankID certificate, return URL, and keyring paths using [api/.env.example](../api/.env.example). The backend loads `.env` when present and also accepts deployment environment variables. Use one backend replica because pending BankID attempts live in process memory.
+Do not commit credentials or put them in Flutter build arguments. The runner
+reads them without printing values, builds the API, creates an isolated evidence
+keyring and database under ignored `api/.local/kontoapi/`, and publishes
+`deploy/test-consent.txt` as `kontoapi-technical-v1`. This consent is only for
+technical tests and does not enrol anyone in a research study.
 
-## OpenShift test deployment
+From the repository root:
 
-The current test API is `https://movement-api.test.appadem.in`, in the `appademin` namespace. The image intentionally includes the four files in `api/secrets/` used by the API: `client.pem`, `client-key.pem`, `bankid-server-ca.pem`, and `study-keys.json`. Keep the same study keyring across rebuilds so existing evidence remains readable. The Docker build context must be `api/`; the `.p12` source bundle and local `.env` are excluded. Image permissions support OpenShift's assigned UID through group 0.
+```sh
+# Offline preparation (already possible without VPN):
+python3 scripts/run-kontoapi-test.py --prepare-only
 
-Build and deploy from the repository root, using a new image tag for each release and updating `deploy/api.yaml` to match:
+# After connecting to VPN: create an order, verify QR/status response formats.
+python3 scripts/run-kontoapi-test.py --check
 
-```bash
-docker build --platform linux/amd64 \
-  -t registry.k8s.gu.se/appademin/movement-api:0.0.2-bankid-test-20260930 api
-docker push registry.k8s.gu.se/appademin/movement-api:0.0.2-bankid-test-20260930
-kubectl -n appademin apply -f deploy/api.yaml
-kubectl -n appademin rollout status deployment/movement-api
+# Run the API on port 8090:
+python3 scripts/run-kontoapi-test.py
 ```
 
-The deployment uses `Recreate` and a health readiness probe. Pending BankID attempts must be restarted after a deployment. `BANKID_APP_IDENTIFIER` matches the iOS bundle ID, `com.appademin.swedHeart`. The route replaces incoming forwarded headers, and `TRUSTED_PROXY_CIDRS` lists only the three ingress peer addresses observed reaching this API on 2026-09-30. Recheck these addresses if the ingress topology changes; do not substitute all private networks.
+The diagnostic order is not used for enrollment and creates no study session
+or consent. It expires upstream; the wrapper documents no cancellation endpoint.
+The service does not read an old `api/.env` when launched through this runner.
 
-For a fresh test database, publish the explicitly labeled test document once:
+Run Flutter against that API, using a reachable LAN address on a physical phone:
 
-```bash
-kubectl -n appademin exec -i deployment/movement-api -- \
-  sh -c 'cat > /tmp/test-consent.txt' < deploy/test-consent.txt
-kubectl -n appademin exec deployment/movement-api -- \
-  /pb/app bankid publish-consent --file /tmp/test-consent.txt \
-  --version test-2026-09-30 --title 'BankID technical test - not research consent' \
-  --dir=/pb/pb_data
+```sh
+flutter pub get
+PATH="$(xcode-select -p)/usr/bin:$PATH" \
+  flutter run --dart-define=API_BASE_URL=http://YOUR_LAN_IP:8090
 ```
 
-Consent versions are immutable; use a new version label when changing the text. The test document is not approved research consent. Verify that `/api/health` returns 200 and `/api/consent/current` returns the test document with `bankidAvailable: true`.
+Replace `YOUR_LAN_IP` with the Mac's actual LAN address (`ipconfig getifaddr en0`
+for Wi-Fi on this Mac). If Flutter lists multiple devices, add `-d DEVICE_ID`
+using the iPhone ID from `flutter devices`. The PATH prefix selects Apple's LLDB;
+Homebrew LLVM's LLDB lacks the `device` command used to launch on an iPhone.
 
-Run the iOS app against this environment with:
+An iOS simulator on this Mac can use `http://127.0.0.1:8090`; Android Emulator
+uses `http://10.0.2.2:8090`. Physical BankID and HealthKit tests need an iPhone.
+The backend needs VPN access; the phone needs connectivity to the backend and
+the appropriate test BankID setup. Return manually from BankID after identifying.
 
-```bash
-flutter run --dart-define-from-file=deploy/flutter-test.json
+For guardian browser testing, expose port 8090 through a public HTTPS origin and
+restart with that origin. If using a local tunnel forwarding over loopback:
+
+```sh
+python3 scripts/run-kontoapi-test.py \
+  --public-url https://YOUR_HTTPS_HOST \
+  --trusted-proxies 127.0.0.1/32,::1/128
 ```
 
-The phone must have a test BankID identity and BankID configured for the test environment. The app and backend both use `researchsteps://bankid/return` for the callback.
+Use only actual proxy peers. Without a public HTTPS origin, participant testing
+works but invitation creation reports missing configuration. No tunnel or
+deployment is created automatically.
 
-## Consent and signing
+The old database is unsupported and is left untouched. To reset this disposable
+setup, stop the API and remove `api/.local/kontoapi/pb_data/`. Retain the keyring
+while retaining any evidence. Local client sessions from an old backend are
+rejected on verification; reinstall/clear app storage if needed.
 
-Publish approved consent in the PocketBase `consent_texts` collection or with:
+### iPhone stays blank during debug launch
 
-```bash
-cd api
-./app bankid publish-consent --file consent.txt --version 2026-01 --title 'Study consent' --dir=./pb_data
+On the development Mac, Homebrew LLDB was selected first in PATH and failed with
+`'device' is not a valid command`. Flutter then fell back to Xcode automation.
+A failed launch also left generated build settings pointing at a stale app bundle
+in `build/ios/iphoneos/`; that bundle was missing `Runner.debug.dylib` and crashed
+before Dart started. The fresh Xcode bundle was in `build/ios/Debug-iphoneos/`.
+
+If Xcode reports `Library not loaded: @rpath/Runner.debug.dylib`, stop the failed
+Flutter/Xcode run, regenerate the build configuration, then launch with Apple LLDB:
+
+```sh
+flutter build ios --config-only --debug --no-pub \
+  --dart-define=API_BASE_URL=http://YOUR_LAN_IP:8090
+PATH="$(xcode-select -p)/usr/bin:$PATH" \
+  flutter run --dart-define=API_BASE_URL=http://YOUR_LAN_IP:8090
 ```
 
-The app shows consent before starting BankID. A successful signature creates or finds the user and grants the session in one BankID request. No invitations or user records need to be issued by an administrator. The backend checks the participant's age from the BankID personal number. Adults can upload immediately. A minor chooses one or two guardians and creates a signing link for each; all selected guardians must sign before the app or upload endpoint allows data transfer. Each guardian link starts a BankID order in a browser. The backend checks that the signer matches the requested personal number and is at least 18. This flow verifies identity and age, but it does not independently verify a legal guardianship relationship. Uploads use the authenticated `userId`.
+Successful attachment prints `Syncing files to device` and the Flutter run key
+commands. Press `r` to verify hot reload. No signing or app-code changes were
+needed for this failure.
 
-Guardian links need `BANKID_PUBLIC_URL` set to the API's public HTTPS origin when `BANKID_RETURN_URL` uses the app's custom scheme. When the return URL is HTTPS on the API host, the backend derives the origin automatically. Keep this URL stable while links are active. Opening a guardian link creates a BankID order. The guardian can open BankID on the computer, open Mobile BankID on the same phone, or scan the changing QR code with Mobile BankID on another phone. The page checks signing status and offers **Restart signing** when the QR code expires. If a shared link opens inside a messaging app's browser and BankID does not launch, open the link in Safari or Chrome and tap the button there.
+## Backend configuration
 
-For local testing through ngrok, set `BANKID_PUBLIC_URL` to the current ngrok HTTPS origin and start ngrok against the API port. Set `TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128` only when the ngrok agent connects to the API over loopback, so the backend reads the guardian's IP from the proxy's `X-Forwarded-For` header. A new ngrok hostname requires updating `BANKID_PUBLIC_URL` and restarting the API. The BankID app on the signing phone must be configured for the same BankID environment as the API.
+Copy `api/.env.example` to ignored `api/.env` for a manual setup, or inject
+environment variables. Direct BankID certificates are no longer needed.
 
-## API
-
-| Action | Endpoint |
+| Variable | Meaning |
 | --- | --- |
-| Current consent | `GET /api/consent/current` |
-| Sign consent and enter app | `POST /api/bankid/attempts` with `clientSecret`, `mode`, `consentTextId`, and `documentHash` |
-| Attempt status | `GET /api/bankid/attempts/{id}` |
-| Signed-in user | `GET /api/me` |
-| Guardian status | `GET /api/guardians` (participant session) |
-| Create guardian link | `POST /api/guardians` with `personalNumber` and `guardianCount` (1 or 2) |
-| Guardian handoff | `GET /guardian/{id}` where `id` is the signing request's numeric `XXX-XXX` ID (starts an order and shows computer, phone, and QR options) |
-| Consent receipt | `GET /api/consent/receipt` |
-| Withdraw | `POST /api/consent/withdraw` |
-| Upload | `POST /data` with `userId`, `chunkIndex`, and `data` |
-| Researcher export | `GET /data/{userId}` with `X-API-Key` |
+| `KONTOAPI_ENVIRONMENT` | `disabled` (default), `test`, or `production`. Enabled modes require credentials and evidence keys. |
+| `KONTOAPI_URL` | API HTTPS origin; test: `https://sptest.it.gu.se:9444`. |
+| `KONTOAPI_TOKEN_URL` | ADFS HTTPS token URL; test: `https://idptest.it.gu.se/adfs/oauth2/token/`. |
+| `KONTOAPI_CLIENT_ID`, `KONTOAPI_CLIENT_SECRET`, `KONTOAPI_API_KEY` | Backend credentials only. |
+| `STUDY_SECRETS_FILE` | JSON evidence keyring; relative to the API working directory. |
+| `BANKID_PUBLIC_URL` | Public HTTPS origin hosting guardian invitations. |
+| `TRUSTED_PROXY_CIDRS` | Comma-separated exact trusted ingress networks. Empty for a direct connection. |
+| `API_KEY` | Optional, separate researcher upload export credential. |
 
-Back up the database, raw upload directory, and keyring before upgrading an older installation. The startup migration converts encrypted evidence and linked users, moves upload directories to user IDs, then removes the old namespace and invitation fields. It stops if required keys or evidence are missing. Unused invitation users are removed. Existing sessions are invalidated; users sign in with BankID again.
+`BANKID_RETURN_URL`, `BANKID_APP_IDENTIFIER`, `BANKID_IOS_APP_ID` only configure
+optional existing app-link hosting. KontoAPI has no documented return-URL
+parameter, so leave these unset for the normal manual-return flow.
 
-Run `go test ./...` in `api/`, plus `flutter analyze` and `flutter test test/bankid` from the repository root. Verify BankID handoff and HealthKit permissions on a physical iPhone before recruiting participants.
+Use the existing `scripts/create-study-secrets.py` helper for non-runner setups.
+Back up the database, raw uploads and original keyring together. Losing keys
+makes retained evidence unreadable; key rotation must retain old key IDs.
+
+From `api/` with the desired configuration:
+
+```sh
+go build -o app .
+./app bankid publish-consent --file ../deploy/test-consent.txt \
+  --version kontoapi-technical-v1 --title 'KontoAPI technical test' --dir ./pb_data
+./app serve --http=0.0.0.0:8090 --dir ./pb_data
+```
+
+For a real study, replace the test file/version with approved text and verify
+the authenticated `GET /api/consent/current` result and a full acceptance.
+
+Encrypted evidence can be exported locally to a new private file:
+
+```sh
+./app bankid export-evidence --kind consent --record RECORD_ID \
+  --out ./evidence-exports/consent.json --dir ./pb_data
+```
+
+Kinds are `authentication`, `consent` and `guardian`. Exports contain personal
+information; keep them outside version control and shared reports.
+
+## OpenShift
+
+Use [the remote test deployment guide](test-deployment.md) for the complete
+OpenShift procedure, private Secret files, image publication, existing storage,
+automatic test-consent initialization and in-pod provider check. Render all of
+`deploy/` with `kubectl kustomize`; do not apply `deploy/api.yaml` alone.
+
+The target is `https://movement-api.test.appadem.in` in namespace `appademin`.
+Once deployed, launch Flutter with `--dart-define-from-file=deploy/flutter-test.json`.
+The phone uses the public HTTPS URL; only the backend needs access to KontoAPI.
+
+## API and checks
+
+| Endpoint | Access / behavior |
+| --- | --- |
+| POST `/api/bankid/attempts` | Client-generated attempt ID/secret and `sameDevice` or `qr`; starts identity only. |
+| GET `/api/bankid/attempts/{id}` | Owned attempt status; accepted participant result includes session grant. |
+| GET `/api/bankid/attempts/{id}/qr` | Owned pending attempt; PNG data URL. |
+| POST `/api/bankid/attempts/{id}/cancel` | Local stop, no upstream cancel. |
+| GET `/api/me` | Verified session and current participation state. |
+| GET `/api/consent/current` | Authenticated current document. |
+| POST `/api/consent/accept` | Session plus document ID/hash and acceptance request ID. |
+| GET `/api/consent/receipt` | Authenticated acceptance receipt. |
+| POST `/api/consent/withdraw` | Withdraw acceptance and revoke sessions. |
+| GET/POST `/api/guardians` | Guardian status/invitations for a consenting minor. |
+| GET `/guardian/{id}` | Browser authentication, then explicit approval. |
+
+```sh
+flutter analyze
+flutter test
+cd api
+go test ./...
+go build -o app .
+```
+
+The report builder also checks native builds and captures all preview cases.
+On this Mac, the inherited `JAVA_HOME` points to a removed Java installation.
+For Android/report builds use the installed Java 21 for that command:
+
+```sh
+JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home python3 scripts/build-app-report.py
+```
+
+Automated tests cover identity-only denial, current-document acceptance,
+idempotency, withdrawal/rejoin, guardian ownership/CSRF/identity/version binding,
+provider token refresh and malformed responses. Use [manual review](manual-review.md)
+for live tests, including unavailable network, local stop, expired requests,
+wrong guardian identity, and re-consent after a document change.
+
+## Implementation verification — 2026-11-03
+
+- Flutter analysis and all 164 Flutter tests passed; backend tests and build passed.
+- Android release and iOS simulator builds passed using the Java override above.
+- Physical iPhone debug build, installation, launch, debugger attachment and hot
+  reload passed with Apple's LLDB first in PATH. The owner confirmed that the
+  introduction screen displayed and responded to taps.
+- The isolated runner initialized technical consent and started successfully:
+  health returned 200; unauthenticated consent/session requests returned 401.
+- The synthetic report contains 84 views/84 screenshots, plus separate small-screen
+  layout captures. Visual review included participant and guardian consent, QR,
+  receipts and errors; report search/enlargement worked with browser networking disabled.
+- The remote test backend was subsequently deployed and verified for live
+  KontoAPI order creation, QR retrieval, pending status and local stop; see
+  [deployment verification](test-deployment.md#deployed-verification--2026-11-03).
+  Completing an identity, accepting consent, guardian approval and physical-iPhone
+  HealthKit remain manual checks. No production/study-content adaptation was performed.

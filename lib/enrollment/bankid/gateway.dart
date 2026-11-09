@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:research_steps_template/enrollment/bankid/models.dart';
 
 abstract class BankIdGateway {
-  Future<ConsentDocument> currentConsent();
+  Future<Uint8List?> qrImage(BankIdAttempt attempt);
   Future<BankIdAttempt> start(
     BankIdAttempt attempt,
     Map<String, dynamic> input,
@@ -24,14 +26,19 @@ class HttpBankIdGateway implements BankIdGateway {
   Map<String, dynamic> _json(Response<dynamic> r) =>
       Map<String, dynamic>.from(r.data as Map);
   @override
-  Future<ConsentDocument> currentConsent() async {
+  Future<Uint8List?> qrImage(BankIdAttempt attempt) async {
     final data = _json(
-      await client.get('/api/consent/current', options: _options()),
+      await client.get(
+        '/api/bankid/attempts/${attempt.id}/qr',
+        options: _options(attempt),
+      ),
     );
-    if (data['bankidAvailable'] != true) throw const BankIdUnavailable();
-    return ConsentDocument.fromJson(
-      Map<String, dynamic>.from(data['document'] as Map),
-    );
+    final value = data['image'] as String;
+    const prefix = 'data:image/png;base64,';
+    if (!value.startsWith(prefix)) {
+      throw const FormatException('Invalid QR image');
+    }
+    return base64Decode(value.substring(prefix.length));
   }
 
   Future<BankIdAttempt> _result(
@@ -57,7 +64,7 @@ class HttpBankIdGateway implements BankIdGateway {
         client.post('/api/bankid/attempts', data: input, options: _options()),
       );
     } on DioException catch (e) {
-      if (e.response?.statusCode == 400 || e.response?.statusCode == 409) {
+      if ([400, 409, 429, 503].contains(e.response?.statusCode)) {
         final data = e.response?.data;
         var reason = '';
         if (data is Map && data['data'] is Map) {

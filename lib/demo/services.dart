@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+import '../enrollment/consent_review_controller.dart';
 import 'package:dio/dio.dart';
 import 'package:health/health.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -18,11 +21,11 @@ import '../session/models.dart';
 import '../session/store.dart';
 import '../steps/controller.dart';
 import '../steps/health_reader.dart';
+import '../steps/movement.dart';
+import '../questionnaires/scoliosis.dart';
 import '../steps/upload_card.dart';
 import '../steps/upload_gateway.dart';
 import '../steps/upload_store.dart';
-import '../steps/movement.dart';
-import '../questionnaires/scoliosis.dart';
 import 'cases.dart';
 import 'data.dart';
 
@@ -67,10 +70,7 @@ class DemoForms implements QuestionnaireGateway {
         saved[form.summary.id] = QuestionnaireResponse(
           'demo-response-${form.summary.id}',
           form.summary.id,
-          const {
-            treatmentQuestionId: 'surgery',
-            surgeryDateQuestionId: '2025-04-15',
-          },
+          const {treatmentQuestionId: 'surgery', surgeryDateQuestionId: '2025-04-15'},
         );
       }
     }
@@ -217,17 +217,16 @@ class DemoBankIdGateway implements BankIdGateway {
   final Map<String, dynamic> grant;
   DemoBankIdGateway(this.document, this.grant);
   @override
-  Future<ConsentDocument> currentConsent() async => document;
+  Future<Uint8List?> qrImage(BankIdAttempt attempt) async => demoQRImage;
   @override
   Future<BankIdAttempt> start(
     BankIdAttempt attempt,
     Map<String, dynamic> input,
   ) async => BankIdAttempt(
-    id: 'demo-signature',
+    id: 'demo-acceptance',
     secret: 'demo',
     expiresAt: 4102444800,
     status: 'accepted',
-    document: document,
     grant: grant,
   );
   @override
@@ -259,15 +258,9 @@ class DemoBankIdController extends BankIdController {
        ) {
     final kind = preview.state;
     final order = kind.startsWith('bankid-');
-    state = SigningState(
+    state = AuthenticationState(
       begun: true,
-      document: kind == 'consent-error' || kind == 'consent-loading'
-          ? null
-          : document,
-      busy: kind == 'consent-loading',
-      error: kind == 'consent-error'
-          ? 'Samtycket kunde inte hämtas. Försök igen.'
-          : null,
+      qrImage: kind == 'bankid-qr' ? demoQRImage : null,
       attempt: order
           ? BankIdAttempt(
               id: 'demo-order',
@@ -282,11 +275,7 @@ class DemoBankIdController extends BankIdController {
               mode: kind == 'bankid-qr' || kind == 'bankid-expired'
                   ? 'qr'
                   : 'sameDevice',
-              qrData: kind == 'bankid-qr'
-                  ? 'DEMO ONLY - not a BankID order'
-                  : null,
               qrSecondsRemaining: kind == 'bankid-expired' ? 0 : 90,
-              document: document,
             )
           : null,
     );
@@ -400,6 +389,7 @@ class DemoRuntime {
       id: 'demo-participant',
       gender: preview.gender,
       guardianRequired: preview.guardian,
+      consentRequired: preview.state.startsWith('consent'),
     );
     final credentials = MemoryCredentials();
     final sessions = DemoSessionGateway(participant);
@@ -458,6 +448,9 @@ class DemoRuntime {
           if (current != null) unawaited(controller.load());
           return controller;
         }),
+        consentReviewGatewayProvider.overrideWithValue(
+          DemoConsentReview(study.consent, sessions, preview),
+        ),
         enrollmentGatewayProvider.overrideWithValue(
           DemoEnrollment(study, preview),
         ),
@@ -488,6 +481,7 @@ class DemoRuntime {
     await container.read(startupProvider.future);
     container.read(stepsProvider);
     if (preview.signedIn &&
+        !preview.state.startsWith('consent') &&
         !preview.guardian &&
         !['forms-loading', 'forms-error'].contains(preview.state)) {
       await container.read(questionnaireListProvider.future);
@@ -496,3 +490,35 @@ class DemoRuntime {
 
   void dispose() => container.dispose();
 }
+
+class DemoConsentReview implements ConsentReviewGateway {
+  final ConsentDocument document;
+  final DemoSessionGateway sessions;
+  final PreviewCase preview;
+  DemoConsentReview(this.document, this.sessions, this.preview);
+  @override
+  Future<ConsentDocument> current() async {
+    if (preview.state == 'consent-loading') {
+      return Completer<ConsentDocument>().future;
+    }
+    if (preview.state == 'consent-error') {
+      throw StateError('Demo consent unavailable');
+    }
+    return document;
+  }
+
+  @override
+  Future<void> accept(ConsentDocument document, String requestId) async {
+    final p = sessions.participant;
+    sessions.participant = Participant(
+      id: p.id,
+      gender: p.gender,
+      guardianRequired: p.guardianRequired,
+    );
+  }
+}
+
+// Inert QR fixture generated for the gallery; never accepted by BankID.
+final demoQRImage = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAARgAAAEYAQMAAAC9QHvPAAAABlBMVEX///8AAABVwtN+AAABrUlEQVR42uyZvZHrIBSFP40ChZRAKZQmlUYplEBIoOG8AWSvbK+DF2wCnJD5lNy55/6JqampqT/SoqpoJQ8oLzrZ2qPvnTkBTLQBYNeSWc8tAdjJFGaVkolY7ySJGsNkpDAMY4OTBxbl9ZzMBwPOsx+T+WAASo7Jw04G+OLB7phH7Q3Ou2MnLyU+X+rzgMxDlZEA1vNLf+6NKd5JW3FKDUlrzFvCRCs/mRaxLQLOAypfsSUTjQK9M8AmRXDS5R0p8YYMy5SIlacAzu/iMdNG8zLTjstICUzpwi3Jal9WxAQ7AKMrGs7vh8pMUl9gMgBrW/9C81ctvbApYgOdM5d32kuZV/NyeedlXh2Wedbe61iQWT5i2C2zKgHYlkDKwP0yMDpTp5RWe3EHelbjCJMBWBNbdZPT8TPX6R7nXpnShevaDwVa8tWJeJnnx2UAoL44tfQ5wfy6C3fG/NwByrx6kKm7nlHETuZ+f3YeaMxbaemXed4Pb7ve+74zmZo/7Gr2+j2GgzPALgA+/NUrw+P+LA+0tlMYq8nc/3t6YCdDOTq+nNl6Zaampqb+R/8GAJd+o6xy7WnrAAAAAElFTkSuQmCC',
+);

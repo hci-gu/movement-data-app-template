@@ -16,27 +16,29 @@ var guardianPageFiles embed.FS
 var guardianPageTemplate = template.Must(template.ParseFS(guardianPageFiles, "guardian.html"))
 
 type guardianPageView struct {
-	Mode        string
-	StyleNonce  string
-	MobileLink  string
-	DesktopLink template.URL
-	QRURL       string
-	StateURL    string
-	RestartURL  string
-	DoneURL     string
+	Mode                                                    string
+	StyleNonce                                              string
+	MobileLink                                              string
+	DesktopLink                                             template.URL
+	QRURL                                                   string
+	StateURL                                                string
+	RestartURL                                              string
+	DoneURL                                                 string
+	Document                                                *Document
+	ParticipantSuffix, ConsentID, CSRF, ApproveURL, Message string
 }
 
 func guardianLaunchPage(e *core.RequestEvent, a *Attempt) error {
 	base := "/guardian/" + a.GuardianRequestID
-	nonce := url.QueryEscape(a.Nonce)
 	return renderGuardianPage(e, guardianPageView{
-		Mode:        "signing",
+		Mode:        "authenticating",
 		MobileLink:  "https://app.bankid.com/?autostarttoken=" + url.QueryEscape(a.Order.AutoStartToken),
 		DesktopLink: template.URL("bankid:///?autostarttoken=" + url.QueryEscape(a.Order.AutoStartToken)),
-		QRURL:       base + "/qr?nonce=" + nonce,
-		StateURL:    base + "/state?nonce=" + nonce,
-		RestartURL:  base + "/restart?nonce=" + nonce,
-		DoneURL:     base + "/return?nonce=" + nonce,
+		QRURL:       base + "/qr",
+		StateURL:    base + "/state",
+		RestartURL:  base + "/restart",
+		DoneURL:     base + "/return",
+		CSRF:        a.Nonce,
 	})
 }
 

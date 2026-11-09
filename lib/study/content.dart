@@ -19,7 +19,7 @@ class StudyContent {
     ),
     (
       'Så går det till i appen',
-      'Läs informationen och samtycket och signera med BankID. Svara sedan på frågor om din behandling och fysiska aktivitet. Behandlingstyp och behandlingsdatum behövs för att bestämma perioden för rörelsedata. Övriga frågor kan du hoppa över. Du hämtar och granskar rörelsedata från Apple Hälsa innan du väljer att skicka den.',
+      'Identifiera dig med BankID, läs informationen och bekräfta ditt samtycke i appen. Svara sedan på frågor om din behandling och fysiska aktivitet. Behandlingstyp och behandlingsdatum behövs för att bestämma perioden för rörelsedata. Övriga frågor kan du hoppa över. Du hämtar och granskar rörelsedata från Apple Hälsa innan du väljer att skicka den.',
     ),
     (
       'Rörelsedata',

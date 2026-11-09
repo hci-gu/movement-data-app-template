@@ -15,6 +15,8 @@ func migrateQuestionnaires(app core.App) error {
 	if err != nil {
 		return err
 	}
+	questions.Fields.GetByName("type").(*core.SelectField).Values = []string{"text", "singleChoice", "date", "dateInterval", "multiChoice", "integer", "slider"}
+	questions.Fields.Add(&core.JSONField{Name: "settings", MaxSize: 2000000})
 	questions.Fields.Add(&core.SelectField{Name: "audience", Values: []string{"all", "female", "male"}, MaxSelect: 1})
 	if err := app.Save(questions); err != nil {
 		return err

@@ -23,16 +23,6 @@ const output = String.fromEnvironment(
   defaultValue: 'build/app-report/captures',
 );
 
-Future<void> loadArtwork(WidgetTester tester) async {
-  // Decoding assets uses real asynchronous work, outside the test clock.
-  // A ready route can otherwise be captured with an empty image slot.
-  for (final element in find.byType(Image).evaluate()) {
-    final image = element.widget as Image;
-    await tester.runAsync(() => precacheImage(image.image, element));
-  }
-  await tester.pump();
-}
-
 Iterable<(String, GoRoute)> screenRoutes(
   List<RouteBase> routes, [
   String parent = '',
@@ -78,6 +68,17 @@ Future<void> captureSections(
   String id,
   Future<void> Function() snapshot,
 ) async {
+  // Image decoding runs outside the fake widget-test clock. Await actual frames
+  // before screenshots so a correctly sized but blank QR cannot pass review.
+  for (final element in find.byType(Image).evaluate()) {
+    await tester.runAsync(
+      () => precacheImage((element.widget as Image).image, element),
+    );
+  }
+  await tester.pump();
+  for (final image in tester.widgetList<RawImage>(find.byType(RawImage))) {
+    expect(image.image, isNotNull, reason: 'Image not decoded: $id');
+  }
   await snapshot();
   // Keep phone dimensions and overlap rather than stretching long content.
   for (final scroll in scrolls(tester)) {
@@ -172,7 +173,6 @@ void main() {
         await tester.pump(const Duration(milliseconds: 400));
         // A modal's first frame can start an animation after async state loads.
         await tester.pump(const Duration(milliseconds: 400));
-        await loadArtwork(tester);
         expect(tester.takeException(), isNull);
         expect(
           runtime.blockedRequests,
@@ -306,7 +306,6 @@ void main() {
         expect(previewKey.currentState?.error, isNull);
         await tester.pump(const Duration(milliseconds: 400));
         await tester.pump(const Duration(milliseconds: 400));
-        await loadArtwork(tester);
         expect(tester.takeException(), isNull);
         var section = 0;
         await captureSections(tester, id, () async {
@@ -370,8 +369,8 @@ void main() {
         'long-consent',
         'Long consent',
         'Test',
-        '/introduction/login',
-        signedIn: false,
+        '/consent',
+        state: 'consent',
       ),
     );
     try {
@@ -386,7 +385,7 @@ void main() {
       });
       expect(count, greaterThan(2));
       expect(
-        find.text('Använd BankID på en annan enhet').hitTestable(),
+        find.text('Lämna utan att samtycka').hitTestable(),
         findsOneWidget,
       );
       final positions = scrolls(tester).map((s) => s.position);

@@ -12,12 +12,17 @@ func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
 	user, err := s.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
 	if err != nil || user.Collection().Name != "users" {
-		return problem(401, "sessionExpired", "Logga in igen med BankID.")
+		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
 	// The token was verified above; inspect the application scope claims.
 	claims, err := security.ParseUnverifiedJWT(token)
 	if err != nil || claims[core.TokenClaimRefreshable] != false {
-		return problem(401, "sessionExpired", "Logga in igen med BankID.")
+		return problem(401, "sessionExpired", "Sign in again with BankID.")
+	}
+	authentication, _ := claims["authentication"].(string)
+	event, err := s.App.FindRecordById("authentications", authentication)
+	if err != nil || event.GetString("user") != user.Id || event.GetString("purpose") != "participant" || event.GetString("outcome") != "accepted" {
+		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
 	e.Auth = user
 	return nil
@@ -38,15 +43,15 @@ func (s *Service) RequireConsent(e *core.RequestEvent) error {
 // authorizeParticipant is shared by upload and questionnaire access.
 func (s *Service) authorizeParticipant(e *core.RequestEvent) error {
 	if e.Auth == nil || !s.activeConsent(s.App, e.Auth) {
-		return problem(403, "consentRequired", "Signera det aktuella samtycket innan du fortsätter.")
+		return problem(403, "consentRequired", "Accept the current study consent before continuing.")
 	}
 	if !s.guardianEligible(s.App, e.Auth) {
-		return problem(403, "guardianRequired", "Samtliga vårdnadshavare behöver signera innan du fortsätter.")
+		return problem(403, "guardianRequired", "Guardian approvals are required before continuing.")
 	}
 	return nil
 }
 func ProtectRecords(app core.App) {
-	managed := []string{"consent_texts", "signatures", "signingRequests", "users"}
+	managed := []string{"consent_texts", "authentications", "consent_acceptances", "guardian_requests", "guardian_approvals", "users"}
 	app.OnRecordCreateRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
 		return problem(403, "managedRecord", "Use the study administration or BankID flow.")
 	})
@@ -57,7 +62,7 @@ func ProtectRecords(app core.App) {
 		return problem(403, "managedRecord", "Study evidence and participants cannot be deleted here.")
 	})
 	app.OnRecordAuthRequest("users").BindFunc(func(e *core.RecordAuthRequestEvent) error {
-		return problem(403, "bankidRequired", "Använd BankID för att logga in.")
+		return problem(403, "bankidRequired", "Use BankID to sign in.")
 	})
 }
 

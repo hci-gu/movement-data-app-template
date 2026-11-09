@@ -137,7 +137,7 @@ func run() error {
 			if kind != "template" {
 				return fmt.Errorf("study consent missing: supply --consent; no template consent will be substituted")
 			}
-			doc, err = study.PublishConsent(app, "template-demo", "Demonstration consent", "DEMONSTRATION ONLY — not research consent.\n\nThis preview illustrates reviewing consent, answering a questionnaire and sharing sample movement data. No real signatures or participant data are used.")
+			doc, err = study.PublishConsent(app, "template-demo", "Demonstration consent", "DEMONSTRATION ONLY — not research consent.\n\nThis preview illustrates reviewing consent, answering a questionnaire and sharing sample movement data. No real authentication, consent or participant data are used.")
 			if err != nil {
 				return err
 			}
@@ -159,7 +159,7 @@ func run() error {
 	if err := os.WriteFile(filepath.Join(*output, "study.json"), data, 0644); err != nil {
 		return err
 	}
-	return study.WriteGuardianPreviews(filepath.Join(*output, "guardian"))
+	return study.WriteGuardianPreviews(filepath.Join(*output, "guardian"), study.Document{ID: doc.Id, Version: doc.GetString("version"), Title: doc.GetString("title"), Text: doc.GetString("text"), DocumentHash: doc.GetString("documentHash")})
 }
 
 func main() {

@@ -19,8 +19,8 @@ void main() {
       launches.add(uri);
       return true;
     },
-    onGrant: (grant) async {
-      grants.add(grant);
+    onGrant: (value) async {
+      grants.add(value);
     },
   );
   setUp(() {
@@ -31,35 +31,34 @@ void main() {
     controller = make();
   });
   tearDown(() => controller.dispose());
-  test('review gates signing and callback never grants access', () async {
-    await controller.restore();
-    await controller.begin();
-    await controller.start('sameDevice');
-    expect(gateway.starts, isEmpty);
-    controller.setReviewed(true);
-    await controller.start('sameDevice');
-    expect(launches, hasLength(1));
-    await controller.handleReturn(
-      Uri.parse('researchsteps://bankid/return#nonce=wrong'),
-    );
-    expect(gateway.returns, 0);
-    await controller.handleReturn(
-      Uri.parse('researchsteps://bankid/return#nonce=nonce1'),
-    );
-    expect(gateway.returns, 1);
-    expect(grants, isEmpty);
-    gateway.result = accepted;
-    await controller.refresh();
-    expect(grants, isEmpty, reason: 'Show signing receipt before continuing');
-    await controller.finish();
-    expect(grants.single['token'], 'server-grant');
-    expect(store.value, isNull);
-  });
   test(
-    'app restart recovers lost start response by status without another start',
+    'authentication starts without consent; return links only poll owned attempts',
     () async {
-      await controller.begin();
-      controller.setReviewed(true);
+      await controller.initialize();
+      await controller.start('sameDevice');
+      expect(gateway.starts.single.keys.toSet(), {'clientSecret', 'mode'});
+      expect(launches, hasLength(1));
+      final before = gateway.statuses;
+      await controller.handleReturn(
+        Uri.parse('https://untrusted.test/bankid/return'),
+      );
+      expect(gateway.statuses, before);
+      await controller.handleReturn(
+        Uri.parse('researchsteps://bankid/return#anything=untrusted'),
+      );
+      expect(gateway.statuses, before + 1);
+      expect(grants, isEmpty);
+      gateway.result = accepted;
+      await controller.refresh();
+      expect(grants, isEmpty);
+      await controller.finish();
+      expect(grants.single['token'], 'server-grant');
+      expect(store.value, isNull);
+    },
+  );
+  test(
+    'lost start response restores by credential without starting twice',
+    () async {
       gateway.loseStart = true;
       await controller.start('sameDevice');
       expect(gateway.starts, hasLength(1));
@@ -72,133 +71,63 @@ void main() {
       expect(launches, isEmpty);
     },
   );
-  test('backend restart discards attempt and offers clean start', () async {
-    await controller.begin();
-    controller.setReviewed(true);
-    await controller.start('qr');
+  test('backend restart discards attempt and allows retry', () async {
+    await controller.start('sameDevice');
     gateway.expired = true;
     await controller.refresh();
-    expect(controller.state.begun, false);
     expect(controller.state.attempt, isNull);
     expect(store.value, isNull);
-    expect(controller.state.error, contains('servern har startats om'));
     expect(grants, isEmpty);
+    expect(controller.state.error, contains('servern har startats om'));
   });
-  test(
-    'changed consent requires a fresh review and one new signature',
-    () async {
-      await controller.begin();
-      controller.setReviewed(true);
-      gateway.result = const BankIdAttempt(
-        id: 'sign1',
-        secret: 'secret',
-        expiresAt: 4102444800,
-        status: 'accepted',
-        purpose: 'sign',
-        mode: 'qr',
-        consentRequired: true,
-      );
-      await controller.start('qr');
-      expect(controller.state.document!.id, document.id);
-      expect(controller.state.reviewed, false);
-      expect(controller.state.attempt, isNull);
-      expect(grants, isEmpty);
-      await controller.start('qr');
-      expect(gateway.starts, hasLength(1));
-      controller.setReviewed(true);
-      gateway.result = accepted;
-      await controller.start('qr');
-      expect(gateway.starts.last.containsKey('authAttempt'), false);
-      expect(gateway.starts.last['consentTextId'], document.id);
-      await controller.finish();
-      expect(grants, hasLength(1));
-    },
-  );
-  test('accepted signature receipt can resume after app restart', () async {
+  test('accepted authentication can resume after app restart', () async {
     gateway.result = accepted;
-    await controller.begin();
-    controller.setReviewed(true);
     await controller.start('sameDevice');
     controller.dispose();
     controller = make();
     await controller.restore();
-    expect(controller.state.document!.id, document.id);
     expect(controller.state.attempt!.accepted, true);
-    expect(grants, isEmpty);
     await controller.finish();
     expect(grants, hasLength(1));
   });
-  test('late status cannot overwrite cancellation', () async {
-    await controller.begin();
-    controller.setReviewed(true);
-    await controller.start('qr');
+  test('late status cannot overwrite local cancellation', () async {
+    await controller.start('sameDevice');
     gateway.delayedStatus = Completer<BankIdAttempt>();
-    final polling = controller.refresh();
-    final cancellation = controller.cancel();
+    final poll = controller.refresh();
+    final cancel = controller.cancel();
     gateway.delayedStatus!.complete(pending);
-    await polling;
-    await cancellation;
+    await poll;
+    await cancel;
     expect(controller.state.attempt!.status, 'cancelled');
+    expect(grants, isEmpty);
   });
-  test(
-    'cancel then review clears the attempt and requires consent again',
-    () async {
-      await controller.begin();
-      controller.setReviewed(true);
-      await controller.start('qr');
-      await controller.cancel();
-      expect(controller.state.attempt!.status, 'cancelled');
-      await controller.reviewAgain();
-      expect(gateway.cancels, 1);
-      expect(store.value, isNull);
-      expect(controller.state.begun, true);
-      expect(controller.state.document!.id, document.id);
-      expect(controller.state.reviewed, false);
-      await controller.start('qr');
-      expect(gateway.starts, hasLength(1));
-    },
-  );
-  test('expired credential cannot restore an attempt', () async {
+  test('stopped request can be replaced with a new credential', () async {
+    await controller.start('sameDevice');
+    await controller.cancel();
+    await controller.restart();
+    expect(store.value, isNull);
+    await controller.start('sameDevice');
+    expect(gateway.starts, hasLength(2));
+    expect(
+      gateway.starts.first['clientSecret'],
+      isNot(gateway.starts.last['clientSecret']),
+    );
+  });
+  test('expired credential is cleared without server access', () async {
     store.value = {'id': 'old', 'secret': 'secret', 'expiresAt': 1};
     await controller.restore();
     expect(store.value, isNull);
     expect(gateway.statuses, 0);
     expect(grants, isEmpty);
   });
-  test(
-    'QR renewal creates one new attempt after cancelling the old one',
-    () async {
-      await controller.begin();
-      controller.setReviewed(true);
-      gateway.result = const BankIdAttempt(
-        id: 'qr1',
-        secret: 'secret',
-        expiresAt: 4102444800,
-        purpose: 'sign',
-        mode: 'qr',
-        qrSecondsRemaining: 0,
-      );
-      await controller.start('qr');
-      await controller.extendQR();
-      expect(gateway.cancels, 1);
-      expect(gateway.starts, hasLength(2));
-      expect(
-        gateway.starts.first['clientSecret'],
-        isNot(gateway.starts.last['clientSecret']),
-      );
-    },
-  );
-  test('rejected initiation leaves no fictitious pending attempt', () async {
-    await controller.begin();
-    controller.setReviewed(true);
+  test('rejected initiation clears fictitious attempt', () async {
     gateway.startError = const BankIdStartRejected(
-      'consentChanged',
-      'Review the new consent.',
+      'authenticationUnavailable',
+      'BankID unavailable.',
     );
     await controller.start('sameDevice');
-    expect(controller.state.attempt, isNull);
-    expect(controller.state.reviewed, false);
     expect(store.value, isNull);
-    expect(controller.state.error, 'Review the new consent.');
+    expect(controller.state.attempt, isNull);
+    expect(controller.state.error, 'BankID unavailable.');
   });
 }

@@ -1,4 +1,3 @@
 {
-  "API_BASE_URL": "https://movement-api.test.appadem.in",
-  "BANKID_RETURN_URL": "researchsteps://bankid/return"
+  "API_BASE_URL": "https://movement-api.test.appadem.in"
 }

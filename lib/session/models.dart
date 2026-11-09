@@ -32,6 +32,12 @@ class Participant {
     consentRequired: consentRequired,
     guardianRequired: true,
   );
+  Participant requiringConsent() => Participant(
+    id: id,
+    gender: gender,
+    consentRequired: true,
+    guardianRequired: guardianRequired,
+  );
 }
 
 class Session {
@@ -46,10 +52,7 @@ class Session {
   factory Session.fromJson(Map<String, dynamic> json) {
     final token = json['token'];
     final expiry = json['expiresAt'];
-    if (token is! String ||
-        token.isEmpty ||
-        expiry is! int ||
-        json['consentRequired'] == true) {
+    if (token is! String || token.isEmpty || expiry is! int) {
       throw const FormatException('Invalid session grant');
     }
     return Session(

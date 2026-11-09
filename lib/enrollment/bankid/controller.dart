@@ -1,15 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:research_steps_template/app/environment.dart';
-import 'package:research_steps_template/enrollment/bankid/gateway.dart';
-import 'package:research_steps_template/enrollment/bankid/models.dart';
-import 'package:research_steps_template/session/controller.dart';
-import 'package:research_steps_template/infrastructure/http_client.dart';
-import 'package:research_steps_template/infrastructure/local_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../app/environment.dart';
+import '../../session/controller.dart';
+import '../../infrastructure/http_client.dart';
+import '../../infrastructure/local_storage.dart';
+import 'gateway.dart';
+import 'models.dart';
 
 abstract class BankIdAttemptStore {
   Future<Map<String, dynamic>?> read();
@@ -21,47 +22,45 @@ class SecureBankIdAttemptStore implements BankIdAttemptStore {
   final SecureJsonStorage storage;
   SecureBankIdAttemptStore(this.storage);
   @override
-  Future<Map<String, dynamic>?> read() => storage.read('bankidAttempt');
+  Future<Map<String, dynamic>?> read() => storage.read('kontoapiAttempt');
   @override
   Future<void> write(Map<String, dynamic> value) =>
-      storage.write('bankidAttempt', value);
+      storage.write('kontoapiAttempt', value);
   @override
-  Future<void> clear() => storage.clear('bankidAttempt');
+  Future<void> clear() => storage.clear('kontoapiAttempt');
 }
 
-class SigningState {
+class AuthenticationState {
   final BankIdAttempt? attempt;
-  final ConsentDocument? document;
-  final bool begun, busy, reviewed;
+  final bool begun, busy;
   final String? error;
-  const SigningState({
+  final Uint8List? qrImage;
+  const AuthenticationState({
     this.attempt,
-    this.document,
     this.begun = false,
     this.busy = false,
-    this.reviewed = false,
     this.error,
+    this.qrImage,
   });
-  SigningState copyWith({
+  AuthenticationState copyWith({
     BankIdAttempt? attempt,
-    ConsentDocument? document,
     bool? begun,
     bool? busy,
-    bool? reviewed,
     String? error,
+    Uint8List? qrImage,
     bool clearAttempt = false,
     bool clearError = false,
-  }) => SigningState(
+    bool clearQR = false,
+  }) => AuthenticationState(
     attempt: clearAttempt ? null : attempt ?? this.attempt,
-    document: document ?? this.document,
     begun: begun ?? this.begun,
     busy: busy ?? this.busy,
-    reviewed: reviewed ?? this.reviewed,
     error: clearError ? null : error ?? this.error,
+    qrImage: clearQR ? null : qrImage ?? this.qrImage,
   );
 }
 
-class BankIdController extends StateNotifier<SigningState> {
+class BankIdController extends StateNotifier<AuthenticationState> {
   final BankIdGateway gateway;
   final BankIdAttemptStore store;
   final Future<bool> Function(Uri) launch;
@@ -76,16 +75,17 @@ class BankIdController extends StateNotifier<SigningState> {
     required this.onGrant,
     DateTime Function()? now,
   }) : now = now ?? DateTime.now,
-       super(const SigningState());
-
+       super(const AuthenticationState());
   Future<void> _error(Object error) async {
     if (error is AttemptExpired) {
       _timer?.cancel();
       _timer = null;
       await store.clear();
-      if (mounted) state = SigningState(error: bankIdError(error));
+      if (mounted) {
+        state = AuthenticationState(begun: true, error: bankIdError(error));
+      }
     } else if (mounted) {
-      state = state.copyWith(error: bankIdError(error));
+      state = state.copyWith(error: bankIdError(error), clearQR: true);
     }
   }
 
@@ -115,51 +115,34 @@ class BankIdController extends StateNotifier<SigningState> {
     if (mounted && !state.begun) await begin();
   }
 
-  void setReviewed(bool value) => state = state.copyWith(reviewed: value);
   Future<void> begin() => _run(() async {
-    final doc = await gateway.currentConsent();
-    if (!mounted) return;
-    state = SigningState(begun: true, document: doc, busy: true);
+    state = const AuthenticationState(begun: true, busy: true);
   });
   Future<void> start(String mode) => _run(() => _start(mode));
   Future<void> _start(String mode) async {
-    if (state.document == null || !state.reviewed) return;
     if (state.attempt?.pending == true) {
       await _update(await gateway.status(state.attempt!));
       return;
     }
     final secret = base64UrlEncode(
-      List<int>.generate(32, (_) => Random.secure().nextInt(256)),
+      List.generate(32, (_) => Random.secure().nextInt(256)),
     ).replaceAll('=', '');
     final a = BankIdAttempt(
       id: sha256.convert(utf8.encode(secret)).toString().substring(0, 32),
       secret: secret,
       mode: mode,
-      purpose: 'sign',
       expiresAt:
-          now().add(const Duration(minutes: 30)).millisecondsSinceEpoch ~/ 1000,
+          now().add(const Duration(minutes: 3)).millisecondsSinceEpoch ~/ 1000,
     );
     await store.write(a.toStorage());
     if (!mounted) return;
-    state = state.copyWith(attempt: a);
-    final input = <String, dynamic>{
-      'clientSecret': secret,
-      'consentTextId': state.document!.id,
-      'documentHash': state.document!.documentHash,
-      'mode': mode,
-    };
+    state = state.copyWith(attempt: a, begun: true, clearQR: true);
     BankIdAttempt result;
     try {
-      result = await gateway.start(a, input);
-    } on BankIdStartRejected catch (error) {
+      result = await gateway.start(a, {'clientSecret': secret, 'mode': mode});
+    } on BankIdStartRejected {
       await store.clear();
-      if (!mounted) return;
-      state = state.copyWith(clearAttempt: true, reviewed: false);
-      if (error.reason == 'consentChanged') {
-        final document = await gateway.currentConsent();
-        if (!mounted) return;
-        state = state.copyWith(document: document);
-      }
+      if (mounted) state = state.copyWith(clearAttempt: true);
       rethrow;
     }
     await _update(result);
@@ -173,7 +156,9 @@ class BankIdController extends StateNotifier<SigningState> {
 
   Future<void> _launch(String value) async {
     final uri = Uri.parse(value);
-    if (uri.scheme != 'https' || uri.host != 'app.bankid.com') {
+    if (uri.scheme != 'https' ||
+        uri.host != 'app.bankid.com' ||
+        uri.userInfo.isNotEmpty) {
       throw StateError('Invalid launch URL');
     }
     if (!await launch(uri) && mounted) {
@@ -189,7 +174,9 @@ class BankIdController extends StateNotifier<SigningState> {
     if (a == null) return;
     final result = await gateway.status(a);
     await _update(result);
-    if (mounted && result.launchUrl != null) await _launch(result.launchUrl!);
+    if (mounted && result.pending && result.launchUrl != null) {
+      await _launch(result.launchUrl!);
+    }
   });
   Future<void> refresh() {
     if (!mounted || state.busy || state.attempt == null) return Future.value();
@@ -198,9 +185,7 @@ class BankIdController extends StateNotifier<SigningState> {
 
   Future<void> _refresh() async {
     try {
-      final a = state.attempt!;
-      if (a.expired(now())) throw const AttemptExpired();
-      await _update(await gateway.status(a));
+      await _update(await gateway.status(state.attempt!));
     } catch (e) {
       await _error(e);
     }
@@ -212,24 +197,25 @@ class BankIdController extends StateNotifier<SigningState> {
     if (!mounted) return;
     state = state.copyWith(
       attempt: a,
-      document: a.document,
       begun: true,
       clearError: true,
+      clearQR:
+          !a.pending ||
+          a.mode != 'qr' ||
+          a.canExtendQR ||
+          state.attempt?.id != a.id,
     );
     if (a.pending) {
       _timer ??= Timer.periodic(const Duration(seconds: 1), (_) => refresh());
-      return;
-    }
-    _timer?.cancel();
-    _timer = null;
-    if (a.accepted && a.consentRequired) {
-      final doc = await gateway.currentConsent();
-      if (!mounted) return;
-      state = state.copyWith(
-        document: doc,
-        clearAttempt: true,
-        reviewed: false,
-      );
+      if (a.mode == 'qr' && (a.qrSecondsRemaining ?? 1) > 0) {
+        final bytes = await gateway.qrImage(a);
+        if (mounted && state.attempt?.id == a.id) {
+          state = state.copyWith(qrImage: bytes);
+        }
+      }
+    } else {
+      _timer?.cancel();
+      _timer = null;
     }
   }
 
@@ -238,11 +224,12 @@ class BankIdController extends StateNotifier<SigningState> {
       await _update(await gateway.cancel(state.attempt!));
     }
   });
-  Future<void> reviewAgain() => _run(() async {
-    final doc = await gateway.currentConsent();
+  Future<void> restart() => _run(() async {
+    if (state.attempt?.pending == true) await gateway.cancel(state.attempt!);
     await store.clear();
-    if (!mounted) return;
-    state = state.copyWith(document: doc, clearAttempt: true, reviewed: false);
+    _timer?.cancel();
+    _timer = null;
+    if (mounted) state = const AuthenticationState(begun: true, busy: true);
   });
   Future<void> extendQR() => _run(() async {
     final a = state.attempt;
@@ -254,27 +241,21 @@ class BankIdController extends StateNotifier<SigningState> {
       await _start('qr');
     }
   });
-  Future<void> finish() => _run(_finish);
-  Future<void> _finish() async {
+  Future<void> finish() => _run(() async {
     final a = state.attempt;
     if (a == null || !a.accepted) return;
-    // Recheck current consent and revocation before using a previously displayed receipt.
     final fresh = await gateway.status(a);
     if (!mounted) return;
-    if (fresh.consentRequired) {
-      await _update(fresh);
-      return;
-    }
-    if (fresh.grant == null) {
+    if (!fresh.accepted || fresh.grant == null) {
       throw StateError('No authenticated session received');
     }
     await onGrant(fresh.grant!);
+    // Accepting a session disposes this controller. Still remove the finished credential.
     await store.clear();
     _timer?.cancel();
     _timer = null;
-    if (mounted) state = const SigningState();
-  }
-
+    if (mounted) state = const AuthenticationState();
+  });
   Future<void> handleReturn(Uri uri) async {
     final expected = Uri.parse(Environment.bankIdReturnUrl);
     if (uri.scheme != expected.scheme ||
@@ -285,24 +266,9 @@ class BankIdController extends StateNotifier<SigningState> {
     }
     await restore();
     if (!mounted) return;
-    final a = state.attempt;
-    if (a == null) return;
-    String? nonce;
-    try {
-      nonce = Uri.splitQueryString(uri.fragment)['nonce'];
-    } on FormatException {
-      return;
-    }
-    if (nonce == null || nonce != a.nonce) {
-      state = state.copyWith(
-        error:
-            'Återgången från BankID stämmer inte med din pågående signering.',
-      );
-      return;
-    }
-    await _run(() async {
-      await _update(await gateway.returned(a, nonce!));
-    });
+    // KontoAPI does not document returnUrl support. A link is only a signal to
+    // poll our owned attempt; no URL parameter is an authentication result.
+    await refresh();
   }
 
   @override
@@ -312,21 +278,20 @@ class BankIdController extends StateNotifier<SigningState> {
   }
 }
 
-final bankIdProvider = StateNotifierProvider<BankIdController, SigningState>((
-  ref,
-) {
-  ref.watch(sessionProvider.select((session) => session?.token));
-  late final BankIdController controller;
-  controller = BankIdController(
-    gateway: HttpBankIdGateway(ref.watch(httpClientProvider)),
-    store: SecureBankIdAttemptStore(ref.watch(secureStorageProvider)),
-    launch: (uri) =>
-        launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication),
-    onGrant: (grant) async {
-      if (controller.mounted) {
-        await ref.read(sessionProvider.notifier).accept(grant);
-      }
-    },
-  );
-  return controller;
-});
+final bankIdProvider =
+    StateNotifierProvider<BankIdController, AuthenticationState>((ref) {
+      ref.watch(sessionProvider.select((s) => s?.token));
+      late final BankIdController controller;
+      controller = BankIdController(
+        gateway: HttpBankIdGateway(ref.watch(httpClientProvider)),
+        store: SecureBankIdAttemptStore(ref.watch(secureStorageProvider)),
+        launch: (uri) =>
+            launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication),
+        onGrant: (grant) async {
+          if (controller.mounted) {
+            await ref.read(sessionProvider.notifier).accept(grant);
+          }
+        },
+      );
+      return controller;
+    });

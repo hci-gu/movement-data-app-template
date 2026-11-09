@@ -29,12 +29,12 @@ class GuardiansSheet extends HookConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: 20),
         children: [
           const Text(
-            'Be alla vårdnadshavare signera',
+            'Be dina vårdnadshavare om samtycke',
             style: AppTheme.sectionTitle,
           ),
           const SizedBox(height: 12),
           const Text(
-            'Samtliga vårdnadshavare behöver samtycka. Skapa en länk för varje vårdnadshavare och dela den med den personen. Du kan tacka nej även om vårdnadshavarna tackar ja.',
+            'Samtliga vårdnadshavare behöver samtycka innan du kan fortsätta. Skapa en länk för varje vårdnadshavare och dela den med personen.',
             style: AppTheme.body,
           ),
           const SizedBox(height: 20),
@@ -56,7 +56,7 @@ class GuardiansSheet extends HookConsumerWidget {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text(
-                'Antalet låses när den första länken skapas.',
+                'Antalet kan inte ändras när den första länken har skapats.',
                 style: AppTheme.bodyMuted,
               ),
             ),
@@ -75,12 +75,12 @@ class GuardiansSheet extends HookConsumerWidget {
                         style: AppTheme.bodyMuted,
                       ),
                       Text(
-                        state.status.requests[i].signed
-                            ? 'Signerat och verifierat'
-                            : 'Väntar på signering',
+                        state.status.requests[i].approved
+                            ? 'Samtycke bekräftat efter identifiering'
+                            : 'Väntar på samtycke',
                         style: AppTheme.body,
                       ),
-                      if (!state.status.requests[i].signed) ...[
+                      if (!state.status.requests[i].approved) ...[
                         const SizedBox(height: 16),
                         CupertinoButton(
                           onPressed: () async {
@@ -93,8 +93,8 @@ class GuardiansSheet extends HookConsumerWidget {
                           },
                           child: Text(
                             copied.value == i
-                                ? 'Länken är kopierad'
-                                : 'Kopiera signeringslänk',
+                                ? 'Länken har kopierats'
+                                : 'Kopiera samtyckeslänk',
                           ),
                         ),
                       ],
@@ -115,7 +115,7 @@ class GuardiansSheet extends HookConsumerWidget {
                                 i == 0 ? first.text : second.text,
                                 count,
                               ),
-                        child: const Text('Skapa signeringslänk'),
+                        child: const Text('Skapa samtyckeslänk'),
                       ),
                     ],
                   ],
@@ -131,7 +131,7 @@ class GuardiansSheet extends HookConsumerWidget {
             const Padding(
               padding: EdgeInsets.only(top: 16),
               child: Text(
-                'Samtycket är bekräftat. Du kan återgå till checklistan.',
+                'Samtycke har bekräftats. Du kan återgå till checklistan.',
                 style: AppTheme.body,
               ),
             ),
@@ -140,7 +140,7 @@ class GuardiansSheet extends HookConsumerWidget {
             onPressed: state.busy ? null : controller.refresh,
             child: state.busy
                 ? const CupertinoActivityIndicator()
-                : const Text('Kontrollera signeringar'),
+                : const Text('Uppdatera status'),
           ),
         ],
       ),

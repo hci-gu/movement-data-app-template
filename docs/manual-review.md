@@ -6,19 +6,18 @@ Run against the backend containing your questionnaire definitions:
 flutter run --dart-define-from-file=deploy/flutter-local.json
 ```
 
-The local default is `http://127.0.0.1:8091`. BankID return settings, native
-links and server configuration must agree; see [BankID testing](bankid-testing.md).
+The local default is `http://127.0.0.1:8091`. KontoAPI requires a manual return from BankID; see [BankID testing](bankid-testing.md).
 
 - [ ] Fresh launch shows introduction, one Continue action and optional study information.
 - [ ] Apply [design and copy guidelines](design-guidelines.md): introduction artwork is centered in its size constraint; study, consent and checklist titles sit in a distinct navigation bar with a visible bottom separator before scrolling. Copy is factual and source-backed, without invented slogans or duplicated checklist headings.
-- [ ] Final study copy, contacts, assets and consent contain no unfinished placeholders. There are no invented “not open yet”, draft or coming-soon notices and no inactive enrollment workaround. Resolve missing inputs/configuration as delivery requirements; verify signing against the intended backend. Genuine runtime failures retain useful retry actions.
+- [ ] Final study copy, contacts, assets and consent contain no unfinished placeholders. There are no invented “not open yet”, draft or coming-soon notices and no inactive enrollment workaround. Resolve missing inputs/configuration as delivery requirements; verify authentication and consent acceptance against the intended backend. Genuine runtime failures retain useful retry actions.
 - [ ] Generate/install the study icon using [the icon guide](app-icons.md), run `prepare-app-icons.py --check`, inspect the small exports and installed Home Screen icon, and verify the App Store icon in the release archive before upload.
-- [ ] Review consent, enable signing, cancel/retry and complete same-device BankID return. Confirmed signing opens home automatically. Also try QR signing.
+- [ ] Authenticate with BankID, return manually, review the displayed consent and explicitly accept it. Confirm that home opens only after acceptance. Also try QR authentication and cancel/retry.
 - [ ] Pending, QR, expired, cancelled and accepted BankID states center their entire content/action group below the navigation bar. Cancel request is the only cancellation action; no Start over appears. QR renewal and consent-review retry work, and retry requires reviewing consent again. Short Done and guardian browser states are centered too.
-- [ ] Enrollment has no self-reported age-group toggle or birth-date question for routing. BankID test identities below, at and above the study's age threshold receive the backend-derived consent/guardian requirements. Any age-specific document is selected using verified identity and matches the text actually signed.
+- [ ] Enrollment has no self-reported age-group toggle or birth-date question for routing. BankID test identities below, at and above the study's age threshold receive the backend-derived consent/guardian requirements. Any age-specific document is selected using verified identity and matches the text actually accepted.
 - [ ] Relaunch during BankID: enrollment resumes and verifies status; a link alone grants nothing.
 - [ ] Home lists each questionnaire directly beside step upload. No forms is valid after successful discovery; discovery errors show Retry and disable Finish.
-- [ ] For a guardian participant, tasks and questionnaire deep links are blocked. Generate/sign guardian links, refresh or resume, and confirm tasks unlock only after verification.
+- [ ] For a guardian participant, tasks and questionnaire deep links are blocked. Generate guardian links, authenticate each guardian and explicitly approve, refresh or resume, and confirm tasks unlock only after all selected approvals.
 - [ ] Guardian approval and comparable cards/sheets have at least 16 logical pixels between explanatory text and their action buttons.
 - [ ] Answer a question: after 0.5 seconds without another edit, a valid nonempty answer advances to the next visible question. Choice taps and confirmed dates advance; opening/cancelling the picker, cleared answers and invalid numbers do not. Typing another character restarts the delay. The last answer never submits automatically.
 - [ ] Swipe questions vertically and use Previous/Next to skip or revisit questions. Manual navigation, touching another control, leaving the form and backgrounding the app cancel pending automatic navigation. Saved responses never advance by themselves.
@@ -36,7 +35,7 @@ links and server configuration must agree; see [BankID testing](bankid-testing.m
 - [ ] Generate `app_report.html` using [the report guide](app-report.md) after the last UI change. Review every image and long-content continuation, including all questionnaire branches, saved answers, sheets/dialogs and guardian browser pages. Test search, image enlargement and offline opening; include the report in the final delivery.
 - [ ] Report headings are outside screenshot frames with a clear margin. Rounded borders/shadows belong only to screenshots, including continuations. No route labels or case-ID footers resemble app UI.
 
-Use test identities/data. Actual BankID handoff, guardian signing and native health
+Use test identities/data. Actual BankID handoff, guardian authentication and approval and native health
 checks require device interaction; automated fake gateways do not substitute for
 them. The generated app report records automated verification results; record
 physical-device results separately and keep remaining checks explicit.
@@ -47,8 +46,8 @@ Automated verification and screenshot coverage are recorded in the current
 `app_report.html`. The following checks require a physical iPhone and remain
 unverified by this rebuild:
 
-- Complete test BankID signing and return using `se.gu.skoliosrorelse`, and
-  verify the receipt against local consent `scoliosis-2026-10-26-v1`.
+- Complete test BankID authentication, manual return and explicit consent acceptance, and
+  verify the receipt against local consent `scoliosis-kontoapi-v1`.
 - Check participants immediately below/at age 15 and all one/two-guardian paths.
   Confirm that a child can decline and withdraw regardless of guardian approval.
 - Grant/deny each of the six Health permissions; inspect missing metrics and

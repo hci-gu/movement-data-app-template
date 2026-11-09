@@ -3,8 +3,8 @@ import 'bankid/models.dart';
 
 class GuardianRequest {
   final String personalNumber, link;
-  final bool signed;
-  const GuardianRequest(this.personalNumber, this.link, this.signed);
+  final bool approved;
+  const GuardianRequest(this.personalNumber, this.link, this.approved);
   String get identitySuffix => personalNumber.length > 4
       ? personalNumber.substring(personalNumber.length - 4)
       : personalNumber;
@@ -12,7 +12,7 @@ class GuardianRequest {
       GuardianRequest(
         json['personalNumber'] as String? ?? '',
         json['link'] as String? ?? '',
-        json['signed'] == true,
+        json['approved'] == true,
       );
 }
 
@@ -45,7 +45,7 @@ class ConsentReceipt {
     ConsentDocument.fromJson(
       Map<String, dynamic>.from(json['document'] as Map),
     ),
-    DateTime.fromMillisecondsSinceEpoch((json['receivedAt'] as int) * 1000),
+    DateTime.fromMillisecondsSinceEpoch((json['acceptedAt'] as int) * 1000),
     json['status'] as String,
   );
 }

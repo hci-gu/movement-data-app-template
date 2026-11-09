@@ -14,6 +14,12 @@ import (
 // PublishConsent is shared by the dashboard and optional operator commands.
 // The immutable document and its publication pointer commit together.
 func PublishConsent(app core.App, version, title, text string) (*core.Record, error) {
+	return publishConsent(app, version, title, text, false)
+}
+
+// ifMissing makes deployment initialization repeatable without changing an
+// existing document or reactivating a version retired by a later publication.
+func publishConsent(app core.App, version, title, text string, ifMissing bool) (*core.Record, error) {
 	if !utf8.ValidString(text) || len(text) == 0 || len(text) > 30000 || strings.TrimSpace(version) == "" || strings.TrimSpace(title) == "" {
 		return nil, problem(400, "invalidConsent", "Provide a version, title and nonempty UTF-8 consent text of at most 30000 bytes.")
 	}
@@ -24,8 +30,12 @@ func PublishConsent(app core.App, version, title, text string) (*core.Record, er
 	}
 	var record *core.Record
 	err := app.RunInTransaction(func(tx core.App) error {
-		_, err := tx.FindFirstRecordByFilter("consent_texts", "version={:version}", dbx.Params{"version": version})
+		existing, err := tx.FindFirstRecordByFilter("consent_texts", "version={:version}", dbx.Params{"version": version})
 		if err == nil {
+			if ifMissing && existing.GetString("title") == title && existing.GetString("text") == text && existing.GetString("documentHash") == hash(text) {
+				record = existing
+				return nil
+			}
 			return problem(400, "duplicateVersion", "This consent version already exists; use a new version label.")
 		}
 		if !errors.Is(err, sql.ErrNoRows) {

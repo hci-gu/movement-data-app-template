@@ -44,6 +44,7 @@ Map<String, dynamic> grant({
   String token = 'token',
   String id = 'u',
   bool guardian = false,
+  bool consentRequired = false,
   DateTime? expires,
 }) => {
   'token': token,
@@ -54,7 +55,7 @@ Map<String, dynamic> grant({
   'record': {
     'id': id,
     'gender': 'female',
-    'consentRequired': false,
+    'consentRequired': consentRequired,
     'guardianRequired': guardian,
   },
 };
@@ -75,6 +76,21 @@ void main() {
     );
   });
   tearDown(() => controller.dispose());
+  test(
+    'pending consent sessions restore and refresh without losing identity',
+    () async {
+      store.value = grant(consentRequired: true);
+      gateway.participant = const Participant(id: 'u', consentRequired: true);
+      await controller.restore();
+      expect(controller.state!.participant.consentRequired, true);
+      expect(connection.token, 'token');
+      await controller.refresh();
+      expect(controller.state!.participant.canParticipate, false);
+      gateway.participant = const Participant(id: 'u');
+      await controller.refresh();
+      expect(controller.state!.participant.canParticipate, true);
+    },
+  );
   test(
     'legacy session is verified before access; expired and invalid grants are cleared',
     () async {
@@ -125,8 +141,8 @@ void main() {
     await controller.handleAccessDenied('third', 'guardianRequired');
     expect(controller.state!.participant.canParticipate, false);
     await controller.handleAccessDenied('third', 'consentRequired');
-    expect(controller.state, isNull);
-    expect(connection.token, isEmpty);
+    expect(controller.state!.participant.consentRequired, true);
+    expect(connection.token, 'third');
   });
   test('logout during secure write leaves no persisted credentials', () async {
     final gate = Completer<void>();
@@ -140,21 +156,15 @@ void main() {
     expect(controller.state, isNull);
     expect(store.value, isNull);
   });
-  test(
-    'server verification rejects changed identity or revoked consent',
-    () async {
-      for (final participant in [
-        const Participant(id: 'other'),
-        const Participant(id: 'u', consentRequired: true),
-      ]) {
-        store.value = grant();
-        gateway.participant = participant;
-        await controller.restore();
-        expect(controller.state, isNull);
-        expect(store.value, isNull);
-      }
-    },
-  );
+  test('server verification rejects changed identity', () async {
+    for (final participant in [const Participant(id: 'other')]) {
+      store.value = grant();
+      gateway.participant = participant;
+      await controller.restore();
+      expect(controller.state, isNull);
+      expect(store.value, isNull);
+    }
+  });
   test('session expiry clears access and stored token', () async {
     await controller.accept(
       grant(expires: DateTime.now().add(const Duration(seconds: 2))),

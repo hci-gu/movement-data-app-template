@@ -40,7 +40,7 @@ class IntroductionScreen extends StatelessWidget {
               Text('Så deltar du', style: AppTheme.cardTitle),
               SizedBox(height: 12),
               Text(
-                '1. Läs informationen och samtycket.\n2. Svara på frågor om din behandling.\n3. Granska och dela din rörelsedata.',
+                '1. Identifiera dig med BankID och bekräfta ditt samtycke.\n2. Svara på frågor om din behandling.\n3. Granska och dela din rörelsedata.',
                 style: AppTheme.body,
               ),
             ],
@@ -49,7 +49,7 @@ class IntroductionScreen extends StatelessWidget {
         const SizedBox(height: 24),
         CupertinoButton.filled(
           onPressed: () => context.goNamed('login'),
-          child: const Text('Läs samtycke och fortsätt'),
+          child: const Text('Fortsätt med BankID'),
         ),
         CupertinoButton(
           key: const ValueKey('show-information'),

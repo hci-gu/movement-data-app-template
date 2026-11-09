@@ -1,5 +1,7 @@
 # Skolios och rörelse
 
+> KontoAPI authenticates identity; consent is then explicitly accepted in the app or guardian browser. BankID does not sign the study text. Historical verification below concerns the former direct-BankID implementation.
+
 This checkout implements **Rörelsemönster före och efter behandling av adolescent
 idiopatisk skolios**, case 2025-08213-01, for local development and device testing.
 The research principal is Västra Götalandsregionen; the study is based at
@@ -15,7 +17,7 @@ Original PDF and DOCX files have not been modified.
 | Source | Implementation |
 | --- | --- |
 | Application §§3.1, 4.1, 6.1, 8.1–8.6, 9.1.1 | Ages 10–30; iPhone; treatment in 2020–2027; one retrospective extraction; one year before to five years after treatment; guardian consent below 15. Clinical inclusion/exclusion and previous iPhone ownership are assessed by the research team. |
-| PDF p.19, attachment 6 | `deploy/consent/scoliosis-consent.txt` preserves the title and consent paragraphs, including the source's grammatical wording. Blank paper signature/name/address fields are replaced by BankID identity, timestamp and encrypted signature evidence. |
+| PDF p.19, attachment 6 | `deploy/consent/scoliosis-consent.txt` preserves the title and consent paragraphs, including the source's grammatical wording. Blank paper signature/name/address fields are replaced by verified identity, explicit acceptance, timestamp and encrypted evidence. |
 | PDF pp.20–31, attachments 2–5 | Source for Swedish study information, voluntariness, data rights and researcher contacts. App copy describes the actual electronic flow; the source's paper/email distribution process is not represented as an app action. |
 | PDF p.52, decision dated 2026-01-07 | Requires separate participant (15+) and guardian forms, plus the child's right to decline even when guardians agree. The latter is visible in study information and guardian screens. See release conditions below. |
 | `context/scolios_formulär.docx` | Thirteen question records, two option sets, one once-only questionnaire. Wording and option order preserved, including the source's omitted “ha” in the surgery activity question. Month-only menarche date; surgery and brace branches; full-time and night brace adherence branches; menarche shown only for the verified female registered category. |
@@ -44,13 +46,13 @@ integer control; accepting fractional answers would require an agreed revision.
 
 BankID supplies verified identity. Participants aged 10–14 need all selected
 guardians (one or two); the guardian form defaults to two and explains that all
-guardians must sign. Ages 15–30 consent for themselves. Guardians must be adults,
+guardians must approve. Ages 15–30 consent for themselves. Guardians must be adults,
 must match the requested identity, and cannot be the participant. The template
 verifies identity, not the legal guardianship relationship. No age selector or
 birth-date question establishes access.
 
 `GET /api/movement/window` requires a participant session, current consent and
-any required guardian signatures. It derives the window from the saved study
+any required guardian approvals. It derives the window from the saved study
 response, not from client-supplied upload dates. Treatment must be in 2020–2027
 and no later than today. Dates use Swedish calendar boundaries; leap-day
 anniversaries clamp to February 28. The final anniversary day is included, capped
@@ -78,45 +80,28 @@ Questionnaire access remains independent of Health availability.
 
 ## Local backend
 
-The isolated database is `api/.local/scoliosis/pb_data`; its **new** evidence
-keyring is `api/.local/scoliosis/secrets/study-keys.json`. Both are ignored by Git.
-Back up this keyring with this database. The template's original keyring/database
-are untouched. The local launch script consumes the documented test certificate
-paths without reading or sourcing `api/.env`.
+The fresh KontoAPI test database is `api/.local/scoliosis-kontoapi/pb_data`,
+with keyring `api/.local/scoliosis-kontoapi/study-keys.json`. The setup publishes
+`scoliosis-kontoapi-v1` from `deploy/consent/scoliosis-consent.txt` and applies
+the study questionnaire migration. This is the original combined form, retained
+for local testing only; the separate-form release condition below remains open.
+The previous direct-BankID database is incompatible and is left untouched.
 
 ```sh
-cd api
-go build -o app .
-cd .local/scoliosis
-../../app bankid publish-consent \
-  --file ../../../deploy/consent/scoliosis-consent.txt \
-  --version scoliosis-2026-10-26-v1 --title 'Rörelsemönster vid skolios' \
-  --dir=./pb_data
-```
-
-The above version has already been published in this local database. Do not run
-the publication command again with the same version. Publish a new immutable
-version for wording changes. Normal startup applies the questionnaire migration.
-
-From the repository root:
-
-```sh
+bash scripts/run-scoliosis-local.sh --prepare-only
 bash scripts/run-scoliosis-local.sh
 flutter run --dart-define-from-file=deploy/flutter-local.json
 ```
 
-The simulator API is `http://127.0.0.1:8091`. For physical-device or guardian tests,
-start `ngrok http http://127.0.0.1:8091`, set `BANKID_PUBLIC_URL` to its HTTPS origin,
-then restart the local backend. Run Flutter with that origin as `API_BASE_URL`.
-The tunnel is temporary; it is not a production deployment. The test backend
-accepts direct loopback connections without forwarded headers while still
-requiring valid proxy headers for trusted nonlocal/production proxies.
+The runner uses the credential interface documented in [KontoAPI testing](bankid-testing.md),
+requires the GU VPN for live authentication, and listens on port 8091. To test
+guardians, pass `--public-url https://YOUR_HTTPS_HOST --trusted-proxies
+127.0.0.1/32,::1/128` for a loopback tunnel. Return manually after BankID.
+Back up the keyring with any retained evidence; use a fresh database to reset
+this disposable setup. The iPhone must be able to reach the backend.
 
-The development bundle identifier is `se.gu.skoliosrorelse`. The test-only return
-scheme remains `researchsteps://bankid/return`, matching the native project and
-BankID configuration. Production requires a registered app ID, signed build and
-HTTPS associated-domain return links. Android builds are verification artifacts;
-the study's Health collection is iPhone-only.
+The development bundle identifier is `se.gu.skoliosrorelse`. Android builds
+are verification artifacts; the study's Health collection is iPhone-only.
 
 ## Artwork
 
@@ -146,15 +131,15 @@ document selection as described in `docs/workflow.md`; do not add an age toggle.
 
 The study owner also needs to confirm the electronic BankID process in place of
 the paper/email process described in the source. Physical iPhone checks of test
-BankID signing/return, all six Health permissions and actual sample availability
-remain necessary. A real signature cannot be completed by automated fixtures.
+BankID authentication and explicit consent, all six Health permissions and actual sample availability
+remain necessary. A real authentication cannot be completed by automated fixtures.
 The local database and temporary tunnel do not establish the protocol's planned
 GU production hosting or researcher access controls.
 
 See `docs/manual-review.md` for device checks and the freshly generated
 `app_report.html` for automated results and visual coverage.
 
-## Verification
+## Historical verification (previous direct-BankID implementation)
 
 Completed on 2026-10-26:
 

@@ -1,10 +1,8 @@
 package study
 
 import (
-	"app/internal/bankid"
 	"app/internal/questionnaires"
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
@@ -80,32 +78,30 @@ func questionnaireUser(t *testing.T, app core.App, personal string, consent bool
 	if err := app.Save(u); err != nil {
 		t.Fatal(err)
 	}
+
+	event, err := newRecord(app, "authentications")
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.Set("user", u.Id)
+	event.Set("purpose", "participant")
+	event.Set("outcome", "accepted")
+	event.Set("attemptId", randomSecret())
+	event.Set("receivedAt", time.Now().Unix())
+	if err = app.Save(event); err != nil {
+		t.Fatal(err)
+	}
 	if consent {
 		doc, err := currentDocument(app)
 		if err != nil {
 			t.Fatal(err)
 		}
-		c, _ := app.FindCollectionByNameOrId("signatures")
-		sig := core.NewRecord(c)
-		sig.Id = u.Id
-		sig.Set("user", u.Id)
-		sig.Set("version", doc.Id)
-		sig.Set("purpose", "sign")
-		sig.Set("outcome", "accepted")
-		sig.Set("attemptId", u.Id)
-		sig.Set("receivedAt", time.Now().Unix())
-		document := documentDTO(doc)
-		completion, _ := json.Marshal(bankid.Result{Status: "complete", CompletionData: &bankid.Completion{User: bankid.User{PersonalNumber: personal}, Risk: "low", Signature: "c2ln", OCSPResponse: "b2NzcA=="}})
-		cipher, err := questionnaireConfig().Seal("signature:"+sig.Id, Evidence{Document: &document, Request: bankid.Request{UserVisibleData: base64.StdEncoding.EncodeToString([]byte(document.Text))}, Completion: completion})
-		if err != nil {
-			t.Fatal(err)
-		}
-		sig.Set("evidenceCipher", cipher)
-		if err := app.Save(sig); err != nil {
+		svc := &Service{App: app, Config: questionnaireConfig(), now: time.Now}
+		if _, err = svc.acceptConsent(u, event.Id, AcceptanceInput{Version: doc.Id, DocumentHash: doc.GetString("documentHash"), RequestID: randomSecret()}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	token, err := security.NewJWT(jwt.MapClaims{core.TokenClaimType: core.TokenTypeAuth, core.TokenClaimId: u.Id, core.TokenClaimCollectionId: u.Collection().Id, core.TokenClaimRefreshable: false}, u.TokenKey()+u.Collection().AuthToken.Secret, time.Hour)
+	token, err := security.NewJWT(jwt.MapClaims{core.TokenClaimType: core.TokenTypeAuth, core.TokenClaimId: u.Id, core.TokenClaimCollectionId: u.Collection().Id, core.TokenClaimRefreshable: false, "authentication": event.Id}, u.TokenKey()+u.Collection().AuthToken.Secret, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}

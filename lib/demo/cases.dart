@@ -61,13 +61,14 @@ List<PreviewCase> previewCases(DemoStudy study) {
     ),
     const PreviewCase(
       'information',
-      'Om studien',
+      'Study information',
       'Joining the study',
       '/introduction',
       signedIn: false,
       actions: ['show-information'],
     ),
     for (final state in [
+      'authentication',
       'consent',
       'consent-loading',
       'consent-error',
@@ -80,19 +81,20 @@ List<PreviewCase> previewCases(DemoStudy study) {
       PreviewCase(
         state,
         {
+          'authentication': 'Identify with BankID',
           'consent': 'Review consent',
           'consent-loading': 'Loading consent',
           'consent-error': 'Consent unavailable',
           'bankid-pending': 'Continue in BankID',
-          'bankid-qr': 'BankID QR signing',
+          'bankid-qr': 'BankID QR authentication',
           'bankid-expired': 'Expired QR code',
-          'bankid-cancelled': 'Cancelled signing',
-          'bankid-accepted': 'Samtycket är signerat',
+          'bankid-cancelled': 'Stopped authentication',
+          'bankid-accepted': 'Identity verified',
         }[state]!,
         'Joining the study',
-        '/introduction/login',
+        state.startsWith('consent') ? '/consent' : '/introduction/login',
         state: state,
-        signedIn: false,
+        signedIn: state.startsWith('consent'),
       ),
     const PreviewCase('home', 'Checklist', 'Checklist', '/home'),
     for (final state in ['forms-loading', 'forms-error', 'forms-empty'])
@@ -191,7 +193,7 @@ List<PreviewCase> previewCases(DemoStudy study) {
     ),
     const PreviewCase(
       'receipt',
-      'Signed consent receipt',
+      'Consent acceptance receipt',
       'Account',
       '/consent-receipt',
     ),
@@ -218,22 +220,12 @@ List<PreviewCase> previewCases(DemoStudy study) {
     ),
     const PreviewCase(
       'done',
-      'Allt är inskickat',
+      'All tasks complete',
       'Completion',
       '/done',
       state: 'done',
     ),
   ];
-  cases.add(
-    const PreviewCase(
-      'consent-information',
-      'Study information before signing',
-      'Enrollment',
-      '/introduction/login',
-      signedIn: false,
-      actions: ['consent-information'],
-    ),
-  );
   final pickerTypes = <bool>{};
   for (final form in study.forms) {
     final route = '/questionnaires/${form.summary.id}';

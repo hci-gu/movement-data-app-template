@@ -26,35 +26,27 @@ class ConsentDocument {
 
 class BankIdAttempt {
   final String id, secret, status, hintCode, purpose, mode;
-  final String? launchUrl, nonce, qrData, signatureId;
+  final String? launchUrl, nonce;
   final int expiresAt;
   final int? qrSecondsRemaining;
-  final bool pickedUp, consentRequired;
-  final ConsentDocument? document;
   final Map<String, dynamic>? grant;
   const BankIdAttempt({
     required this.id,
     required this.secret,
     this.status = 'pending',
     this.hintCode = '',
-    this.purpose = 'sign',
+    this.purpose = 'participant',
     this.mode = 'sameDevice',
     required this.expiresAt,
     this.launchUrl,
     this.nonce,
-    this.qrData,
-    this.signatureId,
     this.qrSecondsRemaining,
-    this.pickedUp = false,
-    this.consentRequired = false,
-    this.document,
     this.grant,
   });
   String get authorization => '$id.$secret';
   bool get pending => status == 'pending';
   bool get accepted => status == 'accepted';
-  bool get canExtendQR =>
-      pending && mode == 'qr' && !pickedUp && qrSecondsRemaining == 0;
+  bool get canExtendQR => pending && mode == 'qr' && qrSecondsRemaining == 0;
   bool expired(DateTime now) => now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
   factory BankIdAttempt.fromJson(Map<String, dynamic> json, String secret) =>
       BankIdAttempt(
@@ -63,20 +55,11 @@ class BankIdAttempt {
         expiresAt: json['expiresAt'] as int,
         status: json['status'] as String? ?? 'pending',
         hintCode: json['hintCode'] as String? ?? '',
-        purpose: json['purpose'] as String? ?? 'sign',
+        purpose: json['purpose'] as String? ?? 'participant',
         mode: json['mode'] as String? ?? 'sameDevice',
         launchUrl: json['launchUrl'] as String?,
         nonce: json['nonce'] as String?,
-        qrData: json['qrData'] as String?,
-        signatureId: json['signatureId'] as String?,
         qrSecondsRemaining: json['qrSecondsRemaining'] as int?,
-        pickedUp: json['pickedUp'] == true,
-        consentRequired: json['consentRequired'] == true,
-        document: json['document'] == null
-            ? null
-            : ConsentDocument.fromJson(
-                Map<String, dynamic>.from(json['document'] as Map),
-              ),
         grant: json['grant'] == null
             ? null
             : Map<String, dynamic>.from(json['grant'] as Map),
@@ -85,46 +68,48 @@ class BankIdAttempt {
   Map<String, dynamic> toStorage() => {
     'id': id,
     'secret': secret,
-    'expiresAt': expiresAt,
+    'expiresAt': expiresAt + 600,
   };
 }
 
 String bankIdMessage(BankIdAttempt order) {
   if (order.accepted) {
-    return 'Ditt samtycke har signerats och sparats.';
+    return 'Din identitet har bekräftats. Fortsätt till studien.';
   }
   const messages = {
-    'ageIneligible':
-        'Studien omfattar personer mellan 10 och 30 år. Kontakta forskargruppen om du har frågor.',
     'outstandingTransaction': 'Öppna BankID.',
     'noClient': 'Öppna BankID för att fortsätta.',
     'started':
-        'Söker efter ditt BankID. Kontrollera att du har ett giltigt BankID.',
-    'userSign': 'Läs och bekräfta förfrågan i BankID.',
+        'Söker efter ditt BankID. Kontrollera att du har ett giltigt BankID i appen.',
+    'userSign': 'Granska förfrågan och bekräfta i BankID.',
     'userMrtd': 'Följ instruktionerna i BankID för att bekräfta din identitet.',
     'processing': 'Din förfrågan behandlas. Vänta en stund.',
-    'expiredTransaction': 'Förfrågan har gått ut. Starta en ny signering.',
+    'expiredTransaction': 'Förfrågan har gått ut. Starta en ny BankID-förfrågan.',
     'certificateErr':
-        'Ditt BankID kunde inte användas. Kontrollera giltigheten i BankID.',
-    'userCancel': 'Du avbröt signeringen.',
-    'cancelled': 'Signeringen avbröts.',
+        'Ditt BankID kunde inte användas. Kontrollera att det är giltigt.',
+    'userCancel':
+        'Appen har avbrutit förfrågan. Avbryt även i BankID om det fortfarande är öppet.',
+    'cancelled': 'Appen har avbrutit förfrågan.',
+    'ageIneligible': 'Studien vänder sig till personer mellan 10 och 30 år.',
+    'invalidIdentity':
+        'Din identitet kunde inte bekräftas. Starta en ny förfrågan.',
     'startFailed':
         'BankID kunde inte startas. Kontrollera att appen är installerad och försök igen.',
     'notSupportedByUserApp': 'Uppdatera BankID och försök igen.',
-    'alreadyInProgress': 'En annan BankID-förfrågan pågår. Avsluta den först.',
+    'alreadyInProgress':
+        'En annan BankID-förfrågan pågår. Avsluta den innan du försöker igen.',
     'consentChanged':
-        'Samtycket har ändrats. Läs den nya versionen innan du signerar.',
+        'Samtycket har ändrats. Läs den nya versionen innan du bekräftar.',
     'riskRejected':
         'Förfrågan kunde inte godkännas. Kontakta forskargruppen om det händer igen.',
-    'sessionExpired': 'Signeringen har gått ut. Börja om.',
+    'sessionExpired': 'Din BankID-förfrågan har gått ut. Börja om.',
     'unknownResult':
-        'Resultatet kunde inte bekräftas. Ingen åtkomst beviljades. Starta en ny signering.',
+        'Resultatet kunde inte bekräftas. Ingen åtkomst beviljades. Starta en ny förfrågan.',
     'invalidEvidence':
-        'Signeringen kunde inte verifieras. Starta en ny förfrågan.',
-    'temporarilyUnavailable':
-        'BankID är tillfälligt otillgängligt. Vänta en stund.',
+        'Identifieringen kunde inte verifieras. Starta en ny förfrågan.',
+    'temporarilyUnavailable': 'BankID är tillfälligt otillgängligt. Försök igen senare.',
     'certificateUnavailable':
-        'Tjänsten är tillfälligt otillgänglig. Försök senare.',
+        'Tjänsten är tillfälligt otillgänglig. Försök igen senare.',
   };
   return messages[order.hintCode] ??
       (order.pending

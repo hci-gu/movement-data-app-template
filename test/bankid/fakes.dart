@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+import 'package:research_steps_template/demo/services.dart' show demoQRImage;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:research_steps_template/enrollment/bankid/controller.dart';
 import 'package:research_steps_template/enrollment/bankid/gateway.dart';
@@ -25,7 +27,6 @@ const accepted = BankIdAttempt(
   secret: 'secret',
   expiresAt: 4102444800,
   status: 'accepted',
-  document: document,
   grant: {'token': 'server-grant'},
 );
 const cancelled = BankIdAttempt(
@@ -61,7 +62,7 @@ class Gateway extends BankIdGateway {
   int returns = 0, cancels = 0, statuses = 0;
   Completer<BankIdAttempt>? delayedStatus;
   @override
-  Future<ConsentDocument> currentConsent() async => document;
+  Future<Uint8List?> qrImage(BankIdAttempt attempt) async => demoQRImage;
   @override
   Future<BankIdAttempt> start(
     BankIdAttempt a,

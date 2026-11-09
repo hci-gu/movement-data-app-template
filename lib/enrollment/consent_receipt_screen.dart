@@ -37,14 +37,14 @@ class ConsentReceiptScreen extends ConsumerWidget {
             Text(receipt.document.title, style: AppTheme.sectionTitle),
             const SizedBox(height: 12),
             Text(
-              'Version ${receipt.document.version}\nSignerat: ${formatDateTime(receipt.receivedAt.toLocal())}\nStatus: ${receipt.status == 'withdrawn' ? 'Återkallat' : 'Signerat'}',
+              'Version ${receipt.document.version}\nBekräftat: ${formatDateTime(receipt.receivedAt.toLocal())}\nStatus: ${receipt.status == 'withdrawn' ? 'Återkallat' : 'Bekräftat'}',
               style: AppTheme.bodyMuted,
             ),
             const SizedBox(height: 16),
             AppCard(child: Text(receipt.document.text, style: AppTheme.body)),
             const SizedBox(height: 16),
             const Text(
-              'Om du återkallar ditt samtycke stoppas fortsatt deltagande. Kontakta forskargruppen om uppgifter som redan skickats in.',
+              'Om du återkallar ditt samtycke avslutas ditt fortsatta deltagande. Kontakta forskargruppen om uppgifter som redan har skickats in.',
               style: AppTheme.body,
             ),
             const SizedBox(height: 16),
@@ -56,9 +56,9 @@ class ConsentReceiptScreen extends ConsumerWidget {
                       final confirmed = await showCupertinoDialog<bool>(
                         context: context,
                         builder: (context) => CupertinoAlertDialog(
-                          title: const Text('Återkalla samtycket?'),
+                          title: const Text('Återkalla samtycke?'),
                           content: const Text(
-                            'Ditt fortsatta deltagande stoppas och du loggas ut. Dokumentationen av ditt samtycke finns kvar.',
+                            'Ditt fortsatta deltagande avslutas och du loggas ut. Uppgiften om ditt samtycke sparas.',
                           ),
                           actions: [
                             CupertinoDialogAction(
@@ -79,7 +79,7 @@ class ConsentReceiptScreen extends ConsumerWidget {
                     },
               child: state.withdrawing
                   ? const CupertinoActivityIndicator()
-                  : const Text('Återkalla samtycket'),
+                  : const Text('Återkalla samtycke'),
             ),
           ],
         ],

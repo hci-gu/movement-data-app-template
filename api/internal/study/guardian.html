@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vårdnadshavares samtycke</title>
   <style nonce="{{.StyleNonce}}">
-    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #1c2937; background: #f1f7f4; }
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #1c2937; background: #f6f8fa; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; padding: 32px 16px; line-height: 1.5; }
     main { width: 100%; max-width: 560px; margin: auto; padding: 28px; background: #fff; border: 1px solid #e3e8ed; border-radius: 12px; box-shadow: 0 3px 16px rgba(18, 42, 66, .05); }
@@ -13,13 +13,16 @@
     h2 { margin: 0 0 4px; font-size: 1rem; }
     p { margin: 0 0 14px; }
     .muted { color: #596a79; }
+    main.consent { max-width: 680px; margin: 0 auto; }
+    .document { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 24px; }
+    .after-action { margin-top: 20px; }
     .option { padding: 18px 0; border-top: 1px solid #e9edf0; }
     .option:first-of-type { margin-top: 20px; }
     .option p { margin-bottom: 12px; }
-    .button { display: inline-block; padding: 9px 15px; border: 1px solid #086273; border-radius: 7px; background: #086273; color: #fff; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
-    .button:hover { background: #054c59; }
+    .button { display: inline-block; padding: 9px 15px; border: 1px solid #164775; border-radius: 7px; background: #164775; color: #fff; font: inherit; font-weight: 600; text-decoration: none; cursor: pointer; }
+    .button:hover { background: #10395f; }
     .button:focus-visible { outline: 3px solid #86b5df; outline-offset: 2px; }
-    .button.secondary { color: #086273; background: #fff; }
+    .button.secondary { color: #164775; background: #fff; }
     .button.secondary:hover { background: #f0f6fb; }
     .qr { display: block; width: 280px; max-width: 100%; height: auto; margin: 8px auto; }
     .status { margin: 8px 0 14px; padding: 10px 12px; border-radius: 7px; background: #f0f6fb; color: #244564; }
@@ -30,89 +33,64 @@
   </style>
 </head>
 <body>
-  {{if eq .Mode "signing"}}
+  {{if eq .Mode "authenticating"}}
   <main data-state-url="{{.StateURL}}" data-qr-url="{{.QRURL}}" data-done-url="{{.DoneURL}}">
-    <h1>Vårdnadshavares samtycke</h1>
-    <p class="muted">Välj hur du vill signera med BankID.</p>
-
-    <section class="option">
-      <h2>På den här datorn</h2>
-      <p class="muted">Använd BankID som är installerat på datorn.</p>
-      <a class="button" href="{{.DesktopLink}}">Öppna BankID på datorn</a>
-    </section>
-
-    <section class="option">
-      <h2>På den här telefonen</h2>
-      <p class="muted">Öppna Mobilt BankID på telefonen du använder nu.</p>
-      <a class="button" href="{{.MobileLink}}" referrerpolicy="origin">Öppna BankID på telefonen</a>
-    </section>
-
-    <section class="option">
-      <h2>På en annan telefon</h2>
-      <p class="muted">Öppna Mobilt BankID på den andra telefonen och skanna QR-koden.</p>
-      <img class="qr" id="qr" src="{{.QRURL}}" alt="Rörlig QR-kod för BankID" width="280" height="280">
-      <p class="muted" id="qr-message" hidden>QR-koden har gått ut. Starta om signeringen för att få en ny.</p>
-    </section>
-
+    <h1>Bekräfta din identitet</h1>
+    <p>Identifiera dig med BankID. Därefter kan du läsa samtycket och välja om du vill samtycka till deltagandet.</p>
+    <section class="option"><h2>På den här telefonen</h2><p>Återvänd till den här sidan när du har bekräftat din identitet.</p><a class="button" href="{{.MobileLink}}" referrerpolicy="origin">Öppna BankID på den här telefonen</a></section>
+    <section class="option"><h2>På den här datorn</h2><a class="button" href="{{.DesktopLink}}">Öppna BankID på den här datorn</a></section>
+    <section class="option"><h2>På en annan telefon</h2><p>Skanna den föränderliga koden med BankID.</p><img class="qr" id="qr" src="{{.QRURL}}" alt="Föränderlig BankID QR-kod" width="280" height="280"></section>
     <p class="status" id="status" role="status">Väntar på BankID…</p>
-    <form action="{{.RestartURL}}" method="post"><button class="button secondary" type="submit">Starta om signeringen</button></form>
+    <a class="button" id="continue" href="{{.DoneURL}}" hidden>Fortsätt till samtycket</a>
+    <form action="{{.RestartURL}}" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="button secondary" type="submit">Starta en ny förfrågan</button></form>
   </main>
   <script nonce="{{.StyleNonce}}">
     (() => {
-      const page = document.querySelector('main');
-      const qr = document.getElementById('qr');
-      const qrMessage = document.getElementById('qr-message');
-      const status = document.getElementById('status');
-
+      const page = document.querySelector('main'), qr = document.getElementById('qr'), status = document.getElementById('status');
       async function refresh() {
         try {
           const response = await fetch(page.dataset.stateUrl, { cache: 'no-store' });
           if (!response.ok) throw new Error('status unavailable');
           const state = await response.json();
-
           if (state.status === 'accepted') {
-            window.location.assign(page.dataset.doneUrl);
-            return;
+            document.getElementById('continue').hidden = false;
+            window.location.assign(page.dataset.doneUrl); return;
           }
-          if (state.status !== 'pending') {
-            status.textContent = 'Signeringen slutfördes inte. Starta om för att försöka igen.';
-            qr.hidden = true;
-            qrMessage.hidden = true;
-            return;
-          }
-          if (state.qrAvailable) {
-            qr.hidden = false;
-            qrMessage.hidden = true;
-            qr.src = page.dataset.qrUrl + '&frame=' + Date.now();
-            status.textContent = 'Väntar på BankID…';
-          } else {
-            qr.hidden = true;
-            qrMessage.hidden = state.pickedUp;
-            status.textContent = state.pickedUp
-              ? 'Fortsätt signeringen i BankID.'
-              : 'Starta om för att få en ny QR-kod.';
-          }
-        } catch (_) {
-          status.textContent = 'Kunde inte kontrollera signeringen. Försöker igen…';
-        }
+          if (state.status !== 'pending') { status.textContent = 'Identifieringen slutfördes inte. Starta en ny förfrågan för att försöka igen.'; qr.hidden = true; return; }
+          qr.hidden = !state.qrAvailable;
+          if (state.qrAvailable) qr.src = page.dataset.qrUrl + (page.dataset.qrUrl.includes('?') ? '&' : '?') + 'frame=' + Date.now();
+          status.textContent = 'Väntar på BankID. Återvänd hit när du har bekräftat din identitet.';
+        } catch (_) { status.textContent = 'Det gick inte att kontrollera status. Öppna inbjudan igen om problemet kvarstår.'; }
         setTimeout(refresh, 1000);
       }
-
       refresh();
     })();
   </script>
+  {{else if eq .Mode "consent"}}
+  <main class="consent">
+    <h1>Läs samtycket för vårdnadshavare</h1>
+    <p>Din identitet har bekräftats med BankID. Läs informationen nedan innan du samtycker till deltagande för personen vars personnummer slutar på <strong>{{.ParticipantSuffix}}</strong>.</p>
+    <p>Barnet kan tacka nej även om du samtycker.</p>
+    <h2>{{.Document.Title}}</h2><p class="muted">Version {{.Document.Version}}</p>
+    <div class="document">{{.Document.Text}}</div>
+    <form action="{{.ApproveURL}}" method="post">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="consentTextId" value="{{.Document.ID}}">
+      <input type="hidden" name="documentHash" value="{{.Document.DocumentHash}}">
+      <input type="hidden" name="participantConsentId" value="{{.ConsentID}}">
+      <p><label><input type="checkbox" required> Jag har läst informationen och samtycker som vårdnadshavare till personens deltagande.</label></p>
+      <button class="button" type="submit" name="accept" value="yes">Bekräfta samtycke</button>
+    </form>
+    <p class="muted after-action">Stäng sidan om du inte vill samtycka. Ditt samtycke registreras först när du trycker på knappen ovan.</p>
+  </main>
   {{else if eq .Mode "approved"}}
-  <main>
-    <span class="mark" aria-hidden="true">✓</span>
-    <h1>Signeringen har tagits emot</h1>
-    <p class="muted">Ditt samtycke som vårdnadshavare är bekräftat. Du kan stänga sidan.</p>
-  </main>
+  <main><span class="mark" aria-hidden="true">✓</span><h1>Samtycket har registrerats</h1><p>Ditt samtycke har registrerats efter identifiering med BankID. Du kan stänga sidan.</p></main>
+  {{else if eq .Mode "error"}}
+  <main><h1>Samtycket har inte registrerats</h1><p>{{.Message}}</p>
+  {{if .RestartURL}}<form action="{{.RestartURL}}" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="button" type="submit">Försök igen</button></form>
+  {{else if .DoneURL}}<a class="button" href="{{.DoneURL}}">Visa inbjudan</a>{{end}}</main>
   {{else}}
-  <main>
-    <span class="mark pending" aria-hidden="true">…</span>
-    <h1>Kontrollerar din signering</h1>
-    <p class="muted">Din signering kontrolleras. Du kan stänga sidan. Deltagaren kan uppdatera statusen i appen.</p>
-  </main>
+  <main><span class="mark pending" aria-hidden="true">…</span><h1>Kontrollerar din identitet</h1><p>Behåll sidan öppen. Du behöver bekräfta ditt samtycke efter identifieringen.</p></main>
   {{end}}
 </body>
 </html>

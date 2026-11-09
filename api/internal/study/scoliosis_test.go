@@ -1,7 +1,9 @@
 package study
 
 import (
+	"app/internal/kontoapi"
 	"app/internal/questionnaires"
+	"context"
 	"testing"
 	"time"
 )
@@ -59,5 +61,22 @@ func TestScoliosisSubmissionAndMovementWindow(t *testing.T) {
 	_, unsigned := questionnaireUser(t, app, "200501010022", false)
 	if w := questionnaireRequest(handler, "GET", "/api/movement/window", unsigned, nil); w.Code != 403 {
 		t.Fatalf("window without consent: %d", w.Code)
+	}
+}
+
+func TestStudyAgeEnforcedAtAuthentication(t *testing.T) {
+	s, f, _ := testService(t)
+	for _, years := range []int{9, 31} {
+		a, err := s.Start(context.Background(), StartInput{ClientSecret: randomSecret(), Mode: "qr"}, "192.0.2.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.result = kontoapi.Result{Status: "complete", PersonalNumber: time.Now().AddDate(-years, 0, 0).Format("20060102") + "2384"}
+		if err := s.advance(context.Background(), a); err != nil {
+			t.Fatal(err)
+		}
+		if a.Status != "rejected" || a.Hint != "ageIneligible" || a.UserID != "" {
+			t.Fatalf("age %d: status=%s hint=%s user=%s", years, a.Status, a.Hint, a.UserID)
+		}
 	}
 }

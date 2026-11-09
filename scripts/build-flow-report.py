@@ -24,9 +24,9 @@ SECTIONS = [
         [("introduction", "Introduktion")],
     ),
     (
-        "2", "Lämna samtycke med BankID",
-        "Deltagaren läser studieinformationen och samtycket, bekräftar sitt val och signerar med BankID. Efter signeringen öppnas checklistan.",
-        [("consent", "Läs och bekräfta samtycket"), ("bankid-pending", "Signera med BankID")],
+        "2", "Identifiera dig och lämna samtycke",
+        "Deltagaren identifierar sig med BankID och återvänder till appen. Därefter läser deltagaren samtycket och väljer om hen vill bekräfta det.",
+        [("authentication", "Identifiera dig med BankID"), ("bankid-pending", "Bekräfta din identitet"), ("consent", "Läs och bekräfta samtycket")],
     ),
     (
         "3", "Svara på frågorna",
@@ -49,7 +49,7 @@ SECTIONS = [
         [("steps-complete", "Allt i checklistan är klart"), ("done", "Bekräftelse på att allt är inskickat")],
     ),
 ]
-GUARDIANS = [("guardians-new", "Skapa länkar till vårdnadshavare"), ("guardians-approved", "Samtliga vårdnadshavare har signerat")]
+GUARDIANS = [("guardians-new", "Skapa länkar till vårdnadshavare"), ("guardians-approved", "Samtliga vårdnadshavare har samtyckt")]
 
 
 def main() -> None:
@@ -87,7 +87,7 @@ def main() -> None:
         if number == "2":
             sections.append(
                 '<details class="guardian-branch" id="vardnadshavare"><summary>För deltagare under 15 år: vårdnadshavares samtycke</summary>'
-                '<p class="intro">Innan deltagaren kan fortsätta behöver samtliga vårdnadshavare samtycka. En länk skapas för varje vårdnadshavare, som signerar med BankID. Deltagaren kan tacka nej även om vårdnadshavarna samtycker.</p>'
+                '<p class="intro">Innan deltagaren kan fortsätta behöver samtliga vårdnadshavare samtycka. En länk skapas för varje vårdnadshavare, som identifierar sig med BankID och därefter bekräftar sitt samtycke. Deltagaren kan tacka nej även om vårdnadshavarna samtycker.</p>'
                 f'<div class="screens">{"".join(card(*item) for item in GUARDIANS)}</div></details>'
             )
 

@@ -9,9 +9,3 @@ secrets/*
 *.pfx
 *.key
 app
-
-# This test image intentionally includes only the credentials used by the API.
-!secrets/client.pem
-!secrets/client-key.pem
-!secrets/bankid-server-ca.pem
-!secrets/study-keys.json
