@@ -266,7 +266,6 @@ class DemoBankIdController extends BankIdController {
       qrImage: kind == 'bankid-qr' ? demoQRImage : null,
       attempt: order
           ? BankIdAttempt(
-              simulationLabel: preview.simulation ? 'TESTSIMULERING' : '',
               id: 'demo-order',
               secret: 'demo',
               expiresAt: 4102444800,
@@ -395,21 +394,8 @@ class DemoRuntime {
   late final ProviderContainer container;
   int blockedRequests = 0;
   DemoRuntime(this.study, this.preview) {
-    final source = study.consent;
-    final document = preview.simulation
-        ? ConsentDocument(
-            id: source.id,
-            version: source.version,
-            title: source.title,
-            text: source.text,
-            documentHash: source.documentHash,
-            simulationLabel: 'TESTSIMULERING',
-          )
-        : source;
+    final document = study.consent;
     final participant = Participant(
-      simulationLabel: preview.simulation
-          ? 'TESTSIMULERING · 201201010004'
-          : '',
       id: 'demo-participant',
       gender: preview.gender,
       guardianRequired: preview.guardian,

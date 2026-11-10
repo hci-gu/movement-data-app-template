@@ -29,11 +29,9 @@ func WriteGuardianPreviews(dir string, document Document) error {
 		}
 		if mode == "simulation-consent" {
 			page.Mode = "consent"
-			page.SimulationLabel = "TESTSIMULERING"
 		}
 		if mode == "simulation-authenticating" {
 			page.Mode = "authenticating"
-			page.SimulationLabel = "TESTSIMULERING"
 		}
 		var body bytes.Buffer
 		if err := guardianPageTemplate.Execute(&body, page); err != nil {

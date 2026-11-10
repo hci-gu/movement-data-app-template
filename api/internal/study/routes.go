@@ -115,7 +115,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return problem(503, "consentUnavailable", "Study consent is not available yet.")
 		}
-		return e.JSON(200, map[string]any{"document": documentDTO(doc), "simulationLabel": s.simulation.Label()})
+		return e.JSON(200, map[string]any{"document": documentDTO(doc)})
 	}).BindFunc(s.RequireSession)
 	g.POST("/consent/accept", func(e *core.RequestEvent) error {
 		var in AcceptanceInput
@@ -251,7 +251,6 @@ func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) fun
 }
 func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 	response := map[string]any{"id": a.ID, "status": a.Status, "hintCode": a.Hint, "purpose": a.Purpose, "mode": a.Mode, "expiresAt": a.ExpiresAt.Unix(), "nonce": a.Nonce}
-	response["simulationLabel"] = s.simulation.Label()
 	if a.Status == "pending" && a.Terminal == "" {
 		if a.Mode == "sameDevice" {
 			response["launchUrl"] = "https://app.bankid.com/?autostarttoken=" + url.QueryEscape(a.Order.AutoStartToken)

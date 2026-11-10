@@ -2,59 +2,13 @@ package study
 
 import (
 	"app/internal/testidentity"
-	"errors"
+	"strings"
+	"time"
+
+	validation "github.com/pocketbase/ozzo-validation/v4"
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
-
-// BindSimulationDatabase isolates test data from ordinary deployments.
-func BindSimulationDatabase(app core.App, run *testidentity.Run) error {
-	return app.RunInTransaction(func(tx core.App) error {
-		rows, err := tx.FindAllRecords("simulation_state")
-		if err != nil {
-			return err
-		}
-		if len(rows) != 0 {
-			if len(rows) != 1 || run == nil || rows[0].GetString("runId") != run.ID() {
-				return errors.New("database belongs to a different simulation deployment")
-			}
-			return nil
-		}
-		if run == nil {
-			mappings, err := tx.FindAllRecords("test_identity_mappings")
-			if err != nil {
-				return err
-			}
-			if len(mappings) != 0 {
-				return errors.New("test identity mappings require a simulation deployment")
-			}
-			for _, name := range []string{"users", "authentications", "consent_acceptances", "guardian_approvals", "dataUploads"} {
-				rows, err := tx.FindRecordsByFilter(name, "simulationRun != ''", "", 1, 0)
-				if err != nil {
-					return err
-				}
-				if len(rows) != 0 {
-					return errors.New("simulation records cannot be served without their test configuration")
-				}
-			}
-			return nil
-		}
-		for _, name := range []string{"users", "authentications", "consent_acceptances", "guardian_requests", "guardian_approvals", "answers", "dataUploads"} {
-			rows, err := tx.FindRecordsByFilter(name, "id != ''", "", 1, 0)
-			if err != nil {
-				return err
-			}
-			if len(rows) != 0 {
-				return errors.New("simulation requires a fresh database without participants, evidence, answers or uploads")
-			}
-		}
-		r, err := newRecord(tx, "simulation_state")
-		if err != nil {
-			return err
-		}
-		r.Set("runId", run.ID())
-		return tx.Save(r)
-	})
-}
 
 func (s *Service) simulationHeaders(e *core.RequestEvent) error {
 	if s.simulation != nil {
@@ -134,7 +88,24 @@ func (s *Service) guardianRevision(app core.App, personal string) (string, error
 func (s *Service) registerSimulationMappings() {
 	validate := func(e *core.RecordEvent) error {
 		if s.simulation == nil {
-			return errors.New("test mappings are disabled in this deployment")
+			return apis.NewBadRequestError("Test mappings are disabled in this deployment.", nil)
+		}
+		fieldErrors := validation.Errors{}
+		for _, field := range []string{"realPersonalNumber", "testPersonalNumber"} {
+			value := strings.TrimSpace(e.Record.GetString(field))
+			if len(value) == 13 && value[8] == '-' {
+				value = value[:8] + value[9:]
+			}
+			e.Record.Set(field, value)
+			if !testidentity.ValidPersonal(value, time.Now()) {
+				fieldErrors[field] = validation.NewError("validation_personal_number", "Use YYYYMMDDXXXX or YYYYMMDD-XXXX with a valid birth date that is not in the future.")
+			}
+		}
+		if role := e.Record.GetString("role"); role != "participant" && role != "guardian" {
+			fieldErrors["role"] = validation.NewError("validation_role", "Select participant or guardian.")
+		}
+		if len(fieldErrors) != 0 {
+			return apis.NewBadRequestError("Check the highlighted mapping fields.", fieldErrors)
 		}
 		e.Record.Set("revision", randomSecret())
 		rows, err := e.App.FindAllRecords("test_identity_mappings")
@@ -149,7 +120,7 @@ func (s *Service) registerSimulationMappings() {
 		}
 		file.Personas = append(file.Personas, mappingPersona(e.Record))
 		if _, err = testidentity.New(file); err != nil {
-			return err
+			return apis.NewBadRequestError("Cannot save test identity mapping: "+err.Error(), nil)
 		}
 		return e.Next()
 	}

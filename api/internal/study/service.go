@@ -62,9 +62,6 @@ type Attempt struct {
 }
 
 func Open(app core.App, cfg Config) (*Service, error) {
-	if err := BindSimulationDatabase(app, cfg.Simulation); err != nil {
-		return nil, err
-	}
 	s := &Service{App: app, Config: cfg, simulation: cfg.Simulation, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: time.Now}
 	s.registerSimulationMappings()
 	if cfg.Environment == "disabled" {

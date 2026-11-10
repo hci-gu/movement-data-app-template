@@ -19,7 +19,7 @@ const testActor = "198001012384"
 const testOtherActor = "198201012384"
 
 func TestSuperuserCanManageMappingsThroughPocketBase(t *testing.T) {
-	s, _, h, mapping := simulationService(t, "200001010004")
+	s, f, h, mapping := simulationService(t, "200001010004")
 	admin, err := newRecord(s.App, "_superusers")
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +34,70 @@ func TestSuperuserCanManageMappingsThroughPocketBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	base := "/api/collections/test_identity_mappings/records"
+	t.Run("formatted personal numbers", func(t *testing.T) {
+		w := questionnaireRequest(h, "POST", base, token, map[string]any{
+			"id": "", "realPersonalNumber": " 19820101-2384 ",
+			"testPersonalNumber": "20110101-1003", "role": "participant",
+		})
+		if w.Code != 200 {
+			t.Fatalf("formatted create: %d %s", w.Code, w.Body)
+		}
+		var created struct {
+			ID   string `json:"id"`
+			Real string `json:"realPersonalNumber"`
+			Test string `json:"testPersonalNumber"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+			t.Fatal(err)
+		}
+		if created.Real != testOtherActor || created.Test != "201101011003" {
+			t.Fatal("formatted identities were not normalized")
+		}
+		_, _, user := authenticate(t, s, f, h, testOtherActor)
+		if user.GetString("personalNumber") != created.Test {
+			t.Fatal("normalized mapping was not applied to authentication")
+		}
+		requireCode(t, h, "PATCH", base+"/"+created.ID, token, map[string]any{"testPersonalNumber": "20120101-1003"}, 200)
+		saved, err := s.App.FindRecordById("test_identity_mappings", created.ID)
+		if err != nil || saved.GetString("testPersonalNumber") != "201201011003" {
+			t.Fatal("update not normalized")
+		}
+		requireCode(t, h, "DELETE", base+"/"+created.ID, token, nil, 204)
+	})
+	for _, invalid := range []struct{ field, value string }{
+		{"testPersonalNumber", "20110230-1003"},
+		{"testPersonalNumber", "29990101-1003"},
+		{"testPersonalNumber", "1101011003"},
+		{"realPersonalNumber", "1982010-12384"},
+		{"role", ""},
+	} {
+		input := map[string]any{"realPersonalNumber": testOtherActor, "testPersonalNumber": "201101011003", "role": "participant"}
+		input[invalid.field] = invalid.value
+		w := questionnaireRequest(h, "POST", base, token, input)
+		var response struct {
+			Data map[string]struct{ Message string } `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if w.Code != 400 || response.Data[invalid.field].Message == "" {
+			t.Fatalf("missing field error for %s: %d %s", invalid.field, w.Code, w.Body)
+		}
+	}
+	// PocketBase's dashboard sends an empty id and other unset fields.
+	for _, role := range []any{"guardian", []string{"guardian"}} {
+		w := questionnaireRequest(h, "POST", base, token, map[string]any{"id": "", "realPersonalNumber": testOtherActor, "testPersonalNumber": "197301010001", "role": role, "revision": ""})
+		if w.Code != 200 {
+			t.Fatalf("dashboard create (%T): %d %s", role, w.Code, w.Body)
+		}
+		var created struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+			t.Fatal(err)
+		}
+		requireCode(t, h, "DELETE", base+"/"+created.ID, token, nil, 204)
+	}
 	requireCode(t, h, "GET", base, token, nil, 200)
 	oldRevision := mapping.GetString("revision")
 	requireCode(t, h, "PATCH", base+"/"+mapping.Id, token, map[string]any{"testPersonalNumber": "201201010004", "revision": oldRevision}, 200)
@@ -60,9 +124,6 @@ func simulationService(t *testing.T, personal string) (*Service, *fakeProvider, 
 	s, f, h := testService(t)
 	run, err := testidentity.New(testidentity.File{RunID: "test-run"})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err = BindSimulationDatabase(s.App, run); err != nil {
 		t.Fatal(err)
 	}
 	s.simulation, s.Config.Simulation = run, run
@@ -106,7 +167,7 @@ func TestSimulationEvidenceConsentAndPrivateMapping(t *testing.T) {
 		t.Fatal("evidence not preserved")
 	}
 	w := questionnaireRequest(h, "GET", "/api/me", token, nil)
-	if strings.Contains(w.Body.String(), testActor) || !strings.Contains(w.Body.String(), "TESTSIMULERING") || w.Header().Get("X-Study-Simulation") != "test-run" {
+	if strings.Contains(w.Body.String(), testActor) || strings.Contains(w.Body.String(), "simulationLabel") || w.Header().Get("X-Study-Simulation") != "test-run" {
 		t.Fatal("unsafe session metadata")
 	}
 	for _, credential := range []string{"", token} {
@@ -318,18 +379,8 @@ func TestSimulationAgeBoundariesAndProviderFailures(t *testing.T) {
 	}
 }
 
-func TestSimulationStartupAndMappingValidation(t *testing.T) {
+func TestSimulationMappingValidation(t *testing.T) {
 	s, _, h, mapping := simulationService(t, "200001010004")
-	if err := BindSimulationDatabase(s.App, nil); err == nil {
-		t.Fatal("normal deployment opened simulation")
-	}
-	other, _ := testidentity.New(testidentity.File{RunID: "other"})
-	if err := BindSimulationDatabase(s.App, other); err == nil {
-		t.Fatal("different deployment reused database")
-	}
-	if err := BindSimulationDatabase(s.App, s.simulation); err != nil {
-		t.Fatal(err)
-	}
 	for _, change := range []struct{ field, value string }{{"testPersonalNumber", testActor}, {"testPersonalNumber", "200102300004"}, {"role", "admin"}} {
 		copy, _ := s.App.FindRecordById("test_identity_mappings", mapping.Id)
 		copy.Set(change.field, change.value)

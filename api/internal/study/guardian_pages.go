@@ -16,7 +16,6 @@ var guardianPageFiles embed.FS
 var guardianPageTemplate = template.Must(template.ParseFS(guardianPageFiles, "guardian.html"))
 
 type guardianPageView struct {
-	SimulationLabel                                         string
 	Mode                                                    string
 	StyleNonce                                              string
 	MobileLink                                              string
@@ -52,9 +51,6 @@ func guardianCheckingPage(e *core.RequestEvent) error {
 }
 
 func renderGuardianPage(e *core.RequestEvent, page guardianPageView) error {
-	if e.Response.Header().Get("X-Study-Simulation") != "" {
-		page.SimulationLabel = "TESTSIMULERING"
-	}
 	page.StyleNonce = randomSecret()
 	var body bytes.Buffer
 	if err := guardianPageTemplate.Execute(&body, page); err != nil {

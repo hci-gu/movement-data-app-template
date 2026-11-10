@@ -13,16 +13,19 @@ Open **test_identity_mappings**, choose **New record**, and fill in:
 
 | Field | Value |
 | --- | --- |
-| `realPersonalNumber` | Your real BankID identity, 12 digits `YYYYMMDDXXXX`. |
-| `testPersonalNumber` | The fictional identity whose birth date you want to test, also 12 digits. |
+| `realPersonalNumber` | Your real BankID identity, `YYYYMMDDXXXX` or `YYYYMMDD-XXXX`. |
+| `testPersonalNumber` | The fictional identity whose birth date you want to test, using the same format. |
 | `role` | `participant` for app login; `guardian` for a guardian invitation. |
 
 Save, sign out of the app, and authenticate again with your real BankID. No
 restart, rebuild, redeploy or private JSON configuration is required. The
 mapping is selected when authentication completes. An unassigned identity or
 role is rejected; it never falls through to a real participant in simulation.
-The app and guardian browser show **TESTSIMULERING**. The app displays the test
-personal number, never the mapping's real personal number.
+The app and guardian browser use the ordinary participant interface, without
+simulation banners. The real number stays private to the mapping and evidence.
+The optional hyphen and surrounding whitespace are removed when saving; numbers
+are stored as 12 digits. Invalid fields show an explanation in the dashboard.
+Leave the separate `id` field empty to generate it automatically.
 
 Only superusers can list, view, create, edit or delete these records. Do not
 relax the collection rules. An actor can have one participant mapping and
@@ -105,14 +108,14 @@ bash scripts/prepare-scoliosis-simulation.sh
 ```
 
 The helper creates a fresh private keyring only if absent, builds
-`registry.k8s.gu.se/appademin/movement-api:0.0.5-scolios-simulation` for
+`registry.k8s.gu.se/appademin/movement-api:0.0.6-scolios-simulation` for
 `linux/amd64`, and writes `build/scoliosis-simulation-manifest.yaml`. It does not
 push an image or change the cluster. Use the cluster login/network/storage
 prerequisites in [test deployment](test-deployment.md), then deploy:
 
 ```sh
 oc whoami -t | docker login registry.k8s.gu.se --username "$(oc whoami)" --password-stdin
-docker push registry.k8s.gu.se/appademin/movement-api:0.0.5-scolios-simulation
+docker push registry.k8s.gu.se/appademin/movement-api:0.0.6-scolios-simulation
 # First deployment only; retain the installed Secret on later rollouts.
 oc -n appademin create secret generic movement-study-keys-simulation-v1 \
   --from-file=study-keys.json=deploy/secrets/study-keys-simulation-v1.json
@@ -146,9 +149,12 @@ Subsequent deployments retain the simulation directory, deployment ID and keyrin
 To return to the ordinary test app, deploy the base `deploy/` manifest; it still
 points at the original database and original keyring. Do not serve simulation
 data as ordinary study data. A normal binary cannot enable mapping even through
-environment variables; startup also rejects a database marked as a simulation.
-The simulation image requires both `STUDY_DEPLOYMENT=simulation` and
-`STUDY_SIMULATION_ID`, and first startup refuses an existing participant database.
+environment variables. The simulation image requires both
+`STUDY_DEPLOYMENT=simulation` and `STUDY_SIMULATION_ID`.
+
+Migration `1794320000_remove_simulation_state.go` removes the former
+`simulation_state` collection. There is no database marker or startup check for
+it. Existing mappings, participants, evidence and other study records are retained.
 
 ## Verification
 
@@ -156,7 +162,8 @@ Run `go test ./...` and `go test -race -tags study_simulation ./...` from `api/`
 Coverage includes untouched provider evidence, explicit consent, one/two guardian
 approvals by one actor, wrong/unassigned identities, mapping revision revocation,
 fresh progress after edits, birthday boundaries, failed/expired/cancelled orders,
-private collection rules and deployment isolation. Run the full Flutter suite
-and regenerate the study report for the app and browser simulation indicators.
+private collection rules, formatted mapping input and the collection-removal
+migration. Run the full Flutter suite and regenerate the study report to review
+the ordinary app and guardian layouts with test identities.
 Complete the [physical-device checklist](manual-review.md) with real BankID and
 HealthKit before using the test deployment for an end-to-end review.

@@ -1,7 +1,8 @@
 # Manual review of the restructured app
 
-For simulation builds, follow [test personas](test-identities.md). Verify the test
-indicator during authentication/consent, on the checklist and on guardian pages. Test
+For simulation builds, follow [test personas](test-identities.md). Verify the ordinary
+layout without simulation banners during authentication/consent, on the checklist
+and on guardian pages. Test
 one/two guardian gating with real BankID, wrong-identity rejection with distinct
 testers, mapping edits in PocketBase, and rejection of previous sessions/approvals
 after editing or deleting mappings. These physical

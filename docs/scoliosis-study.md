@@ -107,8 +107,8 @@ are verification artifacts; the study's Health collection is iPhone-only.
 
 On 2026-11-10, the test API at `https://movement-api.test.appadem.in` was rebuilt
 and deployed from `test-scolios-2` using image
-`registry.k8s.gu.se/appademin/movement-api:0.0.5-scolios-simulation`, digest
-`sha256:a0d93462428cde2e76caae86a1fe35b3cbab2d292566c00f4e486d82d2b23d22`.
+`registry.k8s.gu.se/appademin/movement-api:0.0.6-scolios-simulation`, digest
+`sha256:8135d5051786cecce8b008900856d400befb74c3831e86cc00ac0a556031fd51`.
 OpenShift reports one ready replica with zero restarts. The pod image digest
 matches the published image.
 
@@ -125,11 +125,23 @@ page returned 200. The in-pod KontoAPI diagnostic created an authentication orde
 retrieved its QR image and received pending status without creating a participant
 session or consent.
 
-Create the fresh database's PocketBase superuser using its private startup setup
-link, then enter mappings in `test_identity_mappings`; see
+The database's existing superuser and mapping were retained. Enter or edit
+mappings in `test_identity_mappings`; see
 [test identities](test-identities.md). Real BankID completion, explicit consent,
 guardian approval and HealthKit remain device checks. This is a test deployment,
 not approval for recruitment.
+
+At the owner's request, this rollout removes `simulation_state` and its startup
+checks, plus all app and guardian-page simulation banners. The removal migration
+was verified in the live database: zero marker collections, with unchanged counts
+for the superuser, mapping, participants, authentication and consent records, and
+all 13 questions. No keyring or study database was replaced.
+
+Mapping creation previously rejected `YYYYMMDD-XXXX` before PocketBase could show
+the field error, producing the generic “Failed to create record” message. Creation
+and updates now accept that format and surrounding whitespace, store 12 digits,
+and show field-specific validation messages. Regression tests cover the dashboard
+payload, normalized identity lookup, invalid dates and malformed input.
 
 ## Test identity deployment preparation — 2026-11-10
 
@@ -142,7 +154,7 @@ The equivalent collection workflow is also maintained on `main`, adapted to
 that branch's direct signing implementation.
 
 `bash scripts/prepare-scoliosis-simulation.sh` built the local `linux/amd64`
-image `registry.k8s.gu.se/appademin/movement-api:0.0.5-scolios-simulation` and
+image `registry.k8s.gu.se/appademin/movement-api:0.0.6-scolios-simulation` and
 rendered `build/scoliosis-simulation-manifest.yaml`. OpenShift server-side dry
 run passed. The overlay uses a separate directory on the existing PVC and a
 new evidence keyring, preserving the existing deployment's database. The owner
@@ -155,17 +167,17 @@ Verification completed:
 - Ordinary and simulation backend suites, race checks, and both Go builds passed.
   Tests include superuser mapping CRUD, closed participant access, revision
   revocation, birthdays, provider failures and explicit one/two guardian approvals.
-- Flutter analysis and all 168 tests passed; Android release and iOS simulator
+- Flutter analysis and all 170 tests passed; Android release and iOS simulator
   builds passed. Python report tests and changed helper syntax checks passed.
 - Container checks passed under arbitrary UID `1001230000`, group `0`, with a
   read-only root filesystem: idempotent study-consent initialization, health 200
-  with the simulation header, anonymous session 401, and refusal to serve marked
-  simulation data when simulation mode is disabled.
+  with the simulation header and anonymous session 401. The former marker-based
+  startup check has since been removed at the owner's request.
 - `api/.local/scoliosis-simulation/pb_data` contains all 13 study questions,
   zero mappings and current `scoliosis-kontoapi-v1` consent matching the source
   text and SHA-256. Existing local databases were retained.
-- The final study report contains 84 views and 89 screenshots, including the
-  missing-mapping error and simulation banners. All views/continuations and
+- The refreshed study report contains 84 views and 88 screenshots, including the
+  missing-mapping error and ordinary layouts without banners. All views/continuations and
   small-phone/2× text captures were reviewed. Search, enlargement and offline
   image loading passed in Chrome without console errors.
 

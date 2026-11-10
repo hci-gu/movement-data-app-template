@@ -37,11 +37,6 @@ func init() {
 		)
 		mappings.AddIndex("idx_test_identity_number", true, "testPersonalNumber", "")
 		mappings.AddIndex("idx_test_participant_actor", true, "realPersonalNumber", "role = 'participant'")
-		if err := app.Save(mappings); err != nil {
-			return err
-		}
-		c := core.NewBaseCollection("simulation_state")
-		c.Fields.Add(&core.TextField{Name: "runId", Required: true, Max: 48})
-		return app.Save(c)
+		return app.Save(mappings)
 	}, nil)
 }
