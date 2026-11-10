@@ -272,10 +272,16 @@ class DemoBankIdController extends BankIdController {
               expiresAt: 4102444800,
               status: kind == 'bankid-accepted'
                   ? 'accepted'
+                  : kind == 'bankid-unassigned'
+                  ? 'rejected'
                   : kind == 'bankid-cancelled'
                   ? 'cancelled'
                   : 'pending',
-              hintCode: kind == 'bankid-cancelled' ? 'userCancel' : 'userSign',
+              hintCode: kind == 'bankid-unassigned'
+                  ? 'testIdentityUnassigned'
+                  : kind == 'bankid-cancelled'
+                  ? 'userCancel'
+                  : 'userSign',
               mode: kind == 'bankid-qr' || kind == 'bankid-expired'
                   ? 'qr'
                   : 'sameDevice',

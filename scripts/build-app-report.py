@@ -239,6 +239,7 @@ def main() -> None:
     run([flutter, "analyze"], "flutter-analysis", checks)
     run([sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-p", "test_app_report.py"], "report-tests", checks)
     run([executable("go"), "test", "./..."], "backend-tests", checks, ROOT / "api")
+    run([executable("go"), "test", "-tags", "study_simulation", "./..."], "simulation-backend-tests", checks, ROOT / "api")
     run([executable("go"), "build", "-o", "app", "."], "backend-build", checks, ROOT / "api")
     run([flutter, "test", "--reporter", "expanded", "--dart-define=REPORT_CAPTURE=true", f"--dart-define=REPORT_OUTPUT={capture_dir}", f"--dart-define=REPORT_FONT={font}"], "flutter-tests-and-captures", checks)
     manifest = json.loads((capture_dir / "manifest.json").read_text(encoding="utf-8"))

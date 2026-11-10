@@ -273,6 +273,7 @@ void main() {
     'simulation-home',
     'simulation-consent',
     'simulation-signing',
+    'simulation-unassigned',
     'guardian-required',
     'guardians-new',
     'done',

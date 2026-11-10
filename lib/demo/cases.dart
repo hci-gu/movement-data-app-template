@@ -125,6 +125,15 @@ List<PreviewCase> previewCases(DemoStudy study) {
       signedIn: false,
       simulation: true,
     ),
+    const PreviewCase(
+      'simulation-unassigned',
+      'Missing test identity mapping',
+      'Testing',
+      '/introduction/login',
+      state: 'bankid-unassigned',
+      signedIn: false,
+      simulation: true,
+    ),
     for (final state in ['forms-loading', 'forms-error', 'forms-empty'])
       PreviewCase(
         state,

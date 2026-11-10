@@ -114,6 +114,48 @@ in-pod KontoAPI order, QR and pending-status diagnostic succeeded. Real test
 identity completion, explicit consent and guardian approval remain to be checked.
 This remains a test environment, not approval for recruitment.
 
+## Test identity deployment preparation — 2026-11-10
+
+The owner requested editable real-to-test BankID mappings. `test-scolios-2`
+implements the private `test_identity_mappings` collection with participant and
+guardian roles. Mapping edits invalidate previous sessions/approvals and start
+fresh participant progress. Real KontoAPI authentication evidence remains
+unchanged. Study eligibility stays 10–30, with guardian approval below 15.
+The equivalent collection workflow is also maintained on `main`, adapted to
+that branch's direct signing implementation.
+
+`bash scripts/prepare-scoliosis-simulation.sh` built the local `linux/amd64`
+image `registry.k8s.gu.se/appademin/movement-api:0.0.5-scolios-simulation` and
+rendered `build/scoliosis-simulation-manifest.yaml`. OpenShift server-side dry
+run passed. The overlay uses a separate directory on the existing PVC and a
+new evidence keyring, preserving the existing deployment's database. The image
+has **not been pushed or rolled out**; the remote deployment described above
+remains unchanged. Follow [test identities](test-identities.md) to deploy, create
+the new database's superuser and enter mappings through PocketBase.
+
+Verification completed:
+
+- Ordinary and simulation backend suites, race checks, and both Go builds passed.
+  Tests include superuser mapping CRUD, closed participant access, revision
+  revocation, birthdays, provider failures and explicit one/two guardian approvals.
+- Flutter analysis and all 168 tests passed; Android release and iOS simulator
+  builds passed. Python report tests and changed helper syntax checks passed.
+- Container checks passed under arbitrary UID `1001230000`, group `0`, with a
+  read-only root filesystem: idempotent study-consent initialization, health 200
+  with the simulation header, anonymous session 401, and refusal to serve marked
+  simulation data when simulation mode is disabled.
+- `api/.local/scoliosis-simulation/pb_data` contains all 13 study questions,
+  zero mappings and current `scoliosis-kontoapi-v1` consent matching the source
+  text and SHA-256. Existing local databases were retained.
+- The final study report contains 84 views and 89 screenshots, including the
+  missing-mapping error and simulation banners. All views/continuations and
+  small-phone/2× text captures were reviewed. Search, enlargement and offline
+  image loading passed in Chrome without console errors.
+
+Real BankID completion, guardian interaction and HealthKit permissions/data on
+an iPhone remain manual checks. The existing consent release conditions still
+apply; this prepares a test deployment, not recruitment.
+
 ## Artwork
 
 Generated with the built-in image-generation tool. Original:
