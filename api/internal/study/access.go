@@ -6,11 +6,7 @@ import (
 )
 
 func (s *Service) userDTO(user *core.Record) map[string]any {
-	label := ""
-	if s.simulation != nil {
-		label = "TEST SIMULATION · " + user.GetString("simulationPersona")
-	}
-	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user), "simulationLabel": label, "simulationRun": s.simulation.ID()}
+	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user), "simulationRun": s.simulation.ID()}
 }
 func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
@@ -50,7 +46,7 @@ func (s *Service) authorizeParticipant(e *core.RequestEvent) error {
 	return nil
 }
 func ProtectRecords(app core.App) {
-	managed := []string{"consent_texts", "signatures", "signingRequests", "users", "simulation_state"}
+	managed := []string{"consent_texts", "signatures", "signingRequests", "users"}
 	app.OnRecordCreateRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
 		return problem(403, "managedRecord", "Use the study administration or BankID flow.")
 	})

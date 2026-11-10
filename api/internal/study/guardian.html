@@ -31,7 +31,6 @@
   </style>
 </head>
 <body>
-  {{if .SimulationLabel}}<aside role="status">{{.SimulationLabel}} — fictional study identities</aside>{{end}}
   {{if eq .Mode "signing"}}
   <main data-state-url="{{.StateURL}}" data-qr-url="{{.QRURL}}" data-done-url="{{.DoneURL}}">
     <h1>Guardian signature</h1>

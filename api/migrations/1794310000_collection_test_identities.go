@@ -26,14 +26,6 @@ func init() {
 		)
 		mappings.AddIndex("idx_test_identity_number", true, "testPersonalNumber", "")
 		mappings.AddIndex("idx_test_participant_actor", true, "realPersonalNumber", "role = 'participant'")
-		if err := app.Save(mappings); err != nil {
-			return err
-		}
-		state, err := app.FindCollectionByNameOrId("simulation_state")
-		if err != nil {
-			return err
-		}
-		state.Fields.RemoveByName("fingerprint")
-		return app.Save(state)
+		return app.Save(mappings)
 	}, nil)
 }

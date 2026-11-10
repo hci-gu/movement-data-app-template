@@ -96,20 +96,7 @@ func (r *Run) ID() string {
 	}
 	return r.file.RunID
 }
-func (r *Run) Label() string {
-	if r == nil {
-		return ""
-	}
-	return "TEST SIMULATION"
-}
 func (r *Run) Personas() []Persona { return append([]Persona(nil), r.file.Personas...) }
-func (m *Mapping) Label() string {
-	if m == nil {
-		return ""
-	}
-	return "TEST SIMULATION · " + m.PersonaID
-}
-
 // Check binds stored mapping metadata back to the actual authenticated actor.
 func (r *Run) Check(actor, role, expected string, m *Mapping) bool {
 	if r == nil {

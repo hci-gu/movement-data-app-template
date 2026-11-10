@@ -1,8 +1,6 @@
 class ConsentDocument {
-  final String simulationLabel;
   final String id, version, title, text, documentHash;
   const ConsentDocument({
-    this.simulationLabel = '',
     required this.id,
     required this.version,
     required this.title,
@@ -11,7 +9,6 @@ class ConsentDocument {
   });
   factory ConsentDocument.fromJson(Map<String, dynamic> json) =>
       ConsentDocument(
-        simulationLabel: json['simulationLabel'] as String? ?? '',
         id: json['id'] as String,
         version: json['version'] as String,
         title: json['title'] as String,
@@ -19,7 +16,6 @@ class ConsentDocument {
         documentHash: json['documentHash'] as String,
       );
   Map<String, dynamic> toJson() => {
-    'simulationLabel': simulationLabel,
     'id': id,
     'version': version,
     'title': title,

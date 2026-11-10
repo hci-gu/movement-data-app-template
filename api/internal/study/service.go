@@ -81,9 +81,6 @@ type Attempt struct {
 }
 
 func Open(app core.App, cfg Config) (*Service, error) {
-	if err := BindSimulationDatabase(app, cfg.Simulation); err != nil {
-		return nil, err
-	}
 	s := &Service{App: app, Config: cfg, simulation: cfg.Simulation, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: time.Now}
 	s.registerSimulationMappings()
 	if cfg.Environment == "disabled" {
@@ -191,7 +188,7 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 	if a.Mode == "sameDevice" {
 		a.Request.ReturnURL = s.Config.ReturnURL + "#nonce=" + url.QueryEscape(a.Nonce)
 	}
-	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(s.participantVisibleText(a.Document.Text)))
+	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(a.Document.Text))
 	manifest, err := json.Marshal(map[string]any{"schemaVersion": 2, "purpose": a.Purpose, "attemptId": id, "consentTextId": in.Version, "documentHash": in.DocumentHash, "nonce": a.Nonce})
 	if err != nil {
 		return nil, err

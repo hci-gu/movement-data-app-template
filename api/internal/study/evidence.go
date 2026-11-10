@@ -207,5 +207,5 @@ func (s *Service) activeConsent(app core.App, user *core.Record) bool {
 		return false
 	}
 	run, err := s.mappingSnapshot(app)
-	return err == nil && run.Check(result.CompletionData.User.PersonalNumber, "participant", user.GetString("personalNumber"), evidence.Simulation) && evidence.Document.ID == doc.Id && evidence.Document.DocumentHash == doc.GetString("documentHash") && evidence.Document.Text == doc.GetString("text") && evidence.Request.UserVisibleData == base64.StdEncoding.EncodeToString([]byte(s.participantVisibleText(doc.GetString("text")))) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
+	return err == nil && run.Check(result.CompletionData.User.PersonalNumber, "participant", user.GetString("personalNumber"), evidence.Simulation) && evidence.Document.ID == doc.Id && evidence.Document.DocumentHash == doc.GetString("documentHash") && evidence.Document.Text == doc.GetString("text") && evidence.Request.UserVisibleData == base64.StdEncoding.EncodeToString([]byte(doc.GetString("text"))) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
 }

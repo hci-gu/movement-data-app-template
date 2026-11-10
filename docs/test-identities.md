@@ -33,9 +33,8 @@ test database; retain it and the keyring across redeployments. No persona file
 is needed. Provider environment/certificates are independent of simulation mode:
 use the provider configuration that authenticates the real tester's BankID.
 
-Normal builds cannot enable simulation. Startup refuses to mix ordinary
-participants with simulation data or to serve a marked simulation database
-without its deployment ID. Collection API rules remain locked to superusers.
+Normal builds cannot enable simulation. Collection API rules remain locked to
+superusers. There is no database marker collection or corresponding startup check.
 
 ## Configure and switch test identities
 
@@ -43,14 +42,17 @@ Open the test server's `/_/` PocketBase dashboard as a superuser. Create a row:
 
 | Field | Value |
 | --- | --- |
-| `realPersonalNumber` | Your real 12-digit BankID personal number. |
-| `testPersonalNumber` | The fictional 12-digit number, including the birth date to test. |
+| `realPersonalNumber` | Your real BankID personal number, `YYYYMMDDXXXX` or `YYYYMMDD-XXXX`. |
+| `testPersonalNumber` | The fictional number, including the birth date to test, in the same format. |
 | `role` | `participant` for app login; `guardian` for guardian invitations. |
 
 Save, sign out and sign in again with real BankID. Mapping takes place only after
 successful provider verification; rejected, expired or high-risk results cannot
 grant a test session. Unassigned identities are rejected in simulation mode.
-The original provider evidence is not changed, and test data and UI are labelled.
+The original provider evidence is not changed. The app, guardian pages and BankID
+text use the ordinary interface without simulation banners. The optional hyphen
+and surrounding whitespace are removed on save; invalid fields show an explanation.
+Leave the separate `id` field empty to generate it automatically.
 
 One real identity can have one participant mapping and multiple guardian
 mappings. All test numbers must differ from each other and from every real
@@ -88,6 +90,9 @@ retaining that simulation database, then enter mappings in PocketBase. Old
 file-based sessions/signatures have no collection revision and cannot authorize
 new activity; signing in creates a fresh scenario. Keep the old evidence keyring
 to read history. Alternatively start a new database and new deployment ID.
+
+Migration `1794320000_remove_simulation_state.go` removes the former
+`simulation_state` collection while retaining mappings and other study records.
 
 ## Verification
 

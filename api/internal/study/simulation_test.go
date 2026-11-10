@@ -49,9 +49,6 @@ func simulationService(t *testing.T, file testidentity.File) (*Service, *fakePro
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = BindSimulationDatabase(app, run); err != nil {
-		t.Fatal(err)
-	}
 	cfg := Config{Simulation: run, Environment: "test", AppID: "example.app", PublicURL: "https://study.example", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}}
 	f := &fakeProvider{result: guardianResult(testActor)}
 	s := &Service{App: app, Config: cfg, simulation: run, provider: f, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: func() time.Time { return time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC) }}
@@ -133,7 +130,7 @@ func TestSimulationPreservesEvidenceAndReusesPersona(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer "+a.ID+"."+secret)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
-	if w.Code != 200 || strings.Contains(w.Body.String(), testActor) || !strings.Contains(w.Body.String(), "TEST SIMULATION") || w.Header().Get("X-Study-Simulation") != "test-run" {
+	if w.Code != 200 || strings.Contains(w.Body.String(), testActor) || strings.Contains(w.Body.String(), "simulationLabel") || w.Header().Get("X-Study-Simulation") != "test-run" {
 		t.Fatalf("unsafe or missing session metadata: %d %s", w.Code, w.Body.String())
 	}
 	second, _ := simulationLogin(t, s, doc)
@@ -352,7 +349,7 @@ func TestSimulationUsesTemplateAgeRules(t *testing.T) {
 	}
 }
 
-func TestSimulationDatabaseBindingAndFreshRun(t *testing.T) {
+func TestSimulationFreshRun(t *testing.T) {
 	s, _, doc := simulationService(t, simulationFile("201201010004"))
 	a, secret := simulationLogin(t, s, doc)
 	user, _ := s.App.FindRecordById("users", a.UserID)
@@ -360,17 +357,7 @@ func TestSimulationDatabaseBindingAndFreshRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	requests, _ := s.guardianRequests(s.App, user.Id)
-	if err := BindSimulationDatabase(s.App, nil); err == nil {
-		t.Fatal("simulation DB opened normally")
-	}
 	changed := simulationFile("200101010004")
-	run, _ := testidentity.New(changed)
-	if err := BindSimulationDatabase(s.App, run); err != nil {
-		t.Fatal("same deployment rejected on restart")
-	}
-	if err := BindSimulationDatabase(s.App, s.simulation); err != nil {
-		t.Fatal(err)
-	}
 	h := simulationHandler(t, s)
 	r := httptest.NewRequest("GET", "/api/bankid/attempts/"+a.ID, nil)
 	r.Header.Set("Authorization", "Bearer "+a.ID+"."+secret)
@@ -404,15 +391,5 @@ func TestSimulationDatabaseBindingAndFreshRun(t *testing.T) {
 	nextHandler.ServeHTTP(w, r)
 	if w.Code != 404 {
 		t.Fatal("old guardian link survived")
-	}
-	markers, _ := s.App.FindAllRecords("simulation_state")
-	if err := s.App.Delete(markers[0]); err != nil {
-		t.Fatal(err)
-	}
-	if err := BindSimulationDatabase(s.App, s.simulation); err == nil {
-		t.Fatal("existing records accepted into unmarked simulation DB")
-	}
-	if err := BindSimulationDatabase(s.App, nil); err == nil {
-		t.Fatal("simulated users accepted without marker")
 	}
 }

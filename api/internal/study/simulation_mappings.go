@@ -2,7 +2,11 @@ package study
 
 import (
 	"app/internal/testidentity"
-	"errors"
+	"strings"
+	"time"
+
+	validation "github.com/pocketbase/ozzo-validation/v4"
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -39,7 +43,24 @@ func (s *Service) assignedGuardian(app core.App, personal string) error {
 func (s *Service) registerSimulationMappings() {
 	validate := func(e *core.RecordEvent) error {
 		if s.simulation == nil {
-			return errors.New("test mappings are disabled in this deployment")
+			return apis.NewBadRequestError("Test mappings are disabled in this deployment.", nil)
+		}
+		fieldErrors := validation.Errors{}
+		for _, field := range []string{"realPersonalNumber", "testPersonalNumber"} {
+			value := strings.TrimSpace(e.Record.GetString(field))
+			if len(value) == 13 && value[8] == '-' {
+				value = value[:8] + value[9:]
+			}
+			e.Record.Set(field, value)
+			if !testidentity.ValidPersonal(value, time.Now()) {
+				fieldErrors[field] = validation.NewError("validation_personal_number", "Use YYYYMMDDXXXX or YYYYMMDD-XXXX with a valid birth date that is not in the future.")
+			}
+		}
+		if role := e.Record.GetString("role"); role != "participant" && role != "guardian" {
+			fieldErrors["role"] = validation.NewError("validation_role", "Select participant or guardian.")
+		}
+		if len(fieldErrors) != 0 {
+			return apis.NewBadRequestError("Check the highlighted mapping fields.", fieldErrors)
 		}
 		e.Record.Set("revision", randomSecret())
 		rows, err := e.App.FindAllRecords("test_identity_mappings")
@@ -54,7 +75,7 @@ func (s *Service) registerSimulationMappings() {
 		}
 		file.Personas = append(file.Personas, mappingPersona(e.Record))
 		if _, err = testidentity.New(file); err != nil {
-			return err
+			return apis.NewBadRequestError("Cannot save test identity mapping: "+err.Error(), nil)
 		}
 		return e.Next()
 	}

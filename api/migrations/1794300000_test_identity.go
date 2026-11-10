@@ -20,8 +20,6 @@ func init() {
 				return err
 			}
 		}
-		c := core.NewBaseCollection("simulation_state")
-		c.Fields.Add(&core.TextField{Name: "runId", Required: true, Max: 48}, &core.TextField{Name: "fingerprint", Required: true, Min: 64, Max: 64})
-		return app.Save(c)
+		return nil
 	}, nil)
 }

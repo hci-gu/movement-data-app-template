@@ -29,7 +29,6 @@ func WriteGuardianPreviews(dir string) error {
 		}
 		if mode == "simulation" {
 			page.Mode = "signing"
-			page.SimulationLabel = "TEST SIMULATION · guardian-check"
 		}
 		var body bytes.Buffer
 		if err := guardianPageTemplate.Execute(&body, page); err != nil {

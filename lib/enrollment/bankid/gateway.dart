@@ -31,7 +31,6 @@ class HttpBankIdGateway implements BankIdGateway {
     if (data['bankidAvailable'] != true) throw const BankIdUnavailable();
     return ConsentDocument.fromJson({
       ...Map<String, dynamic>.from(data['document'] as Map),
-      'simulationLabel': data['simulationLabel'],
     });
   }
 

@@ -106,7 +106,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return problem(503, "consentUnavailable", "Study consent is not available yet.")
 		}
-		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil, "simulationLabel": s.simulation.Label()})
+		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil})
 	})
 	g.POST("/bankid/attempts", func(e *core.RequestEvent) error {
 		var in StartInput
@@ -219,7 +219,7 @@ func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 	response := map[string]any{"id": a.ID, "status": a.Status, "hintCode": a.Hint, "purpose": a.Purpose, "mode": a.Mode, "signatureId": a.SignatureID, "pickedUp": a.PickedUp, "expiresAt": a.ExpiresAt.Add(ResultLifetime).Unix(), "nonce": a.Nonce}
 	if a.Document != nil {
 		d := a.Document
-		response["document"] = map[string]any{"id": d.ID, "version": d.Version, "title": d.Title, "text": d.Text, "documentHash": d.DocumentHash, "simulationLabel": s.simulation.Label()}
+		response["document"] = map[string]any{"id": d.ID, "version": d.Version, "title": d.Title, "text": d.Text, "documentHash": d.DocumentHash}
 	}
 	if a.Status == "pending" && a.Terminal == "" {
 		if a.Mode == "sameDevice" {
