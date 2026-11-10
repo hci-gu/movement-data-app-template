@@ -105,14 +105,31 @@ are verification artifacts; the study's Health collection is iPhone-only.
 
 ## Remote test deployment
 
-The test API at `https://movement-api.test.appadem.in` runs image
-`registry.k8s.gu.se/appademin/movement-api:0.0.4-scolios-test` (digest
-`sha256:0dcce0ffd9ca1bc514dc48509de2c44041ad888d0c08311b5337b0d1f36fce8a`).
-The existing test database and keyring were retained. On this rollout the init
-container published `scoliosis-kontoapi-v1` as current. Public health and the
-in-pod KontoAPI order, QR and pending-status diagnostic succeeded. Real test
-identity completion, explicit consent and guardian approval remain to be checked.
-This remains a test environment, not approval for recruitment.
+On 2026-11-10, the test API at `https://movement-api.test.appadem.in` was rebuilt
+and deployed from `test-scolios-2` using image
+`registry.k8s.gu.se/appademin/movement-api:0.0.5-scolios-simulation`, digest
+`sha256:a0d93462428cde2e76caae86a1fe35b3cbab2d292566c00f4e486d82d2b23d22`.
+OpenShift reports one ready replica with zero restarts. The pod image digest
+matches the published image.
+
+The simulation uses `/pb/pb_data/simulation-v1` on the existing Bound PVC and
+Secret `movement-study-keys-simulation-v1`. The previous ordinary test database
+and original keyring remain intact. The base `deploy/` manifest retains image
+`0.0.4-scolios-test` for returning to that ordinary test environment.
+
+The init container published `scoliosis-kontoapi-v1` as current (record
+`94xbayvqplwfdvf`). Public HTTPS health returned 200 with
+`X-Study-Simulation: scoliosis-test-v1`; anonymous session and consent requests
+returned 401, and mapping-collection access returned 403. The administration
+page returned 200. The in-pod KontoAPI diagnostic created an authentication order,
+retrieved its QR image and received pending status without creating a participant
+session or consent.
+
+Create the fresh database's PocketBase superuser using its private startup setup
+link, then enter mappings in `test_identity_mappings`; see
+[test identities](test-identities.md). Real BankID completion, explicit consent,
+guardian approval and HealthKit remain device checks. This is a test deployment,
+not approval for recruitment.
 
 ## Test identity deployment preparation — 2026-11-10
 
@@ -128,10 +145,10 @@ that branch's direct signing implementation.
 image `registry.k8s.gu.se/appademin/movement-api:0.0.5-scolios-simulation` and
 rendered `build/scoliosis-simulation-manifest.yaml`. OpenShift server-side dry
 run passed. The overlay uses a separate directory on the existing PVC and a
-new evidence keyring, preserving the existing deployment's database. The image
-has **not been pushed or rolled out**; the remote deployment described above
-remains unchanged. Follow [test identities](test-identities.md) to deploy, create
-the new database's superuser and enter mappings through PocketBase.
+new evidence keyring, preserving the existing deployment's database. The owner
+subsequently authorized the push and rollout; deployed verification is recorded
+above. Follow [test identities](test-identities.md) to configure the new
+database's superuser and enter mappings through PocketBase.
 
 Verification completed:
 
@@ -154,7 +171,7 @@ Verification completed:
 
 Real BankID completion, guardian interaction and HealthKit permissions/data on
 an iPhone remain manual checks. The existing consent release conditions still
-apply; this prepares a test deployment, not recruitment.
+apply to this test deployment.
 
 ## Artwork
 

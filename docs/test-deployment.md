@@ -4,7 +4,7 @@ For editable real-to-test BankID mappings, use the [simulation deployment](test-
 and `bash scripts/prepare-scoliosis-simulation.sh`. It keeps the existing data
 intact and starts a separate database with a private mapping collection.
 
-> **Scoliosis checkout:** The current deployment configuration uses image `0.0.4-scolios-test` and consent `scoliosis-kontoapi-v1` from `deploy/consent/scoliosis-consent.txt`. The technical-consent commands and 2026-11-03 deployment details below are historical template guidance; use the checked-in manifest and [scoliosis deployment notes](scoliosis-study.md#remote-test-deployment) for this checkout.
+> **Scoliosis checkout:** The live test API runs `0.0.5-scolios-simulation` using `deploy-simulation/`, with consent `scoliosis-kontoapi-v1`. The base `deploy/` manifest retains the previous ordinary test deployment (`0.0.4-scolios-test`). The technical-consent commands and 2026-11-03 details below are historical template guidance; use [test identity deployment](test-identities.md) and the [deployed verification](scoliosis-study.md#remote-test-deployment) for this checkout.
 
 This deploys the backend to `https://movement-api.test.appadem.in` in namespace
 `appademin`, initially using **KontoAPI test**. The iPhone connects to that public

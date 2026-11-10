@@ -113,9 +113,9 @@ prerequisites in [test deployment](test-deployment.md), then deploy:
 ```sh
 oc whoami -t | docker login registry.k8s.gu.se --username "$(oc whoami)" --password-stdin
 docker push registry.k8s.gu.se/appademin/movement-api:0.0.5-scolios-simulation
+# First deployment only; retain the installed Secret on later rollouts.
 oc -n appademin create secret generic movement-study-keys-simulation-v1 \
-  --from-file=study-keys.json=deploy/secrets/study-keys-simulation-v1.json \
-  --dry-run=client -o yaml | oc -n appademin apply -f -
+  --from-file=study-keys.json=deploy/secrets/study-keys-simulation-v1.json
 oc -n appademin apply --dry-run=server -f build/scoliosis-simulation-manifest.yaml
 oc -n appademin apply -f build/scoliosis-simulation-manifest.yaml
 oc -n appademin rollout status deployment/movement-api --timeout=180s
@@ -129,6 +129,18 @@ configure mappings at `https://movement-api.test.appadem.in/_/`. Run the iPhone
 with `--dart-define-from-file=deploy/flutter-test.json` and sign out of any old
 session. The existing combined study consent remains for testing only, subject
 to the [study's release conditions](scoliosis-study.md#conditions-before-participant-use).
+
+The simulation keyring was installed and this overlay was deployed on 2026-11-10;
+omit the Secret-creation command when redeploying that environment. To access
+the initial PocketBase setup link, view the server startup log in your terminal:
+
+```sh
+oc -n appademin logs deployment/movement-api -c movement-api
+```
+
+If the link uses a container-local origin, replace that origin with
+`https://movement-api.test.appadem.in`, keeping the full path and fragment.
+The ordinary test database's superuser account is separate from this new database.
 
 Subsequent deployments retain the simulation directory, deployment ID and keyring.
 To return to the ordinary test app, deploy the base `deploy/` manifest; it still
