@@ -1,5 +1,7 @@
 # Deploy the KontoAPI backend to OpenShift test
 
+> **Scoliosis checkout:** The current deployment configuration uses image `0.0.4-scolios-test` and consent `scoliosis-kontoapi-v1` from `deploy/consent/scoliosis-consent.txt`. The technical-consent commands and 2026-11-03 deployment details below are historical template guidance; use the checked-in manifest and [scoliosis deployment notes](scoliosis-study.md#remote-test-deployment) for this checkout.
+
 This deploys the backend to `https://movement-api.test.appadem.in` in namespace
 `appademin`, initially using **KontoAPI test**. The iPhone connects to that public
 HTTPS address. Only the backend needs network access to ADFS and KontoAPI;

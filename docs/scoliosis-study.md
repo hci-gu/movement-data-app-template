@@ -103,6 +103,17 @@ this disposable setup. The iPhone must be able to reach the backend.
 The development bundle identifier is `se.gu.skoliosrorelse`. Android builds
 are verification artifacts; the study's Health collection is iPhone-only.
 
+## Remote test deployment
+
+The test API at `https://movement-api.test.appadem.in` runs image
+`registry.k8s.gu.se/appademin/movement-api:0.0.4-scolios-test` (digest
+`sha256:0dcce0ffd9ca1bc514dc48509de2c44041ad888d0c08311b5337b0d1f36fce8a`).
+The existing test database and keyring were retained. On this rollout the init
+container published `scoliosis-kontoapi-v1` as current. Public health and the
+in-pod KontoAPI order, QR and pending-status diagnostic succeeded. Real test
+identity completion, explicit consent and guardian approval remain to be checked.
+This remains a test environment, not approval for recruitment.
+
 ## Artwork
 
 Generated with the built-in image-generation tool. Original:

@@ -28,15 +28,15 @@ spec:
                       name: movement-test-consent
             initContainers:
                 - name: publish-test-consent
-                  image: 'registry.k8s.gu.se/appademin/movement-api:0.0.3-kontoapi-test'
+                  image: 'registry.k8s.gu.se/appademin/movement-api:0.0.4-scolios-test'
                   imagePullPolicy: Always
                   command: [/pb/app]
                   args:
                     - bankid
                     - publish-consent
                     - --file=/pb/consent/test-consent.txt
-                    - --version=kontoapi-technical-v1
-                    - --title=KontoAPI technical test
+                    - --version=scoliosis-kontoapi-v1
+                    - --title=Rörelsemönster vid skolios
                     - --if-missing
                     - --dir=/pb/pb_data
                   env:
@@ -54,7 +54,7 @@ spec:
                           drop: [ALL]
             containers:
                 - name: movement-api
-                  image: 'registry.k8s.gu.se/appademin/movement-api:0.0.3-kontoapi-test'
+                  image: 'registry.k8s.gu.se/appademin/movement-api:0.0.4-scolios-test'
                   imagePullPolicy: Always
                   startupProbe:
                       httpGet:

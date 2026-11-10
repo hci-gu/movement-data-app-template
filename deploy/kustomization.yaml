@@ -9,4 +9,4 @@ configMapGenerator:
       - kontoapi-test.env
   - name: movement-test-consent
     files:
-      - test-consent.txt
+      - test-consent.txt=consent/scoliosis-consent.txt
