@@ -15,6 +15,7 @@ Read [docs/design-guidelines.md](docs/design-guidelines.md) before adapting UI o
 | Resource | Use it for |
 | --- | --- |
 | [docs/workflow.md](docs/workflow.md) | Primary setup and deployment workflow, consent publication from context, and study icon generation/export; start here. |
+| [docs/test-identities.md](docs/test-identities.md) | Isolated test personas, fresh runs, age/guardian testing and the KontoAPI port. |
 | [README.md](README.md) | Project overview, quick-start commands, collections, and customization prerequisites. |
 | [docs/bankid-testing.md](docs/bankid-testing.md) | BankID configuration, evidence keyring setup, consent publication, local and OpenShift test deployment, API endpoints, and verification commands. Environment-specific values describe the documented test setup. |
 | [docs/bankid-signing-plan.md](docs/bankid-signing-plan.md) | Current BankID architecture, collection relationships, participant and guardian signing, consent state, and signing-attempt persistence. |

@@ -29,9 +29,10 @@ class HttpBankIdGateway implements BankIdGateway {
       await client.get('/api/consent/current', options: _options()),
     );
     if (data['bankidAvailable'] != true) throw const BankIdUnavailable();
-    return ConsentDocument.fromJson(
-      Map<String, dynamic>.from(data['document'] as Map),
-    );
+    return ConsentDocument.fromJson({
+      ...Map<String, dynamic>.from(data['document'] as Map),
+      'simulationLabel': data['simulationLabel'],
+    });
   }
 
   Future<BankIdAttempt> _result(

@@ -1,6 +1,7 @@
 package study
 
 import (
+	"app/internal/testidentity"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,7 @@ import (
 const SessionLifetime = 2 * time.Hour
 
 type Config struct {
+	Simulation                *testidentity.Run
 	Environment               string
 	AppID                     string
 	IOSAppID                  string
@@ -39,6 +41,11 @@ func LoadConfig() (Config, error) {
 	}
 	if c.Environment != "disabled" && c.Environment != "test" && c.Environment != "production" {
 		return c, errors.New("BANKID_ENVIRONMENT must be disabled, test or production")
+	}
+	var simulationErr error
+	c.Simulation, simulationErr = testidentity.Load(os.Getenv("STUDY_SIMULATION_FILE"), os.Getenv("STUDY_DEPLOYMENT"))
+	if simulationErr != nil {
+		return c, simulationErr
 	}
 	var keys map[string]string
 	if file := os.Getenv("STUDY_SECRETS_FILE"); file != "" {

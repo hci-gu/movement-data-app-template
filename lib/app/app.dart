@@ -83,6 +83,42 @@ class AppView extends ConsumerWidget {
       title: StudyContent.appName,
       theme: AppTheme.cupertinoTheme,
       routerConfig: ref.watch(routerProvider),
+      builder: (context, child) {
+        final label =
+            ref.watch(sessionProvider)?.participant.simulationLabel ??
+            ref.watch(bankIdProvider).document?.simulationLabel ??
+            '';
+        if (label.isEmpty) return child ?? const SizedBox.shrink();
+        return Column(
+          children: [
+            Container(
+              width: double.infinity,
+              color: AppTheme.sand,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: AppTheme.body,
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: MediaQuery.removePadding(
+                context: context,
+                removeTop: true,
+                child: child ?? const SizedBox.shrink(),
+              ),
+            ),
+          ],
+        );
+      },
     ),
   );
 }

@@ -11,6 +11,7 @@ import (
 // Commands operate locally with the same database and key configuration as the
 // service. They never print encryption keys or personal numbers.
 func RegisterCommands(app *pocketbase.PocketBase) {
+	registerSimulationCommands(app)
 	root := &cobra.Command{Use: "bankid", Short: "Publish consent and export signing evidence"}
 	prepare := func(cmd *cobra.Command, args []string) error {
 		if err := app.Bootstrap(); err != nil {

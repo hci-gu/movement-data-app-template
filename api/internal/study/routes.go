@@ -91,6 +91,7 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 }
 
 func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
+	r.BindFunc(s.simulationHeaders)
 	s.registerLinks(r)
 	s.registerQuestionnaireAccess()
 	g := r.Group("/api")
@@ -105,7 +106,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return problem(503, "consentUnavailable", "Study consent is not available yet.")
 		}
-		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil})
+		return e.JSON(200, map[string]any{"document": documentDTO(doc), "bankidAvailable": s.provider != nil, "simulationLabel": s.simulation.Label()})
 	})
 	g.POST("/bankid/attempts", func(e *core.RequestEvent) error {
 		var in StartInput
@@ -188,7 +189,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if sig.GetInt("withdrawnAt") != 0 {
 			status = "withdrawn"
 		}
-		return e.JSON(200, map[string]any{"signatureId": sig.Id, "receivedAt": sig.GetInt("receivedAt"), "status": status, "document": documentDTO(doc)})
+		return e.JSON(200, map[string]any{"signatureId": sig.Id, "receivedAt": sig.GetInt("receivedAt"), "status": status, "document": documentDTO(doc), "simulationRun": s.simulation.ID()})
 	}).BindFunc(s.RequireSession)
 }
 func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) func(*core.RequestEvent) error {
@@ -217,7 +218,8 @@ func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) fun
 func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 	response := map[string]any{"id": a.ID, "status": a.Status, "hintCode": a.Hint, "purpose": a.Purpose, "mode": a.Mode, "signatureId": a.SignatureID, "pickedUp": a.PickedUp, "expiresAt": a.ExpiresAt.Add(ResultLifetime).Unix(), "nonce": a.Nonce}
 	if a.Document != nil {
-		response["document"] = a.Document
+		d := a.Document
+		response["document"] = map[string]any{"id": d.ID, "version": d.Version, "title": d.Title, "text": d.Text, "documentHash": d.DocumentHash, "simulationLabel": s.simulation.Label()}
 	}
 	if a.Status == "pending" && a.Terminal == "" {
 		if a.Mode == "sameDevice" {

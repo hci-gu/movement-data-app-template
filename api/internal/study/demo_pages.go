@@ -22,10 +22,14 @@ func WriteGuardianPreviews(dir string) error {
 	if err := os.WriteFile(filepath.Join(dir, "qr.png"), qr, 0644); err != nil {
 		return err
 	}
-	for _, mode := range []string{"signing", "expired", "failed", "checking", "approved"} {
+	for _, mode := range []string{"signing", "expired", "failed", "checking", "approved", "simulation"} {
 		page := guardianPageView{Mode: mode, StyleNonce: "demo", MobileLink: "#demo", DesktopLink: "#demo", QRURL: "qr.png?demo=1", StateURL: mode + ".json", RestartURL: "#demo", DoneURL: "approved.html"}
 		if mode == "expired" || mode == "failed" {
 			page.Mode = "signing"
+		}
+		if mode == "simulation" {
+			page.Mode = "signing"
+			page.SimulationLabel = "TEST SIMULATION · guardian-check"
 		}
 		var body bytes.Buffer
 		if err := guardianPageTemplate.Execute(&body, page); err != nil {
@@ -38,7 +42,7 @@ func WriteGuardianPreviews(dir string) error {
 		if mode == "failed" {
 			status = "failed"
 		}
-		data, err := json.Marshal(map[string]any{"status": status, "qrAvailable": mode == "signing", "pickedUp": false})
+		data, err := json.Marshal(map[string]any{"status": status, "qrAvailable": mode == "signing" || mode == "simulation", "pickedUp": false})
 		if err != nil {
 			return err
 		}

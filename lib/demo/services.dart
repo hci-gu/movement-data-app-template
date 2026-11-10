@@ -375,7 +375,21 @@ class DemoRuntime {
   late final ProviderContainer container;
   int blockedRequests = 0;
   DemoRuntime(this.study, this.preview) {
+    final source = study.consent;
+    final document = preview.simulation
+        ? ConsentDocument(
+            id: source.id,
+            version: source.version,
+            title: source.title,
+            text: source.text,
+            documentHash: source.documentHash,
+            simulationLabel: 'TEST SIMULATION · test-run',
+          )
+        : source;
     final participant = Participant(
+      simulationLabel: preview.simulation
+          ? 'TEST SIMULATION · participant-14'
+          : '',
       id: 'demo-participant',
       gender: preview.gender,
       guardianRequired: preview.guardian,
@@ -416,8 +430,8 @@ class DemoRuntime {
         bankIdProvider.overrideWith(
           (ref) => DemoBankIdController(
             preview,
-            study.consent,
-            gateway: DemoBankIdGateway(study.consent, grant),
+            document,
+            gateway: DemoBankIdGateway(document, grant),
             onGrant: (value) =>
                 ref.read(sessionProvider.notifier).accept(value),
           ),

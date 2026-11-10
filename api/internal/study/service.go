@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"app/internal/bankid"
+	"app/internal/testidentity"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -25,8 +26,9 @@ const ResultLifetime = 10 * time.Minute
 const MaxAttempts = 1024
 
 type Service struct {
-	App    core.App
-	Config Config
+	simulation *testidentity.Run
+	App        core.App
+	Config     Config
 
 	provider bankid.Provider
 	startMu  sync.Mutex
@@ -54,7 +56,9 @@ type StartInput struct {
 // Attempt is transient. Only its terminal outcome and evidence enter the database.
 // Its mutex serializes collection, cancellation and response delivery.
 type Attempt struct {
-	mu sync.Mutex
+	Simulation       *testidentity.Mapping
+	ExpectedGuardian string
+	mu               sync.Mutex
 
 	ID, SecretHash, InputHash string
 	Purpose, Mode, UserID     string
@@ -77,7 +81,10 @@ type Attempt struct {
 }
 
 func Open(app core.App, cfg Config) (*Service, error) {
-	s := &Service{App: app, Config: cfg, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: time.Now}
+	if err := BindSimulationDatabase(app, cfg.Simulation); err != nil {
+		return nil, err
+	}
+	s := &Service{App: app, Config: cfg, simulation: cfg.Simulation, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: time.Now}
 	if cfg.Environment == "disabled" {
 		return s, nil
 	}
@@ -183,7 +190,7 @@ func (s *Service) Start(ctx context.Context, in StartInput, ip string) (*Attempt
 	if a.Mode == "sameDevice" {
 		a.Request.ReturnURL = s.Config.ReturnURL + "#nonce=" + url.QueryEscape(a.Nonce)
 	}
-	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(a.Document.Text))
+	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(s.participantVisibleText(a.Document.Text)))
 	manifest, err := json.Marshal(map[string]any{"schemaVersion": 2, "purpose": a.Purpose, "attemptId": id, "consentTextId": in.Version, "documentHash": in.DocumentHash, "nonce": a.Nonce})
 	if err != nil {
 		return nil, err

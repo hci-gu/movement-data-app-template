@@ -53,6 +53,8 @@ api/pb_data
 api/context
 api/storage
 api/.local/
+api/app-simulation
+**/simulation-personas.local.json
 
 # Local BankID credentials, keyrings and evidence exports
 .env

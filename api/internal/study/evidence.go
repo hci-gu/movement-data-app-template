@@ -8,18 +8,21 @@ import (
 	"time"
 
 	"app/internal/bankid"
+	"app/internal/testidentity"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
 type Evidence struct {
-	Request       bankid.Request  `json:"request"`
-	Document      *Document       `json:"document,omitempty"`
-	Completion    json.RawMessage `json:"completion,omitempty"`
-	ErrorResponse json.RawMessage `json:"errorResponse,omitempty"`
-	LocalError    string          `json:"localError,omitempty"`
-	ReceivedAt    string          `json:"receivedAt"`
+	SimulationRun string                `json:"simulationRun,omitempty"`
+	Simulation    *testidentity.Mapping `json:"simulation,omitempty"`
+	Request       bankid.Request        `json:"request"`
+	Document      *Document             `json:"document,omitempty"`
+	Completion    json.RawMessage       `json:"completion,omitempty"`
+	ErrorResponse json.RawMessage       `json:"errorResponse,omitempty"`
+	LocalError    string                `json:"localError,omitempty"`
+	ReceivedAt    string                `json:"receivedAt"`
 }
 
 func (s *Service) finalize(a *Attempt) error {
@@ -33,7 +36,10 @@ func (s *Service) finalize(a *Attempt) error {
 		var user *core.Record
 		var err error
 		if outcome == "accepted" {
-			completion := a.Result.CompletionData
+			var completion *bankid.Completion
+			if a.Result != nil {
+				completion = a.Result.CompletionData
+			}
 			if completion == nil || !personalNumberPattern.MatchString(completion.User.PersonalNumber) || !validBase64(completion.Signature) || !validBase64(completion.OCSPResponse) {
 				outcome, hint = "rejected", "invalidEvidence"
 			} else if completion.Risk != "low" {
@@ -41,8 +47,15 @@ func (s *Service) finalize(a *Attempt) error {
 			} else if !s.now().Before(a.ExpiresAt) {
 				outcome, hint = "rejected", "sessionExpired"
 			}
+			personal := ""
+			if outcome == "accepted" {
+				personal, a.Simulation, err = s.simulation.Resolve(completion.User.PersonalNumber, testidentity.Role(a.Purpose), a.ExpectedGuardian)
+				if err != nil {
+					outcome, hint = "rejected", "testIdentityUnassigned"
+				}
+			}
 			if outcome == "accepted" && a.Purpose == "guardian" {
-				outcome, hint, user, err = s.guardianCompletion(tx, a, completion)
+				outcome, hint, user, err = s.guardianCompletion(tx, a, personal)
 				if err != nil {
 					return err
 				}
@@ -54,19 +67,26 @@ func (s *Service) finalize(a *Attempt) error {
 				if a.Document == nil || doc.Id != a.Document.ID || doc.GetString("documentHash") != a.Document.DocumentHash {
 					outcome, hint = "rejected", "consentChanged"
 				} else {
-					user, err = tx.FindFirstRecordByData("users", "personalNumber", completion.User.PersonalNumber)
+					user, err = tx.FindFirstRecordByData("users", "personalNumber", personal)
 					if errors.Is(err, sql.ErrNoRows) {
 						user, err = newRecord(tx, "users")
 						if err != nil {
 							return err
 						}
-						user.Set("personalNumber", completion.User.PersonalNumber)
+						user.Set("personalNumber", personal)
+						if a.Simulation != nil {
+							user.Set("simulationRun", a.Simulation.RunID)
+							user.Set("simulationPersona", a.Simulation.PersonaID)
+						}
 						user.SetPassword(randomSecret()) // PocketBase requires an internal password; password login stays disabled.
 						if err := tx.Save(user); err != nil {
 							return err
 						}
 					} else if err != nil {
 						return err
+					}
+					if !s.validSimulationUser(user) {
+						return errors.New("identity belongs to a different test run")
 					}
 				}
 			}
@@ -77,6 +97,7 @@ func (s *Service) finalize(a *Attempt) error {
 		}
 		r.Set("attemptId", a.ID)
 		r.Set("purpose", a.Purpose)
+		r.Set("simulationRun", s.simulation.ID())
 		if a.Order.OrderRef != "" {
 			r.Set("orderHash", hash(a.Order.OrderRef))
 		}
@@ -90,7 +111,7 @@ func (s *Service) finalize(a *Attempt) error {
 		if user != nil {
 			r.Set("user", user.Id)
 		}
-		evidence := Evidence{Request: a.Request, Document: a.Document, ErrorResponse: a.ErrorResponse, LocalError: a.LocalError, ReceivedAt: finished.UTC().Format(time.RFC3339Nano)}
+		evidence := Evidence{SimulationRun: s.simulation.ID(), Simulation: a.Simulation, Request: a.Request, Document: a.Document, ErrorResponse: a.ErrorResponse, LocalError: a.LocalError, ReceivedAt: finished.UTC().Format(time.RFC3339Nano)}
 		if a.Result != nil {
 			r.Set("providerStatus", a.Result.Status)
 			evidence.Completion = a.Result.Raw
@@ -156,6 +177,9 @@ func latestSignature(app core.App, userID string) (*core.Record, error) {
 	return records[0], nil
 }
 func (s *Service) activeConsent(app core.App, user *core.Record) bool {
+	if !s.validSimulationUser(user) {
+		return false
+	}
 	doc, err := currentDocument(app)
 	if err != nil {
 		return false
@@ -173,5 +197,5 @@ func (s *Service) activeConsent(app core.App, user *core.Record) bool {
 	if json.Unmarshal(evidence.Completion, &result) != nil || result.CompletionData == nil || evidence.Document == nil {
 		return false
 	}
-	return evidence.Document.ID == doc.Id && evidence.Document.DocumentHash == doc.GetString("documentHash") && evidence.Document.Text == doc.GetString("text") && evidence.Request.UserVisibleData == base64.StdEncoding.EncodeToString([]byte(doc.GetString("text"))) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
+	return s.simulation.Check(result.CompletionData.User.PersonalNumber, "participant", user.GetString("personalNumber"), evidence.Simulation) && evidence.Document.ID == doc.Id && evidence.Document.DocumentHash == doc.GetString("documentHash") && evidence.Document.Text == doc.GetString("text") && evidence.Request.UserVisibleData == base64.StdEncoding.EncodeToString([]byte(s.participantVisibleText(doc.GetString("text")))) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
 }

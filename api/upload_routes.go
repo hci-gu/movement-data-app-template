@@ -141,6 +141,7 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 
 		record := core.NewRecord(collection)
 		record.Set("user", user.Id)
+		record.Set("simulationRun", user.GetString("simulationRun"))
 		record.Set("filePath", filePath)
 		record.Set("timestamp", now)
 		record.Set("dataFrom", dataFrom)
@@ -161,6 +162,11 @@ func registerDataRoutes(app core.App, r *router.Router[*core.RequestEvent], requ
 		userID, err := sanitizeUserID(c.Request.PathValue("userId"))
 		if err != nil {
 			return httpError(http.StatusBadRequest, "Invalid userId")
+		}
+		user, err := app.FindRecordById("users", userID)
+		if err == nil && user.GetString("simulationRun") != "" {
+			c.Response.Header().Set("X-Study-Simulation", user.GetString("simulationRun"))
+			c.Response.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"SIMULATION-%s.json\"", userID))
 		}
 
 		lock := getUploadLock(userID)

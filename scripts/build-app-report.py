@@ -147,13 +147,13 @@ def guardian_captures(checks: list[dict]) -> list[dict]:
     try:
         run(command + ["open", f"http://127.0.0.1:{server.server_port}/signing.html"], "browser-open", checks, WORK)
         run(command + ["resize", "390", "844"], "browser-size", checks, WORK)
-        for mode, title in [("signing", "Guardian BankID handoff"), ("expired", "Guardian QR expired"), ("failed", "Guardian signing failed"), ("checking", "Checking guardian signature"), ("approved", "Guardian signature received")]:
+        for mode, title in [("signing", "Guardian BankID handoff"), ("expired", "Guardian QR expired"), ("failed", "Guardian signing failed"), ("checking", "Checking guardian signature"), ("approved", "Guardian signature received"), ("simulation", "Guardian test simulation")]:
             run(command + ["goto", f"http://127.0.0.1:{server.server_port}/{mode}.html"], f"browser-{mode}-open", checks, WORK)
             # Wait for the page's own JavaScript to consume its local response.
-            if mode in ("signing", "expired", "failed"):
-                expected = {"signing": "Waiting for BankID…", "expired": "Restart to get a new QR code.", "failed": "Signing did not complete. Restart to try again."}[mode]
+            if mode in ("signing", "expired", "failed", "simulation"):
+                expected = {"signing": "Waiting for BankID…", "simulation": "Waiting for BankID…", "expired": "Restart to get a new QR code.", "failed": "Signing did not complete. Restart to try again."}[mode]
                 code = "await page.waitForFunction(text => document.querySelector('#status').textContent === text, " + json.dumps(expected) + "); await page.locator('main').waitFor();"
-                if mode == "signing":
+                if mode in ("signing", "simulation"):
                     code += " await page.waitForFunction(() => document.querySelector('#qr').complete && document.querySelector('#qr').naturalWidth > 0);"
                 run(command + ["run-code", "async (page) => { " + code + " }"], f"browser-{mode}-ready", checks, WORK)
             name = f"guardian-browser-{mode}.png"

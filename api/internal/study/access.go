@@ -6,12 +6,16 @@ import (
 )
 
 func (s *Service) userDTO(user *core.Record) map[string]any {
-	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user)}
+	label := ""
+	if s.simulation != nil {
+		label = "TEST SIMULATION · " + user.GetString("simulationPersona")
+	}
+	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user), "simulationLabel": label, "simulationRun": s.simulation.ID()}
 }
 func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
 	user, err := s.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
-	if err != nil || user.Collection().Name != "users" {
+	if err != nil || user.Collection().Name != "users" || !s.validSimulationUser(user) {
 		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
 	// The token was verified above; inspect the application scope claims.
@@ -46,7 +50,7 @@ func (s *Service) authorizeParticipant(e *core.RequestEvent) error {
 	return nil
 }
 func ProtectRecords(app core.App) {
-	managed := []string{"consent_texts", "signatures", "signingRequests", "users"}
+	managed := []string{"consent_texts", "signatures", "signingRequests", "users", "simulation_state"}
 	app.OnRecordCreateRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
 		return problem(403, "managedRecord", "Use the study administration or BankID flow.")
 	})

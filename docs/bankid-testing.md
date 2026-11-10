@@ -1,5 +1,9 @@
 # Setup and testing
 
+For age and guardian tests with real BankID, see [test personas](test-identities.md).
+GU confirmed that KontoAPI's test host uses production BankID; the test hostname
+alone does not establish support for BankID test credentials.
+
 Generate the evidence keyring from the repository root:
 
 ```bash

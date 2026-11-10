@@ -1,7 +1,9 @@
 class Participant {
+  final String simulationLabel;
   final String id, gender;
   final bool guardianRequired, consentRequired;
   const Participant({
+    this.simulationLabel = '',
     required this.id,
     this.gender = 'unknown',
     this.guardianRequired = false,
@@ -14,6 +16,7 @@ class Participant {
       throw const FormatException('Missing participant');
     }
     return Participant(
+      simulationLabel: json['simulationLabel'] as String? ?? '',
       id: id,
       gender: json['gender'] as String? ?? 'unknown',
       guardianRequired: json['guardianRequired'] == true,
@@ -21,12 +24,14 @@ class Participant {
     );
   }
   Map<String, dynamic> toJson() => {
+    'simulationLabel': simulationLabel,
     'id': id,
     'gender': gender,
     'guardianRequired': guardianRequired,
     'consentRequired': consentRequired,
   };
   Participant requiringGuardian() => Participant(
+    simulationLabel: simulationLabel,
     id: id,
     gender: gender,
     consentRequired: consentRequired,

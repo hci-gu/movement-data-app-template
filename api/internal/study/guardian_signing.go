@@ -2,7 +2,6 @@ package study
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -53,6 +52,11 @@ func (s *Service) startGuardian(ctx context.Context, request *core.Record, ip, u
 	}
 	secret := randomSecret()
 	a := &Attempt{ID: attemptID(secret), SecretHash: hash(secret), Purpose: "guardian", Mode: "sameDevice", GuardianRequestID: request.Id, UserID: user.Id, IP: ip, Nonce: randomSecret(), Status: "pending", StartedAt: s.now(), ExpiresAt: s.now().Add(AttemptLifetime)}
+	a.ExpectedGuardian = request.GetString("personalNumber")
+	actor, err := s.simulation.GuardianActor(a.ExpectedGuardian)
+	if err != nil {
+		return nil, problem(400, "testIdentityUnassigned", "No tester is assigned to this guardian persona.")
+	}
 	d := documentDTO(doc)
 	a.Document = &d
 	public, err := url.Parse(s.Config.PublicURL)
@@ -62,8 +66,8 @@ func (s *Service) startGuardian(ctx context.Context, request *core.Record, ip, u
 	if len(userAgent) > 512 {
 		userAgent = userAgent[:512]
 	}
-	a.Request = bankid.Request{EndUserIP: ip, ReturnRisk: true, Web: &bankid.WebInfo{ReferringDomain: strings.ToLower(public.Hostname()), UserAgent: userAgent}, ReturnURL: s.Config.PublicURL + "/guardian/" + request.Id + "/return?nonce=" + url.QueryEscape(a.Nonce), Requirement: &bankid.Requirement{PersonalNumber: request.GetString("personalNumber")}}
-	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(guardianVisibleText(user, doc)))
+	a.Request = bankid.Request{EndUserIP: ip, ReturnRisk: true, Web: &bankid.WebInfo{ReferringDomain: strings.ToLower(public.Hostname()), UserAgent: userAgent}, ReturnURL: s.Config.PublicURL + "/guardian/" + request.Id + "/return?nonce=" + url.QueryEscape(a.Nonce), Requirement: &bankid.Requirement{PersonalNumber: actor}}
+	a.Request.UserVisibleData = base64.StdEncoding.EncodeToString([]byte(s.guardianText(user, doc)))
 	if len(a.Request.UserVisibleData) > 40000 {
 		return nil, problem(503, "consentUnavailable", "The consent text is too long for a guardian BankID signature.")
 	}
@@ -90,7 +94,7 @@ func (s *Service) startGuardian(ctx context.Context, request *core.Record, ip, u
 	return a, nil
 }
 
-func (s *Service) guardianCompletion(tx core.App, a *Attempt, completion *bankid.Completion) (string, string, *core.Record, error) {
+func (s *Service) guardianCompletion(tx core.App, a *Attempt, personal string) (string, string, *core.Record, error) {
 	request, err := tx.FindRecordById("signingRequests", a.GuardianRequestID)
 	if err != nil {
 		return "rejected", "requestUnavailable", nil, err
@@ -102,10 +106,10 @@ func (s *Service) guardianCompletion(tx core.App, a *Attempt, completion *bankid
 	if !s.activeConsent(tx, user) {
 		return "rejected", "requestUnavailable", user, nil
 	}
-	if completion == nil || subtle.ConstantTimeCompare([]byte(completion.User.PersonalNumber), []byte(request.GetString("personalNumber"))) != 1 {
+	if personal == "" || personal != request.GetString("personalNumber") {
 		return "rejected", "guardianMismatch", user, nil
 	}
-	if !adult(completion.User.PersonalNumber, s.now()) {
+	if !adult(personal, s.now()) {
 		return "rejected", "guardianUnderage", user, nil
 	}
 	doc, err := currentDocument(tx)
