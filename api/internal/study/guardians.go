@@ -76,7 +76,8 @@ func (s *Service) guardianSigned(app core.App, request *core.Record, version str
 		return false
 	}
 	var result bankid.Result
-	return json.Unmarshal(evidence.Completion, &result) == nil && result.CompletionData != nil && s.simulation.Check(result.CompletionData.User.PersonalNumber, "guardian", request.GetString("personalNumber"), evidence.Simulation) && adult(request.GetString("personalNumber"), time.Unix(int64(sig.GetInt("receivedAt")), 0)) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
+	run, err := s.mappingSnapshot(app)
+	return err == nil && json.Unmarshal(evidence.Completion, &result) == nil && result.CompletionData != nil && run.Check(result.CompletionData.User.PersonalNumber, "guardian", request.GetString("personalNumber"), evidence.Simulation) && adult(request.GetString("personalNumber"), time.Unix(int64(sig.GetInt("receivedAt")), 0)) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
 }
 
 func guardianVisibleText(user, doc *core.Record) string {
@@ -128,7 +129,7 @@ func (s *Service) guardianStatus(user *core.Record) (map[string]any, error) {
 }
 
 func (s *Service) createGuardianRequest(user *core.Record, personalNumber string, count int) (map[string]any, error) {
-	if _, err := s.simulation.GuardianActor(personalNumber); err != nil {
+	if err := s.assignedGuardian(s.App, personalNumber); err != nil {
 		return nil, problem(400, "testIdentityUnassigned", "No tester is assigned to this guardian persona.")
 	}
 	if !personalNumberPattern.MatchString(personalNumber) || !adult(personalNumber, s.now()) || personalNumber == user.GetString("personalNumber") || count < 1 || count > 2 {

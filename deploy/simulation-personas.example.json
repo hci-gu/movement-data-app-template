@@ -1,8 +1,0 @@
-{
-  "runId": "example-replaced-by-new-run",
-  "personas": [
-    {"id": "participant-14", "role": "participant", "personalNumber": "201211100019", "actorPersonalNumber": "198001012384"},
-    {"id": "guardian-one", "role": "guardian", "personalNumber": "197001010011", "actorPersonalNumber": "198001012384"},
-    {"id": "guardian-two", "role": "guardian", "personalNumber": "197201010027", "actorPersonalNumber": "198001012384"}
-  ]
-}

@@ -6,8 +6,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 )
 
-// BindSimulationDatabase refuses both mixed data and reuse after a persona edit.
-// A new configuration must start against a fresh database on the same test origin.
+// BindSimulationDatabase isolates simulation records from ordinary deployments.
 func BindSimulationDatabase(app core.App, run *testidentity.Run) error {
 	return app.RunInTransaction(func(tx core.App) error {
 		rows, err := tx.FindAllRecords("simulation_state")
@@ -15,12 +14,19 @@ func BindSimulationDatabase(app core.App, run *testidentity.Run) error {
 			return err
 		}
 		if len(rows) != 0 {
-			if len(rows) != 1 || run == nil || rows[0].GetString("runId") != run.ID() || rows[0].GetString("fingerprint") != run.Fingerprint() {
+			if len(rows) != 1 || run == nil || rows[0].GetString("runId") != run.ID() {
 				return errors.New("database belongs to a different simulation configuration; start a fresh test run")
 			}
 			return nil
 		}
 		if run == nil {
+			mappings, err := tx.FindAllRecords("test_identity_mappings")
+			if err != nil {
+				return err
+			}
+			if len(mappings) != 0 {
+				return errors.New("test identity mappings require a simulation deployment")
+			}
 			for _, name := range []string{"users", "signatures", "dataUploads"} {
 				rows, err := tx.FindRecordsByFilter(name, "simulationRun != ''", "", 1, 0)
 				if err != nil {
@@ -46,7 +52,6 @@ func BindSimulationDatabase(app core.App, run *testidentity.Run) error {
 			return err
 		}
 		r.Set("runId", run.ID())
-		r.Set("fingerprint", run.Fingerprint())
 		return tx.Save(r)
 	})
 }
@@ -59,7 +64,14 @@ func (s *Service) simulationHeaders(e *core.RequestEvent) error {
 }
 
 func (s *Service) validSimulationUser(user *core.Record) bool {
-	return user.GetString("simulationRun") == s.simulation.ID()
+	if user.GetString("simulationRun") != s.simulation.ID() {
+		return false
+	}
+	if s.simulation == nil {
+		return true
+	}
+	r, err := s.App.FindRecordById("test_identity_mappings", user.GetString("simulationPersona"))
+	return err == nil && r.GetString("revision") == user.GetString("simulationRevision") && r.GetString("role") == "participant" && r.GetString("testPersonalNumber") == user.GetString("personalNumber")
 }
 
 func (s *Service) participantVisibleText(text string) string {

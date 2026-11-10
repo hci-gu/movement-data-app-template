@@ -3,7 +3,8 @@
 For simulation builds, follow [test personas](test-identities.md). Verify the test
 indicator during consent/signing, on the checklist and on guardian pages. Test
 one/two guardian gating with real BankID, wrong-identity rejection with distinct
-testers, and old sessions/links after switching to a fresh run. These physical
+testers, and rejection of old sessions/links after editing or deleting mappings
+in PocketBase. These physical
 device checks remain separate from automated provider fixtures.
 
 Run against the backend containing your questionnaire definitions:

@@ -43,7 +43,7 @@ func LoadConfig() (Config, error) {
 		return c, errors.New("BANKID_ENVIRONMENT must be disabled, test or production")
 	}
 	var simulationErr error
-	c.Simulation, simulationErr = testidentity.Load(os.Getenv("STUDY_SIMULATION_FILE"), os.Getenv("STUDY_DEPLOYMENT"))
+	c.Simulation, simulationErr = testidentity.Load(os.Getenv("STUDY_SIMULATION_ID"), os.Getenv("STUDY_DEPLOYMENT"))
 	if simulationErr != nil {
 		return c, simulationErr
 	}

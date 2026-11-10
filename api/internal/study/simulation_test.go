@@ -55,6 +55,19 @@ func simulationService(t *testing.T, file testidentity.File) (*Service, *fakePro
 	cfg := Config{Simulation: run, Environment: "test", AppID: "example.app", PublicURL: "https://study.example", ReturnURL: "researchsteps://bankid/return", ActiveKey: "one", EncryptionKeys: map[string][]byte{"one": bytes.Repeat([]byte{1}, 32)}}
 	f := &fakeProvider{result: guardianResult(testActor)}
 	s := &Service{App: app, Config: cfg, simulation: run, provider: f, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: func() time.Time { return time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC) }}
+	s.registerSimulationMappings()
+	for _, p := range file.Personas {
+		r, err := newRecord(app, "test_identity_mappings")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Set("realPersonalNumber", p.ActorPersonalNumber)
+		r.Set("testPersonalNumber", p.PersonalNumber)
+		r.Set("role", p.Role)
+		if err = app.Save(r); err != nil {
+			t.Fatal(err)
+		}
+	}
 	doc, err := PublishConsent(app, "v1", "Test consent", "I consent.")
 	if err != nil {
 		t.Fatal(err)
@@ -195,6 +208,24 @@ func TestSimulationOneActorCanCompleteOneOrTwoGuardians(t *testing.T) {
 			if err := s.authorizeParticipant(&core.RequestEvent{Auth: user}); err != nil {
 				t.Fatal(err)
 			}
+			mapping, _ := s.App.FindFirstRecordByData("test_identity_mappings", "testPersonalNumber", "197001010001")
+			if err := s.App.Save(mapping); err != nil {
+				t.Fatal(err)
+			}
+			if s.guardianEligible(s.App, user) {
+				t.Fatal("edited guardian mapping retained approval")
+			}
+			requests, _ := s.guardianRequests(s.App, user.Id)
+			g, err := s.startGuardian(context.Background(), requests[0], "192.0.2.2", "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.advance(context.Background(), g); err != nil {
+				t.Fatal(err)
+			}
+			if g.Status != "accepted" || !s.guardianEligible(s.App, user) {
+				t.Fatal("new guardian revision did not authorize")
+			}
 			if _, err := PublishConsent(s.App, "v2", "Changed", "Changed consent"); err != nil {
 				t.Fatal(err)
 			}
@@ -202,6 +233,61 @@ func TestSimulationOneActorCanCompleteOneOrTwoGuardians(t *testing.T) {
 				t.Fatal("old consent remained authorized")
 			}
 		})
+	}
+}
+
+func TestSimulationMappingEditRevokesSessionAndResetsProgress(t *testing.T) {
+	s, _, doc := simulationService(t, simulationFile("200101010004"))
+	s.now = time.Now
+	a, secret := simulationLogin(t, s, doc)
+	h := simulationHandler(t, s)
+	request := func(path, token string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	w := request("/api/bankid/attempts/"+a.ID, a.ID+"."+secret)
+	var body struct {
+		Grant grant `json:"grant"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Grant.Token == "" {
+		t.Fatal("no session")
+	}
+	mapping, _ := s.App.FindFirstRecordByData("test_identity_mappings", "role", "participant")
+	revision := mapping.GetString("revision")
+	mapping.Set("testPersonalNumber", "201201010004")
+	if err := s.App.Save(mapping); err != nil {
+		t.Fatal(err)
+	}
+	if mapping.GetString("revision") == revision {
+		t.Fatal("revision not rotated")
+	}
+	if request("/api/me", body.Grant.Token).Code != 401 {
+		t.Fatal("old session survived mapping change")
+	}
+	if request("/api/bankid/attempts/"+a.ID, a.ID+"."+secret).Code != 410 {
+		t.Fatal("old attempt still granted session")
+	}
+	b, _ := simulationLogin(t, s, doc)
+	if b.Status != "accepted" || b.UserID == a.UserID {
+		t.Fatal("new mapping reused participant")
+	}
+	mapping.Set("testPersonalNumber", "200101010004")
+	if err := s.App.Save(mapping); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := simulationLogin(t, s, doc)
+	if c.Status != "accepted" || c.UserID == a.UserID || c.UserID == b.UserID {
+		t.Fatal("returning number reused history")
+	}
+	if err := s.App.Delete(mapping); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := simulationLogin(t, s, doc)
+	if d.Status != "rejected" || d.Hint != "testIdentityUnassigned" {
+		t.Fatal("deleted mapping passed through real identity")
 	}
 }
 
@@ -279,8 +365,8 @@ func TestSimulationDatabaseBindingAndFreshRun(t *testing.T) {
 	}
 	changed := simulationFile("200101010004")
 	run, _ := testidentity.New(changed)
-	if err := BindSimulationDatabase(s.App, run); err == nil {
-		t.Fatal("configuration changed under retained evidence")
+	if err := BindSimulationDatabase(s.App, run); err != nil {
+		t.Fatal("same deployment rejected on restart")
 	}
 	if err := BindSimulationDatabase(s.App, s.simulation); err != nil {
 		t.Fatal(err)

@@ -53,7 +53,11 @@ func (s *Service) startGuardian(ctx context.Context, request *core.Record, ip, u
 	secret := randomSecret()
 	a := &Attempt{ID: attemptID(secret), SecretHash: hash(secret), Purpose: "guardian", Mode: "sameDevice", GuardianRequestID: request.Id, UserID: user.Id, IP: ip, Nonce: randomSecret(), Status: "pending", StartedAt: s.now(), ExpiresAt: s.now().Add(AttemptLifetime)}
 	a.ExpectedGuardian = request.GetString("personalNumber")
-	actor, err := s.simulation.GuardianActor(a.ExpectedGuardian)
+	run, err := s.mappingSnapshot(s.App)
+	if err != nil {
+		return nil, err
+	}
+	actor, err := run.GuardianActor(a.ExpectedGuardian)
 	if err != nil {
 		return nil, problem(400, "testIdentityUnassigned", "No tester is assigned to this guardian persona.")
 	}

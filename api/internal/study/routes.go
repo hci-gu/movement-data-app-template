@@ -241,7 +241,7 @@ func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 		if err != nil {
 			return err
 		}
-		if user.TokenKey() != a.TokenKey {
+		if user.TokenKey() != a.TokenKey || !s.validSimulationUser(user) {
 			return restartRequired()
 		}
 		if !s.activeConsent(s.App, user) {

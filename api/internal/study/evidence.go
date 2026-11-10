@@ -49,7 +49,11 @@ func (s *Service) finalize(a *Attempt) error {
 			}
 			personal := ""
 			if outcome == "accepted" {
-				personal, a.Simulation, err = s.simulation.Resolve(completion.User.PersonalNumber, testidentity.Role(a.Purpose), a.ExpectedGuardian)
+				run, snapshotErr := s.mappingSnapshot(tx)
+				if snapshotErr != nil {
+					return snapshotErr
+				}
+				personal, a.Simulation, err = run.Resolve(completion.User.PersonalNumber, testidentity.Role(a.Purpose), a.ExpectedGuardian)
 				if err != nil {
 					outcome, hint = "rejected", "testIdentityUnassigned"
 				}
@@ -67,7 +71,11 @@ func (s *Service) finalize(a *Attempt) error {
 				if a.Document == nil || doc.Id != a.Document.ID || doc.GetString("documentHash") != a.Document.DocumentHash {
 					outcome, hint = "rejected", "consentChanged"
 				} else {
-					user, err = tx.FindFirstRecordByData("users", "personalNumber", personal)
+					revision := ""
+					if a.Simulation != nil {
+						revision = a.Simulation.Revision
+					}
+					user, err = tx.FindFirstRecordByFilter("users", "personalNumber={:personal} && simulationRevision={:revision}", dbx.Params{"personal": personal, "revision": revision})
 					if errors.Is(err, sql.ErrNoRows) {
 						user, err = newRecord(tx, "users")
 						if err != nil {
@@ -77,6 +85,7 @@ func (s *Service) finalize(a *Attempt) error {
 						if a.Simulation != nil {
 							user.Set("simulationRun", a.Simulation.RunID)
 							user.Set("simulationPersona", a.Simulation.PersonaID)
+							user.Set("simulationRevision", a.Simulation.Revision)
 						}
 						user.SetPassword(randomSecret()) // PocketBase requires an internal password; password login stays disabled.
 						if err := tx.Save(user); err != nil {
@@ -197,5 +206,6 @@ func (s *Service) activeConsent(app core.App, user *core.Record) bool {
 	if json.Unmarshal(evidence.Completion, &result) != nil || result.CompletionData == nil || evidence.Document == nil {
 		return false
 	}
-	return s.simulation.Check(result.CompletionData.User.PersonalNumber, "participant", user.GetString("personalNumber"), evidence.Simulation) && evidence.Document.ID == doc.Id && evidence.Document.DocumentHash == doc.GetString("documentHash") && evidence.Document.Text == doc.GetString("text") && evidence.Request.UserVisibleData == base64.StdEncoding.EncodeToString([]byte(s.participantVisibleText(doc.GetString("text")))) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
+	run, err := s.mappingSnapshot(app)
+	return err == nil && run.Check(result.CompletionData.User.PersonalNumber, "participant", user.GetString("personalNumber"), evidence.Simulation) && evidence.Document.ID == doc.Id && evidence.Document.DocumentHash == doc.GetString("documentHash") && evidence.Document.Text == doc.GetString("text") && evidence.Request.UserVisibleData == base64.StdEncoding.EncodeToString([]byte(s.participantVisibleText(doc.GetString("text")))) && result.CompletionData.Risk == "low" && validBase64(result.CompletionData.Signature) && validBase64(result.CompletionData.OCSPResponse)
 }

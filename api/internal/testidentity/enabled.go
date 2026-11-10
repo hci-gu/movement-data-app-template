@@ -10,7 +10,7 @@ func (r *Run) Resolve(actor, role, expected string) (string, *Mapping, error) {
 	}
 	for _, p := range r.file.Personas {
 		if p.Role == role && p.ActorPersonalNumber == actor && (role != "guardian" || p.PersonalNumber == expected) {
-			return p.PersonalNumber, &Mapping{r.ID(), p.ID, role, p.PersonalNumber}, nil
+			return p.PersonalNumber, &Mapping{RunID: r.ID(), PersonaID: p.ID, Role: role, PersonalNumber: p.PersonalNumber, Revision: p.Revision}, nil
 		}
 	}
 	return "", nil, ErrUnassigned

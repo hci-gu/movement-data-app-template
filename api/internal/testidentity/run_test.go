@@ -1,10 +1,6 @@
 package testidentity
 
-import (
-	"os"
-	"path/filepath"
-	"testing"
-)
+import "testing"
 
 func TestDefaultIsPassThroughAndConfigurationIsExplicit(t *testing.T) {
 	var run *Run
@@ -24,18 +20,6 @@ func TestDefaultIsPassThroughAndConfigurationIsExplicit(t *testing.T) {
 		}
 		if _, _, err := (&Run{}).Resolve("198001012384", "participant", ""); err == nil {
 			t.Fatal("normal binary resolved simulation")
-		}
-	}
-}
-
-func TestStrictConfigParsing(t *testing.T) {
-	for _, raw := range []string{`{"runId":"test","typo":true}`, `{} {}`, `{`} {
-		path := filepath.Join(t.TempDir(), "input.json")
-		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := ReadFile(path); err == nil {
-			t.Fatal("invalid config accepted")
 		}
 	}
 }
