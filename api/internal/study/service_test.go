@@ -40,7 +40,9 @@ func testService(t *testing.T) (*Service, *fakeProvider, http.Handler) {
 	if err := app.Bootstrap(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { app.ResetBootstrapState() })
+	t.Cleanup(func() {
+		app.OnTerminate().Trigger(&core.TerminateEvent{App: app}, func(e *core.TerminateEvent) error { return e.App.ResetBootstrapState() })
+	})
 	if err := app.RunAllMigrations(); err != nil {
 		t.Fatal(err)
 	}

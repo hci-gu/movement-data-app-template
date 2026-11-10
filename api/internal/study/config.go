@@ -2,6 +2,7 @@ package study
 
 import (
 	"app/internal/kontoapi"
+	"app/internal/testidentity"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 const SessionLifetime = 2 * time.Hour
 
 type Config struct {
+	Simulation     *testidentity.Run
 	Environment    string
 	AppID          string
 	IOSAppID       string
@@ -42,6 +44,11 @@ func LoadConfig() (Config, error) {
 		return c, errors.New("KONTOAPI_ENVIRONMENT must be disabled, test or production")
 	}
 	var keys map[string]string
+	var simulationErr error
+	c.Simulation, simulationErr = testidentity.Load(os.Getenv("STUDY_SIMULATION_ID"), os.Getenv("STUDY_DEPLOYMENT"))
+	if simulationErr != nil {
+		return c, simulationErr
+	}
 	if file := os.Getenv("STUDY_SECRETS_FILE"); file != "" {
 		raw, err := os.ReadFile(file)
 		if err != nil {

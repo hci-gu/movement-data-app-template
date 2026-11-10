@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: movement-api
+spec:
+  template:
+    spec:
+      # Reuse storage without modifying the existing ordinary test database.
+      # Retain this directory and keyring on subsequent simulation deployments.
+      volumes:
+        - name: study-keys
+          secret:
+            secretName: movement-study-keys-simulation-v1
+      initContainers:
+        - name: publish-test-consent
+          args:
+            - bankid
+            - publish-consent
+            - --file=/pb/consent/test-consent.txt
+            - --version=scoliosis-kontoapi-v1
+            - --title=Rörelsemönster vid skolios
+            - --if-missing
+            - --dir=/pb/pb_data/simulation-v1
+      containers:
+        - name: movement-api
+          command: [/pb/app]
+          args: [serve, '--http=0.0.0.0:8080', '--dir=/pb/pb_data/simulation-v1']
+          env:
+            - name: STUDY_DEPLOYMENT
+              value: simulation
+            - name: STUDY_SIMULATION_ID
+              value: scoliosis-test-v1

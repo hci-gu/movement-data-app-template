@@ -147,13 +147,13 @@ def guardian_captures(checks: list[dict]) -> list[dict]:
     try:
         run(command + ["open", f"http://127.0.0.1:{server.server_port}/authenticating.html"], "browser-open", checks, WORK)
         run(command + ["resize", "390", "844"], "browser-size", checks, WORK)
-        for mode, title in [("authenticating", "Guardian BankID handoff"), ("expired", "Guardian authentication expired"), ("failed", "Guardian authentication failed"), ("checking", "Checking guardian identity"), ("consent", "Guardian consent review"), ("approved", "Guardian approval received"), ("error", "Guardian approval unavailable")]:
+        for mode, title in [("authenticating", "Guardian BankID handoff"), ("expired", "Guardian authentication expired"), ("failed", "Guardian authentication failed"), ("checking", "Checking guardian identity"), ("consent", "Guardian consent review"), ("approved", "Guardian approval received"), ("error", "Guardian approval unavailable"), ("simulation-consent", "Test guardian consent"), ("simulation-authenticating", "Test guardian authentication")]:
             run(command + ["goto", f"http://127.0.0.1:{server.server_port}/{mode}.html"], f"browser-{mode}-open", checks, WORK)
             # Wait for the page's own JavaScript to consume its local response.
-            if mode in ("authenticating", "expired", "failed"):
-                expected = "Väntar på BankID. Återvänd hit när du har bekräftat din identitet." if mode == "authenticating" else "Identifieringen slutfördes inte. Starta en ny förfrågan för att försöka igen."
+            if mode in ("authenticating", "expired", "failed", "simulation-authenticating"):
+                expected = "Väntar på BankID. Återvänd hit när du har bekräftat din identitet." if mode in ("authenticating", "simulation-authenticating") else "Identifieringen slutfördes inte. Starta en ny förfrågan för att försöka igen."
                 code = "await page.waitForFunction(text => document.querySelector('#status').textContent === text, " + json.dumps(expected) + "); await page.locator('main').waitFor();"
-                if mode == "authenticating":
+                if mode in ("authenticating", "simulation-authenticating"):
                     code += " await page.waitForFunction(() => document.querySelector('#qr').complete && document.querySelector('#qr').naturalWidth > 0);"
                 run(command + ["run-code", "async (page) => { " + code + " }"], f"browser-{mode}-ready", checks, WORK)
             name = f"guardian-browser-{mode}.png"

@@ -91,6 +91,7 @@ func (s *Service) throttle(e *core.RequestEvent) error {
 }
 
 func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
+	r.BindFunc(s.simulationHeaders)
 	s.registerLinks(r)
 	s.registerQuestionnaireAccess()
 	g := r.Group("/api")
@@ -114,7 +115,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return problem(503, "consentUnavailable", "Study consent is not available yet.")
 		}
-		return e.JSON(200, map[string]any{"document": documentDTO(doc)})
+		return e.JSON(200, map[string]any{"document": documentDTO(doc), "simulationLabel": s.simulation.Label()})
 	}).BindFunc(s.RequireSession)
 	g.POST("/consent/accept", func(e *core.RequestEvent) error {
 		var in AcceptanceInput
@@ -222,7 +223,7 @@ func (s *Service) RegisterRoutes(r *router.Router[*core.RequestEvent]) {
 		if sig.GetInt("withdrawnAt") != 0 {
 			status = "withdrawn"
 		}
-		return e.JSON(200, map[string]any{"acceptanceId": sig.Id, "acceptedAt": sig.GetInt("acceptedAt"), "status": status, "document": evidence.Document})
+		return e.JSON(200, map[string]any{"acceptanceId": sig.Id, "acceptedAt": sig.GetInt("acceptedAt"), "status": status, "document": evidence.Document, "simulationRun": s.simulation.ID()})
 	}).BindFunc(s.RequireSession)
 }
 func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) func(*core.RequestEvent) error {
@@ -250,6 +251,7 @@ func (s *Service) withAttempt(next func(*core.RequestEvent, *Attempt) error) fun
 }
 func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 	response := map[string]any{"id": a.ID, "status": a.Status, "hintCode": a.Hint, "purpose": a.Purpose, "mode": a.Mode, "expiresAt": a.ExpiresAt.Unix(), "nonce": a.Nonce}
+	response["simulationLabel"] = s.simulation.Label()
 	if a.Status == "pending" && a.Terminal == "" {
 		if a.Mode == "sameDevice" {
 			response["launchUrl"] = "https://app.bankid.com/?autostarttoken=" + url.QueryEscape(a.Order.AutoStartToken)
@@ -265,7 +267,7 @@ func (s *Service) attemptResponse(e *core.RequestEvent, a *Attempt) error {
 		if err != nil {
 			return err
 		}
-		if user.TokenKey() != a.TokenKey {
+		if user.TokenKey() != a.TokenKey || !s.validSimulationAuthentication(s.App, a.AuthenticationID, "participant", user.GetString("personalNumber"), user.Id) {
 			return restartRequired()
 		}
 		if a.Grant == nil {

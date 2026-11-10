@@ -21,6 +21,10 @@ func (s *Service) startGuardian(ctx context.Context, request *core.Record, ip st
 	}
 	secret := randomSecret()
 	a := &Attempt{ID: attemptID(secret), SecretHash: hash(secret), Purpose: "guardian", Mode: "qr", GuardianRequestID: request.Id, UserID: user.Id, IP: ip, Nonce: randomSecret(), Status: "pending", StartedAt: s.now(), ExpiresAt: s.now().Add(AttemptLifetime)}
+	a.ExpectedGuardian = request.GetString("personalNumber")
+	if err := s.assignedGuardian(s.App, a.ExpectedGuardian); err != nil {
+		return nil, "", problem(400, "testIdentityUnassigned", "Ingen testperson är tilldelad den här vårdnadshavaren.")
+	}
 	a, err = s.startOrder(ctx, a)
 	if err != nil {
 		return nil, "", err
@@ -39,6 +43,9 @@ func (s *Service) approveGuardian(a *Attempt, in AcceptanceInput, consentID stri
 		if a.PersonalNumber != request.GetString("personalNumber") || !adult(a.PersonalNumber, s.now()) {
 			return problem(403, "guardianMismatch", "Identifiera dig som den angivna vårdnadshavaren.")
 		}
+		if !s.validSimulationAuthentication(tx, a.AuthenticationID, "guardian", a.PersonalNumber, request.GetString("user")) {
+			return problem(403, "guardianMismatch", "Identifiera dig igen.")
+		}
 		user, err := tx.FindRecordById("users", request.GetString("user"))
 		if err != nil {
 			return err
@@ -54,7 +61,11 @@ func (s *Service) approveGuardian(a *Attempt, in AcceptanceInput, consentID stri
 		if doc.Id != in.Version || doc.GetString("documentHash") != in.DocumentHash {
 			return problem(409, "consentChanged", "Läs det aktuella samtycket innan du bekräftar.")
 		}
-		if _, err = tx.FindFirstRecordByFilter("guardian_approvals", "request={:request} && consent={:consent}", dbx.Params{"request": request.Id, "consent": consent.Id}); err == nil {
+		revision, err := s.guardianRevision(tx, a.PersonalNumber)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.FindFirstRecordByFilter("guardian_approvals", "request={:request} && consent={:consent} && simulationRevision={:revision}", dbx.Params{"request": request.Id, "consent": consent.Id, "revision": revision}); err == nil {
 			return nil
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -65,6 +76,8 @@ func (s *Service) approveGuardian(a *Attempt, in AcceptanceInput, consentID stri
 		}
 		now := s.now().Unix()
 		r.Set("request", request.Id)
+		r.Set("simulationRun", s.simulation.ID())
+		r.Set("simulationRevision", revision)
 		r.Set("consent", consent.Id)
 		r.Set("authentication", a.AuthenticationID)
 		r.Set("requestKey", a.AuthenticationID+":"+consent.Id)
@@ -72,7 +85,7 @@ func (s *Service) approveGuardian(a *Attempt, in AcceptanceInput, consentID stri
 		if err = tx.Save(r); err != nil {
 			return err
 		}
-		evidence := ConsentEvidence{Method: "guardianWebApproval", Document: documentDTO(doc), AuthenticationID: a.AuthenticationID, PersonalNumber: a.PersonalNumber, ParticipantID: user.Id, GuardianRequestID: request.Id, ParticipantConsentID: consent.Id, AcceptedAt: now}
+		evidence := ConsentEvidence{SimulationRun: s.simulation.ID(), Method: "guardianWebApproval", Document: documentDTO(doc), AuthenticationID: a.AuthenticationID, PersonalNumber: a.PersonalNumber, ParticipantID: user.Id, GuardianRequestID: request.Id, ParticipantConsentID: consent.Id, AcceptedAt: now}
 		cipher, err := s.Config.Seal("guardian:"+r.Id, evidence)
 		if err != nil {
 			return err

@@ -213,3 +213,9 @@ wrong guardian identity, and re-consent after a document change.
   [deployment verification](test-deployment.md#deployed-verification--2026-11-03).
   Completing an identity, accepting consent, guardian approval and physical-iPhone
   HealthKit remain manual checks. No production/study-content adaptation was performed.
+# Real BankID in the test deployment
+
+The study owner confirmed that GU's KontoAPI test host authenticates against
+production BankID. A test BankID identity cannot complete that flow. Use real
+BankID with [private test identity mappings](test-identities.md) for age and
+guardian scenarios in the isolated simulation deployment.

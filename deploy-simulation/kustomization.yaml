@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../deploy
+images:
+  - name: registry.k8s.gu.se/appademin/movement-api
+    newTag: 0.0.5-scolios-simulation
+patches:
+  - path: deployment.yaml

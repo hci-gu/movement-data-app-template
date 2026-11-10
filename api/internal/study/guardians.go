@@ -63,12 +63,19 @@ func (s *Service) guardianApproved(app core.App, request *core.Record, version s
 	if err != nil || consent.GetString("version") != version {
 		return false
 	}
-	approval, err := app.FindFirstRecordByFilter("guardian_approvals", "request={:request} && consent={:consent}", dbx.Params{"request": request.Id, "consent": consent.Id})
+	revision, err := s.guardianRevision(app, request.GetString("personalNumber"))
+	if err != nil {
+		return false
+	}
+	approval, err := app.FindFirstRecordByFilter("guardian_approvals", "request={:request} && consent={:consent} && simulationRevision={:revision}", dbx.Params{"request": request.Id, "consent": consent.Id, "revision": revision})
 	if err != nil {
 		return false
 	}
 	var evidence ConsentEvidence
 	if s.Config.Open("guardian:"+approval.Id, approval.GetString("evidenceCipher"), &evidence) != nil {
+		return false
+	}
+	if evidence.SimulationRun != s.simulation.ID() || !s.validSimulationAuthentication(app, evidence.AuthenticationID, "guardian", request.GetString("personalNumber"), user.Id) {
 		return false
 	}
 	doc, err := app.FindRecordById("consent_texts", version)
@@ -124,6 +131,9 @@ func (s *Service) guardianStatus(user *core.Record) (map[string]any, error) {
 }
 
 func (s *Service) createGuardianRequest(user *core.Record, personalNumber string, count int) (map[string]any, error) {
+	if err := s.assignedGuardian(s.App, personalNumber); err != nil {
+		return nil, problem(400, "testIdentityUnassigned", "Ingen testperson är tilldelad den här vårdnadshavaren.")
+	}
 	if !personalNumberPattern.MatchString(personalNumber) || !adult(personalNumber, s.now()) || personalNumber == user.GetString("personalNumber") || count < 1 || count > 2 {
 		return nil, problem(400, "invalidGuardian", "Enter an adult guardian's 12-digit personal number and choose one or two guardians.")
 	}
@@ -173,6 +183,7 @@ func (s *Service) createGuardianRequest(user *core.Record, personalNumber string
 		created.Set("user", fresh.Id)
 		created.Set("slot", len(requests)+1)
 		created.Set("personalNumber", personalNumber)
+		created.Set("simulationRun", s.simulation.ID())
 		return tx.Save(created)
 	})
 	if err != nil {

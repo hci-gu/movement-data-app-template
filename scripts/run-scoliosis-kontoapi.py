@@ -21,18 +21,19 @@ def main():
     parser.add_argument("--trusted-proxies", default="", help="Exact ingress CIDRs; for a local tunnel use 127.0.0.1/32,::1/128")
     parser.add_argument("--check", action="store_true", help="Check live order/QR/status and exit; requires VPN")
     parser.add_argument("--prepare-only", action="store_true", help="Build and initialize the disposable database without contacting KontoAPI")
+    parser.add_argument("--simulation", action="store_true", help="Use a separate test-identity database; manage mappings in PocketBase")
     args = parser.parse_args()
     values = {}
-    for line in args.credentials.read_text(encoding="utf-8").splitlines():
+    for line in ([] if args.prepare_only else args.credentials.read_text(encoding="utf-8").splitlines()):
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         key, separator, value = line.partition(":")
         if not separator:
             raise ValueError("Credentials must use ak-test:, cid-test: and cs-test: lines")
         values[key.strip()] = value.strip()
-    if not all(values.get(key) for key in ("ak-test", "cid-test", "cs-test")):
+    if not args.prepare_only and not all(values.get(key) for key in ("ak-test", "cid-test", "cs-test")):
         raise ValueError("Missing ak-test, cid-test or cs-test in the credentials file")
-    local = ROOT / "api" / ".local" / "scoliosis-kontoapi"
+    local = ROOT / "api" / ".local" / ("scoliosis-simulation" if args.simulation else "scoliosis-kontoapi")
     local.mkdir(parents=True, exist_ok=True)
     keyring = local / "study-keys.json"
     if not keyring.exists():
@@ -46,14 +47,16 @@ def main():
         if key.startswith(("BANKID_", "KONTOAPI_", "STUDY_")):
             del environment[key]
     environment.update({
-        "STUDY_SKIP_DOTENV": "1", "KONTOAPI_ENVIRONMENT": "test",
+        "STUDY_SKIP_DOTENV": "1", "KONTOAPI_ENVIRONMENT": "disabled" if args.prepare_only else "test",
         "KONTOAPI_URL": args.kontoapi_url, "KONTOAPI_TOKEN_URL": args.token_url,
-        "KONTOAPI_API_KEY": values["ak-test"], "KONTOAPI_CLIENT_ID": values["cid-test"],
-        "KONTOAPI_CLIENT_SECRET": values["cs-test"], "STUDY_SECRETS_FILE": str(keyring),
+        "KONTOAPI_API_KEY": values.get("ak-test", ""), "KONTOAPI_CLIENT_ID": values.get("cid-test", ""),
+        "KONTOAPI_CLIENT_SECRET": values.get("cs-test", ""), "STUDY_SECRETS_FILE": str(keyring),
         "BANKID_PUBLIC_URL": args.public_url, "TRUSTED_PROXY_CIDRS": args.trusted_proxies,
     })
     binary = local / "app"
-    subprocess.run(["go", "build", "-o", str(binary), "."], cwd=ROOT / "api", check=True)
+    if args.simulation:
+        environment.update({"STUDY_DEPLOYMENT": "simulation", "STUDY_SIMULATION_ID": "scoliosis-local-v1"})
+    subprocess.run(["go", "build", "-tags", "study_simulation" if args.simulation else "", "-o", str(binary), "."], cwd=ROOT / "api", check=True)
     data = local / "pb_data"
     # Seed explicitly labelled study consent only on first initialization.
     first = not (data / "data.db").exists()

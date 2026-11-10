@@ -70,7 +70,10 @@ class DemoForms implements QuestionnaireGateway {
         saved[form.summary.id] = QuestionnaireResponse(
           'demo-response-${form.summary.id}',
           form.summary.id,
-          const {treatmentQuestionId: 'surgery', surgeryDateQuestionId: '2025-04-15'},
+          const {
+            treatmentQuestionId: 'surgery',
+            surgeryDateQuestionId: '2025-04-15',
+          },
         );
       }
     }
@@ -263,6 +266,7 @@ class DemoBankIdController extends BankIdController {
       qrImage: kind == 'bankid-qr' ? demoQRImage : null,
       attempt: order
           ? BankIdAttempt(
+              simulationLabel: preview.simulation ? 'TESTSIMULERING' : '',
               id: 'demo-order',
               secret: 'demo',
               expiresAt: 4102444800,
@@ -385,7 +389,21 @@ class DemoRuntime {
   late final ProviderContainer container;
   int blockedRequests = 0;
   DemoRuntime(this.study, this.preview) {
+    final source = study.consent;
+    final document = preview.simulation
+        ? ConsentDocument(
+            id: source.id,
+            version: source.version,
+            title: source.title,
+            text: source.text,
+            documentHash: source.documentHash,
+            simulationLabel: 'TESTSIMULERING',
+          )
+        : source;
     final participant = Participant(
+      simulationLabel: preview.simulation
+          ? 'TESTSIMULERING · 201201010004'
+          : '',
       id: 'demo-participant',
       gender: preview.gender,
       guardianRequired: preview.guardian,
@@ -427,8 +445,8 @@ class DemoRuntime {
         bankIdProvider.overrideWith(
           (ref) => DemoBankIdController(
             preview,
-            study.consent,
-            gateway: DemoBankIdGateway(study.consent, grant),
+            document,
+            gateway: DemoBankIdGateway(document, grant),
             onGrant: (value) =>
                 ref.read(sessionProvider.notifier).accept(value),
           ),

@@ -2,6 +2,7 @@ package study
 
 import (
 	"app/internal/kontoapi"
+	"app/internal/testidentity"
 	"database/sql"
 	"errors"
 	"github.com/pocketbase/dbx"
@@ -10,13 +11,16 @@ import (
 )
 
 type AuthenticationEvidence struct {
-	Provider   string           `json:"provider"`
-	OrderRef   string           `json:"orderRef,omitempty"`
-	Result     *kontoapi.Result `json:"result,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	ReceivedAt string           `json:"receivedAt"`
+	SimulationRun string                `json:"simulationRun,omitempty"`
+	Simulation    *testidentity.Mapping `json:"simulation,omitempty"`
+	Provider      string                `json:"provider"`
+	OrderRef      string                `json:"orderRef,omitempty"`
+	Result        *kontoapi.Result      `json:"result,omitempty"`
+	Error         string                `json:"error,omitempty"`
+	ReceivedAt    string                `json:"receivedAt"`
 }
 type ConsentEvidence struct {
+	SimulationRun        string   `json:"simulationRun,omitempty"`
 	Method               string   `json:"method"`
 	Document             Document `json:"document"`
 	AuthenticationID     string   `json:"authenticationId"`
@@ -47,8 +51,15 @@ func (s *Service) finalize(a *Attempt) error {
 			} else if !s.now().Before(a.ExpiresAt) {
 				status, hint = "expired", "expiredTransaction"
 			} else {
-				personal = a.Result.PersonalNumber
-				if a.Purpose == "guardian" {
+				var mappingErr error
+				run, err := s.mappingSnapshot(tx)
+				if err != nil {
+					return err
+				}
+				personal, a.Simulation, mappingErr = run.Resolve(a.Result.PersonalNumber, testidentity.Role(a.Purpose), a.ExpectedGuardian)
+				if mappingErr != nil {
+					status, hint = "rejected", "testIdentityUnassigned"
+				} else if a.Purpose == "guardian" {
 					request, err := tx.FindRecordById("guardian_requests", a.GuardianRequestID)
 					if err != nil {
 						return err
@@ -65,19 +76,31 @@ func (s *Service) finalize(a *Attempt) error {
 				} else if !atLeastAge(personal, s.now(), 10) || atLeastAge(personal, s.now(), 31) {
 					status, hint = "rejected", "ageIneligible"
 				} else {
-					user, err := tx.FindFirstRecordByData("users", "personalNumber", personal)
+					revision := ""
+					if a.Simulation != nil {
+						revision = a.Simulation.Revision
+					}
+					user, err := tx.FindFirstRecordByFilter("users", "personalNumber={:personal} && simulationRevision={:revision}", dbx.Params{"personal": personal, "revision": revision})
 					if errors.Is(err, sql.ErrNoRows) {
 						user, err = newRecord(tx, "users")
 						if err != nil {
 							return err
 						}
 						user.Set("personalNumber", personal)
+						if a.Simulation != nil {
+							user.Set("simulationRun", a.Simulation.RunID)
+							user.Set("simulationPersona", a.Simulation.PersonaID)
+							user.Set("simulationRevision", a.Simulation.Revision)
+						}
 						user.SetPassword(randomSecret())
 						if err = tx.Save(user); err != nil {
 							return err
 						}
 					} else if err != nil {
 						return err
+					}
+					if !s.validSimulationUser(user) {
+						return errors.New("identity belongs to another simulation run")
 					}
 					userID, tokenKey = user.Id, user.TokenKey()
 				}
@@ -89,6 +112,7 @@ func (s *Service) finalize(a *Attempt) error {
 		}
 		r.Set("attemptId", a.ID)
 		r.Set("purpose", a.Purpose)
+		r.Set("simulationRun", s.simulation.ID())
 		r.Set("user", userID)
 		r.Set("outcome", status)
 		r.Set("reason", hint)
@@ -103,7 +127,7 @@ func (s *Service) finalize(a *Attempt) error {
 		if err = tx.Save(r); err != nil {
 			return err
 		}
-		evidence := AuthenticationEvidence{Provider: "kontoapi", OrderRef: a.Order.OrderRef, Result: a.Result, Error: a.LocalError, ReceivedAt: a.FinishedAt.UTC().Format(time.RFC3339Nano)}
+		evidence := AuthenticationEvidence{SimulationRun: s.simulation.ID(), Simulation: a.Simulation, Provider: "kontoapi", OrderRef: a.Order.OrderRef, Result: a.Result, Error: a.LocalError, ReceivedAt: a.FinishedAt.UTC().Format(time.RFC3339Nano)}
 		cipher, err := s.Config.Seal("authentication:"+r.Id, evidence)
 		if err != nil {
 			return err
@@ -132,6 +156,9 @@ func latestConsent(app core.App, userID string) (*core.Record, error) {
 	return records[0], nil
 }
 func (s *Service) activeAcceptance(app core.App, user *core.Record) (*core.Record, error) {
+	if !s.validSimulationUser(user) {
+		return nil, errors.New("invalid simulation participant")
+	}
 	doc, err := currentDocument(app)
 	if err != nil {
 		return nil, err
@@ -147,6 +174,9 @@ func (s *Service) activeAcceptance(app core.App, user *core.Record) (*core.Recor
 	var evidence ConsentEvidence
 	if s.Config.Open("consent:"+r.Id, r.GetString("evidenceCipher"), &evidence) != nil || evidence.Method != "inAppAcceptance" || evidence.ParticipantID != user.Id || evidence.PersonalNumber != user.GetString("personalNumber") || evidence.Document != documentDTO(doc) || evidence.AuthenticationID != r.GetString("authentication") || evidence.AcceptedAt != int64(r.GetInt("acceptedAt")) {
 		return nil, errors.New("invalid consent evidence")
+	}
+	if evidence.SimulationRun != s.simulation.ID() || !s.validSimulationAuthentication(app, evidence.AuthenticationID, "participant", user.GetString("personalNumber"), user.Id) {
+		return nil, errors.New("invalid consent authentication")
 	}
 	return r, nil
 }
@@ -172,7 +202,7 @@ func (s *Service) acceptConsent(user *core.Record, authentication string, in Acc
 		if err != nil {
 			return err
 		}
-		if fresh.TokenKey() != user.TokenKey() {
+		if fresh.TokenKey() != user.TokenKey() || !s.validSimulationUser(fresh) {
 			return problem(401, "sessionExpired", "Authenticate again before accepting consent.")
 		}
 		doc, err := currentDocument(tx)
@@ -184,6 +214,9 @@ func (s *Service) acceptConsent(user *core.Record, authentication string, in Acc
 		}
 		auth, err := tx.FindRecordById("authentications", authentication)
 		if err != nil || auth.GetString("user") != user.Id || auth.GetString("purpose") != "participant" || auth.GetString("outcome") != "accepted" || !s.now().Before(time.Unix(int64(auth.GetInt("receivedAt")), 0).Add(SessionLifetime)) {
+			return problem(401, "sessionExpired", "Authenticate again before accepting consent.")
+		}
+		if !s.validSimulationAuthentication(tx, authentication, "participant", user.GetString("personalNumber"), user.Id) {
 			return problem(401, "sessionExpired", "Authenticate again before accepting consent.")
 		}
 		key := user.Id + ":" + in.RequestID
@@ -209,6 +242,7 @@ func (s *Service) acceptConsent(user *core.Record, authentication string, in Acc
 		}
 		now := s.now().Unix()
 		r.Set("user", user.Id)
+		r.Set("simulationRun", s.simulation.ID())
 		r.Set("authentication", authentication)
 		r.Set("version", doc.Id)
 		r.Set("documentHash", in.DocumentHash)
@@ -217,7 +251,7 @@ func (s *Service) acceptConsent(user *core.Record, authentication string, in Acc
 		if err = tx.Save(r); err != nil {
 			return err
 		}
-		evidence := ConsentEvidence{Method: "inAppAcceptance", Document: documentDTO(doc), AuthenticationID: authentication, PersonalNumber: user.GetString("personalNumber"), ParticipantID: user.Id, AcceptedAt: now}
+		evidence := ConsentEvidence{SimulationRun: s.simulation.ID(), Method: "inAppAcceptance", Document: documentDTO(doc), AuthenticationID: authentication, PersonalNumber: user.GetString("personalNumber"), ParticipantID: user.Id, AcceptedAt: now}
 		cipher, err := s.Config.Seal("consent:"+r.Id, evidence)
 		if err != nil {
 			return err

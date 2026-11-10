@@ -134,6 +134,10 @@ evidence that PocketBase was populated.
 
 ## Age and consent routing
 
+When the provider supports only real BankID, use the isolated
+[test-persona workflow](test-identities.md). It requires a simulation backend
+build and a fresh database; normal deployments keep verified BankID identities.
+
 Determine participant age on the backend from the personal number in the
 successful KontoAPI authentication result (`personalNumber:givenName:surname`).
 Use that identity to apply the study's age thresholds and guardian requirements.

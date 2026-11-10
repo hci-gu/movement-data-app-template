@@ -6,12 +6,16 @@ import (
 )
 
 func (s *Service) userDTO(user *core.Record) map[string]any {
-	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user)}
+	label := ""
+	if s.simulation != nil {
+		label = "TESTSIMULERING · " + user.GetString("personalNumber")
+	}
+	return map[string]any{"id": user.Id, "collectionId": user.Collection().Id, "collectionName": "users", "personalNumber": user.GetString("personalNumber"), "gender": Gender(user.GetString("personalNumber")), "consentRequired": !s.activeConsent(s.App, user), "guardianRequired": !s.guardianEligible(s.App, user), "simulationLabel": label, "simulationRun": s.simulation.ID()}
 }
 func (s *Service) validateSession(e *core.RequestEvent) error {
 	token := bearer(e)
 	user, err := s.App.FindAuthRecordByToken(token, core.TokenTypeAuth)
-	if err != nil || user.Collection().Name != "users" {
+	if err != nil || user.Collection().Name != "users" || !s.validSimulationUser(user) {
 		return problem(401, "sessionExpired", "Sign in again with BankID.")
 	}
 	// The token was verified above; inspect the application scope claims.
@@ -23,6 +27,9 @@ func (s *Service) validateSession(e *core.RequestEvent) error {
 	event, err := s.App.FindRecordById("authentications", authentication)
 	if err != nil || event.GetString("user") != user.Id || event.GetString("purpose") != "participant" || event.GetString("outcome") != "accepted" {
 		return problem(401, "sessionExpired", "Sign in again with BankID.")
+	}
+	if !s.validSimulationAuthentication(s.App, authentication, "participant", user.GetString("personalNumber"), user.Id) {
+		return problem(401, "sessionExpired", "Authenticate again.")
 	}
 	e.Auth = user
 	return nil
@@ -51,7 +58,7 @@ func (s *Service) authorizeParticipant(e *core.RequestEvent) error {
 	return nil
 }
 func ProtectRecords(app core.App) {
-	managed := []string{"consent_texts", "authentications", "consent_acceptances", "guardian_requests", "guardian_approvals", "users"}
+	managed := []string{"consent_texts", "authentications", "consent_acceptances", "guardian_requests", "guardian_approvals", "users", "simulation_state"}
 	app.OnRecordCreateRequest(managed...).BindFunc(func(e *core.RecordRequestEvent) error {
 		return problem(403, "managedRecord", "Use the study administration or BankID flow.")
 	})

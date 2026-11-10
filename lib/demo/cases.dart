@@ -4,7 +4,7 @@ import 'data.dart';
 class PreviewCase {
   final String id, title, group, path, state, gender;
   final String? formId, questionId;
-  final bool signedIn, guardian, saved;
+  final bool signedIn, guardian, saved, simulation;
   final Map<String, Object?> answers;
   final List<String> actions;
   const PreviewCase(
@@ -19,6 +19,7 @@ class PreviewCase {
     this.signedIn = true,
     this.guardian = false,
     this.saved = false,
+    this.simulation = false,
     this.answers = const {},
     this.actions = const [],
   });
@@ -97,6 +98,33 @@ List<PreviewCase> previewCases(DemoStudy study) {
         signedIn: state.startsWith('consent'),
       ),
     const PreviewCase('home', 'Checklist', 'Checklist', '/home'),
+    const PreviewCase(
+      'simulation-home',
+      'Test persona checklist',
+      'Testing',
+      '/home',
+      state: 'simulation',
+      guardian: true,
+      simulation: true,
+    ),
+    const PreviewCase(
+      'simulation-consent',
+      'Test consent review',
+      'Testing',
+      '/consent',
+      state: 'consent',
+      signedIn: true,
+      simulation: true,
+    ),
+    const PreviewCase(
+      'simulation-signing',
+      'Test BankID authentication',
+      'Testing',
+      '/introduction/login',
+      state: 'bankid-qr',
+      signedIn: false,
+      simulation: true,
+    ),
     for (final state in ['forms-loading', 'forms-error', 'forms-empty'])
       PreviewCase(
         state,

@@ -13,6 +13,7 @@
     h2 { margin: 0 0 4px; font-size: 1rem; }
     p { margin: 0 0 14px; }
     .muted { color: #596a79; }
+    .simulation { text-align: center; background: #fff0cf; padding: 10px; margin-bottom: 20px; font-weight: 600; }
     main.consent { max-width: 680px; margin: 0 auto; }
     .document { white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: 24px; }
     .after-action { margin-top: 20px; }
@@ -33,6 +34,7 @@
   </style>
 </head>
 <body>
+  {{if .SimulationLabel}}<aside class="simulation">{{.SimulationLabel}}</aside>{{end}}
   {{if eq .Mode "authenticating"}}
   <main data-state-url="{{.StateURL}}" data-qr-url="{{.QRURL}}" data-done-url="{{.DoneURL}}">
     <h1>Bekräfta din identitet</h1>

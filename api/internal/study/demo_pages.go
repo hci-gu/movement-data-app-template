@@ -22,10 +22,18 @@ func WriteGuardianPreviews(dir string, document Document) error {
 	if err := os.WriteFile(filepath.Join(dir, "qr.png"), qr, 0644); err != nil {
 		return err
 	}
-	for _, mode := range []string{"authenticating", "expired", "failed", "checking", "consent", "approved", "error"} {
+	for _, mode := range []string{"authenticating", "expired", "failed", "checking", "consent", "approved", "error", "simulation-consent", "simulation-authenticating"} {
 		page := guardianPageView{Mode: mode, StyleNonce: "demo", MobileLink: "#demo", DesktopLink: "#demo", QRURL: "qr.png?demo=1", StateURL: mode + ".json", RestartURL: "#demo", DoneURL: "consent.html", Document: &document, ParticipantSuffix: "2384", ConsentID: "demo", CSRF: "demo", ApproveURL: "#demo", Message: "Samtycket registrerades inte. Öppna inbjudan och läs det aktuella samtycket igen."}
 		if mode == "expired" || mode == "failed" {
 			page.Mode = "authenticating"
+		}
+		if mode == "simulation-consent" {
+			page.Mode = "consent"
+			page.SimulationLabel = "TESTSIMULERING"
+		}
+		if mode == "simulation-authenticating" {
+			page.Mode = "authenticating"
+			page.SimulationLabel = "TESTSIMULERING"
 		}
 		var body bytes.Buffer
 		if err := guardianPageTemplate.Execute(&body, page); err != nil {
@@ -38,7 +46,7 @@ func WriteGuardianPreviews(dir string, document Document) error {
 		if mode == "failed" || mode == "expired" {
 			status = mode
 		}
-		data, err := json.Marshal(map[string]any{"status": status, "qrAvailable": mode == "authenticating"})
+		data, err := json.Marshal(map[string]any{"status": status, "qrAvailable": page.Mode == "authenticating" && status == "pending"})
 		if err != nil {
 			return err
 		}

@@ -2,6 +2,7 @@ package study
 
 import (
 	"app/internal/kontoapi"
+	"app/internal/testidentity"
 	"context"
 	"crypto/subtle"
 	"database/sql"
@@ -21,15 +22,16 @@ const ResultLifetime = 10 * time.Minute
 const MaxAttempts = 1024
 
 type Service struct {
-	App      core.App
-	Config   Config
-	provider kontoapi.Provider
-	startMu  sync.Mutex
-	mu       sync.Mutex
-	attempts map[string]*Attempt
-	rateMu   sync.Mutex
-	rates    map[string]rateEntry
-	now      func() time.Time
+	simulation *testidentity.Run
+	App        core.App
+	Config     Config
+	provider   kontoapi.Provider
+	startMu    sync.Mutex
+	mu         sync.Mutex
+	attempts   map[string]*Attempt
+	rateMu     sync.Mutex
+	rates      map[string]rateEntry
+	now        func() time.Time
 }
 type Document struct {
 	ID           string `json:"id"`
@@ -43,6 +45,8 @@ type StartInput struct {
 	Mode         string `json:"mode"`
 }
 type Attempt struct {
+	Simulation                                    *testidentity.Mapping
+	ExpectedGuardian                              string
 	mu                                            sync.Mutex
 	ID, SecretHash, InputHash                     string
 	Purpose, Mode, UserID, GuardianRequestID      string
@@ -58,7 +62,11 @@ type Attempt struct {
 }
 
 func Open(app core.App, cfg Config) (*Service, error) {
-	s := &Service{App: app, Config: cfg, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: time.Now}
+	if err := BindSimulationDatabase(app, cfg.Simulation); err != nil {
+		return nil, err
+	}
+	s := &Service{App: app, Config: cfg, simulation: cfg.Simulation, attempts: map[string]*Attempt{}, rates: map[string]rateEntry{}, now: time.Now}
+	s.registerSimulationMappings()
 	if cfg.Environment == "disabled" {
 		return s, nil
 	}

@@ -1,5 +1,9 @@
 # Deploy the KontoAPI backend to OpenShift test
 
+For editable real-to-test BankID mappings, use the [simulation deployment](test-identities.md#prepare-and-deploy-the-scoliosis-test-environment)
+and `bash scripts/prepare-scoliosis-simulation.sh`. It keeps the existing data
+intact and starts a separate database with a private mapping collection.
+
 > **Scoliosis checkout:** The current deployment configuration uses image `0.0.4-scolios-test` and consent `scoliosis-kontoapi-v1` from `deploy/consent/scoliosis-consent.txt`. The technical-consent commands and 2026-11-03 deployment details below are historical template guidance; use the checked-in manifest and [scoliosis deployment notes](scoliosis-study.md#remote-test-deployment) for this checkout.
 
 This deploys the backend to `https://movement-api.test.appadem.in` in namespace

@@ -1,6 +1,8 @@
 class ConsentDocument {
+  final String simulationLabel;
   final String id, version, title, text, documentHash;
   const ConsentDocument({
+    this.simulationLabel = '',
     required this.id,
     required this.version,
     required this.title,
@@ -9,6 +11,7 @@ class ConsentDocument {
   });
   factory ConsentDocument.fromJson(Map<String, dynamic> json) =>
       ConsentDocument(
+        simulationLabel: json['simulationLabel'] as String? ?? '',
         id: json['id'] as String,
         version: json['version'] as String,
         title: json['title'] as String,
@@ -16,6 +19,7 @@ class ConsentDocument {
         documentHash: json['documentHash'] as String,
       );
   Map<String, dynamic> toJson() => {
+    'simulationLabel': simulationLabel,
     'id': id,
     'version': version,
     'title': title,
@@ -25,12 +29,14 @@ class ConsentDocument {
 }
 
 class BankIdAttempt {
+  final String simulationLabel;
   final String id, secret, status, hintCode, purpose, mode;
   final String? launchUrl, nonce;
   final int expiresAt;
   final int? qrSecondsRemaining;
   final Map<String, dynamic>? grant;
   const BankIdAttempt({
+    this.simulationLabel = '',
     required this.id,
     required this.secret,
     this.status = 'pending',
@@ -50,6 +56,7 @@ class BankIdAttempt {
   bool expired(DateTime now) => now.millisecondsSinceEpoch ~/ 1000 >= expiresAt;
   factory BankIdAttempt.fromJson(Map<String, dynamic> json, String secret) =>
       BankIdAttempt(
+        simulationLabel: json['simulationLabel'] as String? ?? '',
         id: json['id'] as String,
         secret: secret,
         expiresAt: json['expiresAt'] as int,
@@ -84,13 +91,16 @@ String bankIdMessage(BankIdAttempt order) {
     'userSign': 'Granska förfrågan och bekräfta i BankID.',
     'userMrtd': 'Följ instruktionerna i BankID för att bekräfta din identitet.',
     'processing': 'Din förfrågan behandlas. Vänta en stund.',
-    'expiredTransaction': 'Förfrågan har gått ut. Starta en ny BankID-förfrågan.',
+    'expiredTransaction':
+        'Förfrågan har gått ut. Starta en ny BankID-förfrågan.',
     'certificateErr':
         'Ditt BankID kunde inte användas. Kontrollera att det är giltigt.',
     'userCancel':
         'Appen har avbrutit förfrågan. Avbryt även i BankID om det fortfarande är öppet.',
     'cancelled': 'Appen har avbrutit förfrågan.',
     'ageIneligible': 'Studien vänder sig till personer mellan 10 och 30 år.',
+    'testIdentityUnassigned':
+        'Ingen testidentitet är kopplad till ditt BankID för den här rollen. Kontakta testansvarig.',
     'invalidIdentity':
         'Din identitet kunde inte bekräftas. Starta en ny förfrågan.',
     'startFailed':
@@ -107,7 +117,8 @@ String bankIdMessage(BankIdAttempt order) {
         'Resultatet kunde inte bekräftas. Ingen åtkomst beviljades. Starta en ny förfrågan.',
     'invalidEvidence':
         'Identifieringen kunde inte verifieras. Starta en ny förfrågan.',
-    'temporarilyUnavailable': 'BankID är tillfälligt otillgängligt. Försök igen senare.',
+    'temporarilyUnavailable':
+        'BankID är tillfälligt otillgängligt. Försök igen senare.',
     'certificateUnavailable':
         'Tjänsten är tillfälligt otillgänglig. Försök igen senare.',
   };
